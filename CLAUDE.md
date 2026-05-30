@@ -82,4 +82,5 @@ All Unity data classes live in `LoneRanger.Construction`. `ConstructionManager` 
 ## Repo
 `https://github.com/iPolluxx/StudCast`  
 Main branch: `main`  
-Last known good commit: `e68a0bd`
+Last known good commit: `e68a0bd`  
+Handoff commit (this file): `9b0f2bd`
