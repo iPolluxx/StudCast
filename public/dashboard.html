@@ -1,0 +1,2755 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lone Ranger Estimator — Voice Ledger</title>
+    <meta name="description" content="AI-powered voice and text-to-estimate generator for contractors. Capture job scopes and generate professional PDF invoices.">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- ─── Phase 2: CSS Variable Premium Palette ────────────────────────── -->
+    <style>
+        /* ── Design Tokens ──────────────────────────────────────────────── */
+        :root {
+            --base-bg:       #210936;
+            --card-bg:       #2d0f47;
+            --header-bg:     #1a0729;
+            --primary-accent:#521880;
+            --accent-hover:  #6d28d9;
+            --text-primary:  #e9d5ff;
+            --text-muted:    #9b59d0;
+            --text-accent:   #c084fc;
+        }
+
+        h1, h2, h3 { font-family: 'Outfit', sans-serif; }
+
+        /* ── Base ───────────────────────────────────────────────────────── */
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--base-bg);
+            color: var(--text-primary);
+            min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* ── Card glass ─────────────────────────────────────────────────── */
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--primary-accent);
+            border-radius: 1.25rem;
+        }
+
+        /* ── Scrollbar ──────────────────────────────────────────────────── */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--primary-accent); border-radius: 3px; }
+
+        /* ── Editable cells ─────────────────────────────────────────────── */
+        .editable-cell {
+            outline: none; border-radius: 4px; padding: 2px 6px;
+            min-width: 40px; display: inline-block;
+            transition: background-color 0.15s, box-shadow 0.15s;
+        }
+        .editable-cell:hover { background-color: rgba(192,132,252,0.10); }
+        .editable-cell:focus {
+            background-color: rgba(192,132,252,0.15);
+            box-shadow: 0 0 0 2px rgba(192,132,252,0.40);
+        }
+
+        /* ── Project selector ───────────────────────────────────────────── */
+        #project-selector {
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%239b59d0' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 0.75rem center;
+            background-size: 1.25em;
+            padding-right: 2.5rem;
+        }
+
+        /* ── Phase 4: Row slide-in animation ────────────────────────────── */
+        @keyframes rowSlideIn {
+            from { opacity: 0; transform: translateY(-12px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ── Phase 5: Mic recording halo ────────────────────────────────── */
+        @keyframes micHalo {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,.70), 0 0 0 0 rgba(239,68,68,.35); }
+            50%       { box-shadow: 0 0 0 14px rgba(239,68,68,.12), 0 0 0 28px rgba(239,68,68,0); }
+        }
+        .recording-active {
+            animation: micHalo 1.5s ease-in-out infinite;
+            transform: scale(1.05);
+        }
+
+        /* ── Toast animations ───────────────────────────────────────────── */
+        @keyframes toastSlideIn {
+            from { opacity: 0; transform: translateX(60px) scale(.95); }
+            to   { opacity: 1; transform: translateX(0)   scale(1); }
+        }
+        @keyframes toastFadeOut {
+            from { opacity: 1; transform: translateX(0)   scale(1); }
+            to   { opacity: 0; transform: translateX(60px) scale(.95); }
+        }
+        .toast-enter { animation: toastSlideIn .3s cubic-bezier(.21,1.02,.73,1) forwards; }
+        .toast-exit  { animation: toastFadeOut .3s ease-in forwards; }
+
+        /* ── Phase 5: Price source badge transition ──────────────────────── */
+        .source-badge { transition: background-color 0.3s ease; }
+
+        /* ── CSV progress bar ───────────────────────────────────────────── */
+        #csvProgressWrap { transition: opacity .2s; }
+        #csvProgressBar  { transition: width .15s linear; }
+
+        /* ── PDF button states ──────────────────────────────────────────── */
+        #approveBtn { transition: background .3s, opacity .2s, transform .15s; }
+
+        /* ── Grand total ticker ─────────────────────────────────────────── */
+        #grandTotal { transition: color .2s; font-variant-numeric: tabular-nums; }
+
+        /* ── Dashboard 2-column grid ────────────────────────────────────── */
+        .dash-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+            align-items: start;
+        }
+        @media (max-width: 768px) {
+            .dash-grid { grid-template-columns: 1fr; }
+        }
+
+        /* ── Fade-in utility ────────────────────────────────────────────── */
+        .fade-in { animation: fadeIn .35s ease-out; }
+        @keyframes fadeIn { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+
+        /* ── Login gate ─────────────────────────────────────────────────── */
+        #loginGate { min-height: 100vh; }
+
+        @media print {
+            body { background:#fff !important; }
+            #inputSection, #heroHeader, #ledgerPanel, .no-print { display:none !important; }
+        }
+    </style>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                }
+            }
+        }
+    </script>
+</head>
+<body>
+
+    <!-- ─── Toast Stack (top-right) ───────────────────────────────────── -->
+    <div id="toastContainer" class="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+    <!-- ─── Unsaved Changes Interceptor Modal ─────────────────────────── -->
+    <div id="dirtyConfirmModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div class="card max-w-md w-full p-6 space-y-5 shadow-2xl">
+            <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                ⚠️ Unsaved Changes
+            </h3>
+            <p class="text-sm" style="color:var(--text-muted)">
+                You have unsaved changes on this project. What would you like to do?
+            </p>
+            <div class="flex flex-col sm:flex-row sm:justify-end gap-2.5 pt-2">
+                <button onclick="handleDirtyCancel()" class="px-4 py-2 rounded-xl text-xs font-semibold border border-purple-800/40 hover:bg-purple-950/40 transition-colors" style="color:var(--text-accent)">
+                    Cancel
+                </button>
+                <button onclick="handleDirtyDiscard()" class="px-4 py-2 rounded-xl text-xs font-semibold bg-red-950/40 border border-red-700 text-red-200 hover:bg-red-900/60 transition-colors">
+                    Discard Changes
+                </button>
+                <button onclick="handleDirtySave()" class="px-4 py-2 rounded-xl text-xs font-semibold text-white hover:opacity-90 transition-opacity" style="background:var(--primary-accent)">
+                    Save Now
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         LOGIN GATE
+    ══════════════════════════════════════════════════════════════════ -->
+    <div id="loginGate" class="flex flex-col items-center justify-center px-4 py-16">
+        <div class="w-full max-w-sm card p-8 space-y-6">
+            <div class="flex flex-col items-center text-center gap-2">
+                <div class="h-14 w-14 rounded-2xl flex items-center justify-center text-white font-bold text-2xl shadow-lg"
+                     style="background:linear-gradient(135deg,var(--accent-hover),var(--primary-accent))">L</div>
+                <h1 class="text-xl font-bold tracking-tight" style="color:var(--text-primary)">Lone Ranger Estimator</h1>
+                <p class="text-xs tracking-wide uppercase" style="color:var(--text-muted)">Multi-Project Voice Ledger</p>
+            </div>
+
+            <div class="space-y-2 flex flex-col items-center justify-center">
+                <div id="g_id_onload"
+                     data-client_id="879716207624-tcne5h4j8d80nule4389ecudkjo18fev.apps.googleusercontent.com"
+                     data-context="signin"
+                     data-ux_mode="popup"
+                     data-callback="handleGoogleLogin"
+                     data-auto_prompt="false">
+                </div>
+                <div class="g_id_signin"
+                     data-type="standard"
+                     data-shape="rectangular"
+                     data-theme="outline"
+                     data-text="signin_with"
+                     data-size="large"
+                     data-logo_alignment="left">
+                </div>
+                <p id="loginError" class="hidden text-xs text-red-400 mt-1"></p>
+            </div>
+            <p class="text-[11px] text-center" style="color:var(--text-muted)">Access is restricted to authorized contractors.</p>
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         MAIN DASHBOARD
+    ══════════════════════════════════════════════════════════════════ -->
+    <div id="dashboard" class="hidden">
+
+        <!-- ─── Phase 3: Global Header ──────────────────────────────────── -->
+        <header id="heroHeader" class="w-full sticky top-0 z-30" style="background:var(--header-bg);border-bottom:1px solid var(--primary-accent);">
+            <div class="max-w-6xl mx-auto flex items-center justify-between px-6 py-3">
+                <!-- Brand -->
+                <div class="flex items-center gap-3">
+                    <div class="h-9 w-9 rounded-lg flex items-center justify-center text-white font-bold text-lg shadow-lg"
+                         style="background:linear-gradient(135deg,var(--accent-hover),var(--primary-accent))">L</div>
+                    <div>
+                        <p class="text-sm font-bold tracking-tight leading-none" style="color:var(--text-primary)">Lone Ranger Estimator</p>
+                        <p class="text-[10px] tracking-wide uppercase" style="color:var(--text-muted)">Voice Ledger · SaaS</p>
+                    </div>
+                </div>
+                <!-- Right side: phone badge + gear + date + logout -->
+                <div class="flex items-center gap-3">
+                    <!-- /api/me badge -->
+                    <span id="phoneBadge"
+                        class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold"
+                        style="background:rgba(82,24,128,.35);border:1px solid var(--primary-accent);color:var(--text-accent);">
+                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse inline-block"></span>
+                        <span id="phoneBadgeText">…</span>
+                    </span>
+                    <!-- Settings Gear Icon Button -->
+                    <button id="settingsBtn" class="p-1 rounded-lg hover:bg-purple-900/40 text-lg transition-colors focus:outline-none" style="color:var(--text-accent);border:1px solid transparent;" title="Settings">⚙️</button>
+                    <span id="dateText" class="text-[11px] hidden sm:block" style="color:var(--text-muted)"></span>
+                    <button id="logoutBtn" class="text-xs transition-colors hover:text-red-400" style="color:var(--text-muted)">↩ Logout</button>
+                </div>
+            </div>
+        </header>
+
+        <!-- ─── Main Content ─────────────────────────────────────────────── -->
+        <main class="max-w-6xl mx-auto px-4 sm:px-6 py-8">
+
+            <!-- Global Loading Indicator -->
+            <div id="loadingIndicator" class="hidden flex-col items-center justify-center py-6 fade-in">
+                <div class="relative h-10 w-10">
+                    <div class="absolute inset-0 rounded-full border-2" style="border-color:rgba(192,132,252,.2)"></div>
+                    <div class="absolute inset-0 rounded-full border-2 border-transparent border-t-purple-400 animate-spin"></div>
+                </div>
+                <p id="loadingText" class="mt-3 text-sm font-medium" style="color:var(--text-muted)">Processing with Gemini AI…</p>
+            </div>
+
+            <!-- Error Banner -->
+            <div id="errorContainer" class="hidden fade-in mb-6">
+                <div class="rounded-xl p-4 flex items-start gap-3"
+                     style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.25)">
+                    <svg class="w-5 h-5 text-red-400 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+                    </svg>
+                    <p id="errorText" class="text-sm text-red-300"></p>
+                </div>
+            </div>
+
+            <!-- ─── Phase 3: Responsive 2-Column Dashboard Grid ───────────── -->
+            <div class="dash-grid">
+
+                <!-- ════ LEFT COLUMN ═══════════════════════════════════════ -->
+                <div class="flex flex-col gap-6">
+
+                    <!-- Voice Card -->
+                    <section id="inputSection" class="card p-6 flex flex-col items-center text-center space-y-5">
+                        <div class="w-10 h-10 rounded-full flex items-center justify-center"
+                             style="background:rgba(82,24,128,.35)">
+                            <svg class="w-5 h-5" style="color:var(--text-accent)" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <h2 class="text-base font-semibold" style="color:var(--text-primary)">Voice Capture</h2>
+                            <p class="text-sm mt-1" style="color:var(--text-muted)">Tap the mic and describe the job scope.</p>
+                        </div>
+
+                        <!-- Phase 5: Mic button with halo state -->
+                        <button id="recordBtn"
+                            class="relative h-24 w-24 rounded-full text-white shadow-lg flex items-center justify-center transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2"
+                            style="background:linear-gradient(135deg,var(--accent-hover),var(--primary-accent));focus-ring-color:var(--text-accent)">
+                            <svg id="micIcon" class="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
+                            </svg>
+                            <svg id="stopIcon" class="w-8 h-8 hidden" fill="currentColor" viewBox="0 0 24 24">
+                                <rect x="6" y="6" width="12" height="12" rx="2"/>
+                            </svg>
+                        </button>
+                        <p id="micStatus" class="text-xs font-medium uppercase tracking-widest" style="color:var(--text-muted)">Tap to Record</p>
+
+                        <!-- Text Input (inside same card) -->
+                        <div class="w-full border-t pt-5 space-y-3" style="border-color:var(--primary-accent)">
+                            <h3 class="text-sm font-semibold text-left" style="color:var(--text-primary)">Text Input</h3>
+                            <textarea id="textInput" rows="4"
+                                placeholder="e.g. Bathroom remodel: 50 sq ft of tile, grout, 1 plumber for 4 hours..."
+                                class="w-full rounded-xl px-4 py-3 text-sm resize-none focus:outline-none transition-all"
+                                style="background:#1a0729;border:1px solid var(--primary-accent);color:var(--text-primary);"></textarea>
+                            <button id="textBtn"
+                                class="w-full py-2.5 rounded-xl text-white font-semibold text-sm shadow-lg active:scale-[.98] transition-all focus:outline-none"
+                                style="background:linear-gradient(135deg,var(--primary-accent),var(--accent-hover))">
+                                Add to Ledger
+                            </button>
+                        </div>
+                    </section>
+
+                    <!-- Scope of Work Editor Card -->
+                    <section id="scopeOfWorkCard" class="card p-6 space-y-3">
+                        <div class="flex items-center justify-between">
+                            <h2 class="text-base font-semibold" style="color:var(--text-primary)">Scope of Work</h2>
+                        </div>
+                        <textarea id="scopeInput" rows="4" maxlength="500"
+                            placeholder="A professional summary of the project scope..."
+                            class="w-full rounded-xl px-4 py-3 text-sm resize-none focus:outline-none transition-all"
+                            style="background:var(--card-bg);border:1px solid var(--primary-accent);color:var(--text-primary);"></textarea>
+                        <div class="flex justify-end">
+                            <span id="scopeCharCounter" class="text-xs" style="color:var(--text-muted)">0 / 500</span>
+                        </div>
+                    </section>
+
+                    <!-- Client Details Card -->
+                    <section id="clientDetailsCard" class="card p-6 space-y-3">
+                        <div class="flex items-center justify-between">
+                            <h2 class="text-base font-semibold" style="color:var(--text-primary)">Client Details</h2>
+                        </div>
+                        <div class="space-y-3">
+                            <div class="flex flex-col space-y-1">
+                                <label class="text-xs font-semibold" style="color:var(--text-muted)">Client Name</label>
+                                <input type="text" id="clientNameInput" placeholder="Homeowner or Business Name"
+                                    style="background: var(--card-bg); color: var(--text-primary); border: 1px solid var(--primary-accent); border-radius: 6px; padding: 10px; width: 100%; box-sizing: border-box;">
+                            </div>
+                            <div class="flex flex-col space-y-1">
+                                <label class="text-xs font-semibold" style="color:var(--text-muted)">Client Address</label>
+                                <input type="text" id="clientAddressInput" placeholder="412 Pine Creek Rd, Rhinelander, WI"
+                                    style="background: var(--card-bg); color: var(--text-primary); border: 1px solid var(--primary-accent); border-radius: 6px; padding: 10px; width: 100%; box-sizing: border-box;">
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- CSV Bulk Upload Card -->
+                    <section id="csvUploadSection" class="card p-6 space-y-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
+                                 style="background:rgba(82,24,128,.35)">
+                                <svg class="w-5 h-5" style="color:var(--text-accent)" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                                </svg>
+                            </div>
+                            <div>
+                                <h2 class="text-sm font-semibold" style="color:var(--text-primary)">Bulk Price Upload</h2>
+                                <p class="text-xs mt-0.5" style="color:var(--text-muted)">CSV columns: <code class="px-1 rounded" style="color:var(--text-accent);background:rgba(192,132,252,.1)">name</code> + <code class="px-1 rounded" style="color:var(--text-accent);background:rgba(192,132,252,.1)">price</code></p>
+                            </div>
+                        </div>
+
+                        <!-- Drop zone + file picker -->
+                        <label for="csvFileInput"
+                            class="flex items-center gap-2 px-4 py-3 rounded-xl cursor-pointer transition-colors group"
+                            style="background:#1a0729;border:1px solid var(--primary-accent)">
+                            <svg class="w-4 h-4 flex-shrink-0 transition-colors" style="color:var(--text-muted)" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/>
+                            </svg>
+                            <span id="csvFileName" class="text-xs truncate flex-1" style="color:var(--text-muted)">No file chosen — click to browse</span>
+                            <input type="file" id="csvFileInput" accept=".csv,text/csv" class="hidden"
+                                onchange="document.getElementById('csvFileName').textContent = this.files[0]?.name || 'No file chosen'">
+                        </label>
+
+                        <!-- Phase 5: Progress bar -->
+                        <div id="csvProgressWrap" class="hidden space-y-1">
+                            <div class="flex justify-between text-xs" style="color:var(--text-muted)">
+                                <span id="csvProgressLabel">Uploading…</span>
+                                <span id="csvProgressPct">0%</span>
+                            </div>
+                            <div class="h-1.5 rounded-full overflow-hidden" style="background:rgba(82,24,128,.3)">
+                                <div id="csvProgressBar" class="h-full rounded-full" style="width:0%;background:linear-gradient(90deg,var(--primary-accent),var(--accent-hover))"></div>
+                            </div>
+                        </div>
+
+                        <button id="csvUploadBtn" onclick="uploadPricingCSV()"
+                            class="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-white font-semibold text-sm shadow-lg active:scale-[.98] transition-all focus:outline-none"
+                            style="background:linear-gradient(135deg,var(--primary-accent),var(--accent-hover))">
+                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                            </svg>
+                            <span id="csvUploadBtnText">Upload Pricing CSV</span>
+                        </button>
+                        <p class="text-[11px]" style="color:var(--text-muted)">Max 5 MB. Duplicates overwrite. Applies immediately to all future estimates.</p>
+                    </section>
+                </div><!-- /left column -->
+
+                <!-- ════ RIGHT COLUMN ══════════════════════════════════════ -->
+                <div class="flex flex-col gap-6">
+
+                    <!-- Smart Material Ledger Card -->
+                    <section id="ledgerPanel" class="card overflow-hidden fade-in">
+                        <!-- Panel Header -->
+                        <div class="flex items-center justify-between px-6 py-4" style="border-bottom:1px solid var(--primary-accent)">
+                            <div class="flex items-center gap-3">
+                                <div class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
+                                <h2 class="text-sm font-semibold" style="color:var(--text-primary)">Saved Projects Switcher</h2>
+                                <span id="projectCount" class="text-xs px-2 py-0.5 rounded-full" style="background:rgba(82,24,128,.4);color:var(--text-muted)">0</span>
+                            </div>
+                            <button id="refreshBtn" class="flex items-center gap-1.5 text-xs transition-colors hover:text-purple-300 group" style="color:var(--text-muted)">
+                                <svg class="w-3.5 h-3.5 group-hover:rotate-180 transition-transform duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                                </svg>
+                                Refresh
+                            </button>
+                        </div>
+
+                        <!-- Empty state -->
+                        <div id="ledgerEmpty" class="px-6 py-10 text-center">
+                            <div class="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3"
+                                 style="background:rgba(82,24,128,.2)">
+                                <svg class="w-6 h-6" style="color:var(--text-muted)" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                </svg>
+                            </div>
+                            <p class="text-sm" style="color:var(--text-muted)">No active estimates loaded.</p>
+                            <p class="text-xs mt-1" style="color:rgba(155,89,208,.6)">Click "New Project" or pick an existing project to begin editing.</p>
+                        </div>
+
+                        <!-- Project selector (switcher UI) with prominent New Project button -->
+                        <div id="ledgerControls" class="hidden px-6 py-4 flex flex-col sm:flex-row sm:items-center gap-3" style="border-bottom:1px solid var(--primary-accent)">
+                            <label for="project-selector" class="text-xs font-medium whitespace-nowrap" style="color:var(--text-muted)">Project:</label>
+                            <select id="project-selector"
+                                class="flex-1 rounded-lg px-3 py-2 text-sm focus:outline-none cursor-pointer"
+                                style="background:#1a0729;border:1px solid var(--primary-accent);color:var(--text-primary)">
+                            </select>
+                            <button id="newProjectBtn" onclick="handleNewProjectClick()"
+                                class="px-4 py-2 rounded-xl text-white font-semibold text-xs shadow-lg active:scale-[.98] transition-all focus:outline-none"
+                                style="background:var(--primary-accent)">
+                                ➕ New Project
+                            </button>
+                        </div>
+
+                        <!-- Phase 4: Materials Table with 5 explicit columns -->
+                        <div id="ledgerTableWrap" class="hidden">
+                            <div class="overflow-x-auto">
+                                <table class="min-w-full text-sm" id="ledgerTable">
+                                    <thead>
+                                        <tr class="text-xs uppercase tracking-wider" style="background:rgba(82,24,128,.25);color:var(--text-muted)">
+                                            <th class="px-4 py-3 text-left font-semibold">Item Description</th>
+                                            <th class="px-3 py-3 text-right font-semibold w-16">Qty</th>
+                                            <th class="px-3 py-3 text-right font-semibold w-28">Unit Price</th>
+                                            <th class="px-3 py-3 text-center font-semibold w-32">Price Source</th>
+                                            <th class="px-3 py-3 text-right font-semibold w-28">Line Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="ledgerBody"></tbody>
+                                </table>
+                            </div>
+                            <!-- Rolling Total Ticker -->
+                            <div class="flex justify-end px-4 py-3" style="border-top:1px solid var(--primary-accent)">
+                                <div class="text-right">
+                                    <p class="text-xs uppercase tracking-widest mb-0.5" style="color:var(--text-muted)">Materials Subtotal</p>
+                                    <p id="ledgerTotal" class="text-2xl font-extrabold tracking-tight" style="color:var(--text-accent)">$0.00</p>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- PDF Execution Card -->
+                    <section id="invoiceContainer" class="hidden card overflow-hidden fade-in">
+                        <!-- Invoice Header -->
+                        <div class="px-6 py-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+                             style="background:var(--header-bg);border-bottom:1px solid var(--primary-accent)">
+                            <div>
+                                <div class="flex items-center gap-2 mb-1">
+                                    <div class="h-7 w-7 rounded-md flex items-center justify-center text-white font-bold text-xs"
+                                         style="background:linear-gradient(135deg,var(--accent-hover),var(--primary-accent))">L</div>
+                                    <h3 class="text-base font-bold" style="color:var(--text-primary)">Lone Ranger Estimator</h3>
+                                </div>
+                                <p class="text-[11px] uppercase tracking-wide ml-9" style="color:var(--text-muted)">Job Estimate — Review &amp; Edit</p>
+                            </div>
+                            <div class="text-right text-xs space-y-1 sm:ml-auto" style="color:var(--text-muted)">
+                                <p id="invoiceDate"></p>
+                                <input type="text" id="invoiceProject" placeholder="Project Name"
+                                    class="bg-transparent text-sm font-semibold text-right outline-none border border-transparent hover:border-purple-800/40 focus:border-purple-400 focus:ring-1 focus:ring-purple-400 rounded px-2 py-0.5 w-48 text-right"
+                                    style="color:var(--text-primary)">
+                            </div>
+                        </div>
+
+                        <div class="p-5 sm:p-6 space-y-6">
+                            <!-- Materials edit table -->
+                            <div>
+                                <div class="flex items-center justify-between mb-3">
+                                    <h4 class="text-xs font-bold uppercase tracking-widest" style="color:var(--text-muted)">Materials &amp; Items</h4>
+                                    <button onclick="addItemRow()" class="text-xs font-semibold transition-colors no-print" style="color:var(--text-accent)">➕ Add Material</button>
+                                </div>
+                                <div class="overflow-x-auto rounded-xl" style="border:1px solid var(--primary-accent)">
+                                    <table class="min-w-full text-sm">
+                                        <thead>
+                                            <tr class="text-xs uppercase tracking-wider" style="background:rgba(82,24,128,.25);color:var(--text-muted)">
+                                                <th class="px-4 py-3 text-left font-semibold">Material</th>
+                                                <th class="px-3 py-3 text-right font-semibold w-16">Qty</th>
+                                                <th class="px-3 py-3 text-left font-semibold w-20">Unit</th>
+                                                <th class="px-3 py-3 text-right font-semibold w-28">Unit Price</th>
+                                                <th class="px-3 py-3 text-center font-semibold w-32">Price Source</th>
+                                                <th class="px-3 py-3 text-right font-semibold w-28">Line Total</th>
+                                                <th class="px-2 py-3 w-8 no-print"></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="itemsBody" class="divide-y" style="border-color:rgba(82,24,128,.3)"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <!-- Labor edit table -->
+                            <div>
+                                <div class="flex items-center justify-between mb-3">
+                                    <h4 class="text-xs font-bold uppercase tracking-widest" style="color:var(--text-muted)">Labor</h4>
+                                    <button onclick="addLaborRow()" class="text-xs font-semibold transition-colors no-print" style="color:var(--text-accent)">➕ Add Labor</button>
+                                </div>
+                                <div class="overflow-x-auto rounded-xl" style="border:1px solid var(--primary-accent)">
+                                    <table class="min-w-full text-sm">
+                                        <thead>
+                                            <tr class="text-xs uppercase tracking-wider" style="background:rgba(82,24,128,.25);color:var(--text-muted)">
+                                                <th class="px-4 py-3 text-left font-semibold">Role / Task</th>
+                                                <th class="px-3 py-3 text-right font-semibold w-20">Hours</th>
+                                                <th class="px-3 py-3 text-right font-semibold w-28">Rate/hr</th>
+                                                <th class="px-3 py-3 text-right font-semibold w-28">Total</th>
+                                                <th class="px-2 py-3 w-8 no-print"></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="laborBody" class="divide-y" style="border-color:rgba(82,24,128,.3)"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <!-- Grand Total ticker -->
+                            <div class="flex justify-end">
+                                <div class="w-full sm:w-72 rounded-xl p-5 text-right" style="background:var(--header-bg);border:1px solid var(--primary-accent)">
+                                    <p class="text-xs uppercase tracking-widest mb-1" style="color:var(--text-muted)">Grand Total</p>
+                                    <p id="grandTotal" class="text-3xl font-extrabold tracking-tight" style="color:var(--text-accent)"></p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Phase 5: PDF Button State Machine & Deletion UI -->
+                        <div class="px-6 py-5 flex flex-col sm:flex-row items-center justify-between gap-4 no-print"
+                             style="border-top:1px solid var(--primary-accent)" id="emailBar">
+                            
+                            <!-- Inline Action Bar -->
+                            <div class="flex items-center gap-2">
+                                <button id="saveBtn" onclick="saveActiveEstimate()"
+                                    class="px-4 py-2.5 rounded-xl text-white font-semibold text-xs shadow-lg active:scale-[.98] transition-all focus:outline-none"
+                                    style="background:var(--primary-accent)">
+                                    💾 Save Project
+                                </button>
+                                <button id="deleteBtn" onclick="confirmDeleteEstimate()"
+                                    class="px-4 py-2.5 rounded-xl text-white font-semibold text-xs shadow-lg active:scale-[.98] transition-all focus:outline-none bg-red-950 border border-red-700 text-red-200 hover:bg-red-900/60">
+                                    🗑 Delete Project
+                                </button>
+
+                                <!-- Deletion Inline Confirm UI -->
+                                <div id="deleteConfirmBar" class="hidden flex items-center gap-2.5 bg-red-950/20 border border-red-800/40 p-1.5 rounded-xl">
+                                    <span class="text-xs text-red-300 font-semibold px-1">Are you sure?</span>
+                                    <button id="confirmDeleteBtn" onclick="deleteActiveEstimate()" class="px-3 py-1.5 rounded-lg text-white font-semibold text-xs bg-red-600 hover:bg-red-700 transition-colors">Yes, Delete It</button>
+                                    <button id="cancelDeleteBtn" onclick="hideDeleteConfirm()" class="px-3 py-1.5 rounded-lg text-purple-300 border border-purple-800/40 hover:bg-purple-950/40 font-semibold text-xs transition-colors">Cancel</button>
+                                </div>
+                            </div>
+
+                            <!-- State: default -->
+                            <button id="approveBtn" onclick="handleApproveAndEmail()"
+                                class="px-8 py-3 rounded-xl text-white font-semibold text-sm shadow-lg active:scale-[.98] transition-all focus:outline-none flex items-center gap-2"
+                                style="background:linear-gradient(135deg,#065f46,#047857)">
+                                <svg id="approveBtnIcon" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                                </svg>
+                                <span id="approveBtnText">Generate &amp; Email PDF Invoice</span>
+                            </button>
+                        </div>
+                    </section>
+
+                </div><!-- /right column -->
+            </div><!-- /dash-grid -->
+        </main>
+    </div><!-- /#dashboard -->
+
+    <!-- Settings Fullscreen Modal -->
+    <div id="settingsModal" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 sm:p-6" style="background: rgba(26,7,41,0.92); backdrop-filter: blur(8px);">
+        <div class="w-full max-w-2xl rounded-2xl p-6 sm:p-8 space-y-6 overflow-y-auto max-h-[90vh] shadow-2xl relative fade-in" 
+             style="background:var(--card-bg); border:1px solid var(--primary-accent); color:var(--text-primary);">
+            
+            <!-- Close Button -->
+            <button onclick="closeSettingsModal()" class="absolute top-4 right-4 text-xl hover:text-red-400 transition-colors focus:outline-none" title="Close">&times;</button>
+            
+            <!-- Header -->
+            <div>
+                <h2 class="text-xl font-bold" style="color:var(--text-primary)">Business Profile &amp; Settings</h2>
+                <p class="text-xs mt-1" style="color:var(--text-muted)">Customize your branding, dynamic markups, and default labor rates.</p>
+            </div>
+
+            <!-- Form -->
+            <form id="settingsForm" class="space-y-4" onsubmit="saveSettingsForm(event)">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <!-- Company Name -->
+                    <div class="flex flex-col space-y-1">
+                        <label class="text-xs font-semibold" style="color:var(--text-muted)">Company Name</label>
+                        <input type="text" id="settingsCompanyName" required placeholder="e.g. Lone Ranger Estimator"
+                            class="bg-[#1a0729] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
+                    </div>
+
+                    <!-- Contact Email -->
+                    <div class="flex flex-col space-y-1">
+                        <label class="text-xs font-semibold" style="color:var(--text-muted)">Contact Email</label>
+                        <input type="email" id="settingsContactEmail" required placeholder="e.g. billing@loneranger.com"
+                            class="bg-[#1a0729] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <!-- Company Address -->
+                    <div class="flex flex-col space-y-1">
+                        <label class="text-xs font-semibold" style="color:var(--text-muted)">Company Address</label>
+                        <input type="text" id="settingsCompanyAddress" placeholder="e.g. Wausau, WI 54401"
+                            class="bg-[#1a0729] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
+                    </div>
+
+                    <!-- License Number -->
+                    <div class="flex flex-col space-y-1">
+                        <label class="text-xs font-semibold" style="color:var(--text-muted)">License Number</label>
+                        <input type="text" id="settingsLicenseNumber" placeholder="e.g. Dw-123456"
+                            class="bg-[#1a0729] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
+                    </div>
+                </div>
+
+                <!-- Logo Section -->
+                <div class="border-t pt-4" style="border-color:rgba(192,132,252,0.25)">
+                    <label class="text-xs font-semibold" style="color:var(--text-muted)">Company Logo</label>
+                    <div class="flex items-center gap-4 mt-2">
+                        <!-- Preview Image -->
+                        <div class="h-16 w-32 border rounded-lg flex items-center justify-center overflow-hidden bg-black/20" style="border-color:var(--primary-accent);">
+                            <img id="settingsLogoPreview" src="" alt="No Logo" class="max-h-full max-w-full object-contain hidden" />
+                            <span id="settingsLogoPlaceholder" class="text-[10px] text-center px-2" style="color:var(--text-muted)">No Logo Uploaded</span>
+                        </div>
+                        <!-- Upload Button -->
+                        <div class="flex-1">
+                            <label class="px-4 py-2 border rounded-xl text-xs font-semibold cursor-pointer hover:bg-purple-900/20 transition-all inline-block" style="border-color:var(--primary-accent); color:var(--text-accent);">
+                                Choose Image...
+                                <input type="file" id="settingsLogoFileInput" accept="image/*" class="hidden" onchange="uploadLogoFile()">
+                            </label>
+                            <p class="text-[10px] mt-1" style="color:var(--text-muted)">PNG, JPG (Max 2MB). Automatically converted &amp; stored.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Numerical Settings Section -->
+                <div class="border-t pt-4 grid grid-cols-1 sm:grid-cols-3 gap-4" style="border-color:rgba(192,132,252,0.25)">
+                    <!-- Default Labor Rate -->
+                    <div class="flex flex-col space-y-1">
+                        <label class="text-xs font-semibold" style="color:var(--text-muted)">Default Labor Rate ($/hr)</label>
+                        <input type="number" id="settingsLaborRate" required min="0" step="0.1"
+                            class="bg-[#1a0729] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
+                    </div>
+
+                    <!-- Global Markup Percent -->
+                    <div class="flex flex-col space-y-1">
+                        <label class="text-xs font-semibold" style="color:var(--text-muted)">Global Markup (%)</label>
+                        <input type="number" id="settingsMarkupPercent" required min="0" step="0.1"
+                            class="bg-[#1a0729] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
+                    </div>
+
+                    <!-- Sales Tax Rate -->
+                    <div class="flex flex-col space-y-1">
+                        <label class="text-xs font-semibold" style="color:var(--text-muted)">Sales Tax Rate (%)</label>
+                        <input type="number" id="settingsTaxRate" required min="0" step="0.1"
+                            class="bg-[#1a0729] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
+                    </div>
+                </div>
+
+                <!-- Footer Actions -->
+                <div class="border-t pt-4 flex justify-end gap-3" style="border-color:rgba(192,132,252,0.25)">
+                    <button type="button" onclick="closeSettingsModal()" class="px-4 py-2 border rounded-xl text-xs font-semibold hover:bg-purple-900/20 transition-all" style="border-color:var(--primary-accent); color:var(--text-muted);">
+                        Cancel
+                    </button>
+                    <button type="submit" id="settingsSaveBtn" class="px-6 py-2 rounded-xl text-white font-semibold text-xs shadow-lg active:scale-[.98] transition-all flex items-center gap-1.5" style="background:linear-gradient(135deg,var(--primary-accent),var(--accent-hover))">
+                        <span id="settingsSaveBtnText">Save Configuration</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Contractor Setup Wizard Modal Overlay -->
+    <div id="onboardWizardModal" class="fixed inset-0 z-[9999] hidden items-center justify-center p-4 sm:p-6" style="background: rgba(26,7,41,0.95); backdrop-filter: blur(12px);">
+        <div class="w-full max-w-lg rounded-2xl p-6 sm:p-8 space-y-6 overflow-y-auto max-h-[90vh] shadow-2xl relative fade-in" 
+             style="background:var(--card-bg); border:1px solid var(--primary-accent); color:var(--text-primary);">
+            
+            <!-- Header -->
+            <div>
+                <h2 class="text-xl font-bold" style="color:var(--text-primary)">Configure Your Workspace</h2>
+                <p class="text-xs mt-1" style="color:var(--text-muted)">Set up your business info to enable dynamic calculations and custom branding.</p>
+            </div>
+
+            <!-- Onboarding Form -->
+            <form id="onboardWizardForm" class="space-y-4" onsubmit="submitOnboarding(event)">
+                
+                <!-- Business Email Address -->
+                <div class="flex flex-col space-y-1">
+                    <label class="text-xs font-semibold" style="color:var(--text-muted)">Business Email Address</label>
+                    <input type="email" id="onboardContactEmail" required placeholder="contractor@company.com"
+                        class="bg-[#1a0729] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
+                </div>
+
+                <!-- Shop/Field Address -->
+                <div class="flex flex-col space-y-1">
+                    <label class="text-xs font-semibold" style="color:var(--text-muted)">Shop / Field Address</label>
+                    <input type="text" id="onboardCompanyAddress" required placeholder="1230 Nantasket St, Antigo, WI"
+                        class="bg-[#1a0729] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <!-- Standard Hourly Labor Rate -->
+                    <div class="flex flex-col space-y-1">
+                        <label class="text-xs font-semibold" style="color:var(--text-muted)">Standard Hourly Labor Rate ($/hr)</label>
+                        <input type="number" id="onboardLaborRate" required value="55" min="0" step="1"
+                            class="bg-[#1a0729] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
+                    </div>
+
+                    <!-- License Number Field (Optional) -->
+                    <div class="flex flex-col space-y-1">
+                        <label class="text-xs font-semibold" style="color:var(--text-muted)">License Number (Optional)</label>
+                        <input type="text" id="onboardLicenseNumber" placeholder="WI Contractor License # (optional)"
+                            class="bg-[#1a0729] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
+                    </div>
+                </div>
+
+                <!-- Footer Actions -->
+                <div class="border-t pt-4 flex justify-end" style="border-color:rgba(192,132,252,0.25)">
+                    <button type="submit" id="onboardSubmitBtn" class="w-full py-2.5 rounded-xl text-white font-semibold text-xs shadow-lg active:scale-[.98] transition-all flex items-center justify-center gap-1.5" style="background:linear-gradient(135deg,var(--primary-accent),var(--accent-hover))">
+                        <span id="onboardSubmitBtnText">Complete Profile & Launch</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ─── Self-Serve Onboarding Engine ─────────────────────────────────── -->
+    <div id="onboardingModal" class="fixed inset-0 z-[9999] hidden items-center justify-center p-4 sm:p-6" style="background: rgba(26,7,41,0.95); backdrop-filter: blur(12px);">
+        <div class="w-full max-w-md rounded-2xl p-6 sm:p-8 space-y-6 shadow-2xl relative fade-in text-center" 
+             style="background:var(--card-bg); border:1px solid var(--primary-accent); color:var(--text-primary);">
+            
+            <!-- Icon -->
+            <div class="h-16 w-16 rounded-2xl flex items-center justify-center text-white font-bold text-3xl mx-auto shadow-lg"
+                 style="background:linear-gradient(135deg,var(--accent-hover),var(--primary-accent))">
+                🚀
+            </div>
+
+            <!-- Content -->
+            <div class="space-y-2">
+                <h2 class="text-xl font-bold" style="color:var(--text-primary); font-family: 'Outfit', sans-serif;">Create Your Workspace</h2>
+                <p class="text-sm" style="color:var(--text-muted)">Welcome! Let's set up your premium estimating environment. Your phone number acts as your secure login and allows us to verify your identity.</p>
+            </div>
+
+            <!-- Form -->
+            <form id="onboardingRegisterForm" class="space-y-4 text-left" onsubmit="submitRegistration(event)">
+                <div class="flex flex-col space-y-1">
+                    <label class="text-xs font-semibold" style="color:var(--text-muted)">Company Name</label>
+                    <input type="text" id="regCompanyName" required placeholder="e.g. Lone Ranger Estimator"
+                        class="bg-[#1a0729] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
+                </div>
+                <div class="flex flex-col space-y-1">
+                    <label class="text-xs font-semibold" style="color:var(--text-muted)">Mobile Phone Number</label>
+                    <input type="tel" id="regPhone" required placeholder="(555) 123-4567"
+                        class="bg-[#1a0729] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
+                </div>
+
+                <div class="flex items-start gap-2 mt-2">
+                    <input type="checkbox" id="regSmsConsent" required class="mt-1 flex-shrink-0" style="accent-color: var(--primary-accent);">
+                    <label for="regSmsConsent" class="text-[10px] leading-tight" style="color:var(--text-muted)">
+                        By providing your phone number and checking this box, you agree to receive SMS verification codes and account-related notifications from Lone Ranger Estimator. Message frequency varies. Msg & data rates may apply. Reply STOP to opt out or HELP for support.
+                        <br>
+                        <a href="/privacy.html" target="_blank" class="underline hover:text-purple-300 transition-colors">Privacy Policy</a> &middot; <a href="/terms.html" target="_blank" class="underline hover:text-purple-300 transition-colors">Terms of Service</a>
+                    </label>
+                </div>
+
+                <button type="submit" id="regSubmitBtn" class="w-full py-3 mt-2 rounded-xl text-white font-semibold text-sm shadow-lg active:scale-[.98] transition-all flex items-center justify-center gap-2" style="background:linear-gradient(135deg,var(--primary-accent),var(--accent-hover))">
+                    <span id="regSubmitBtnText">Create Workspace</span>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- ─── OTP Verification Modal ─────────────────────────────────────── -->
+    <div id="otpModal" class="fixed inset-0 z-[9999] hidden flex items-center justify-center p-4 sm:p-6" style="background: rgba(26,7,41,0.95); backdrop-filter: blur(12px);">
+        <div class="w-full max-w-md rounded-2xl p-6 sm:p-8 space-y-6 shadow-2xl relative fade-in text-center" 
+             style="background:var(--card-bg); border:1px solid var(--primary-accent); color:var(--text-primary);">
+            
+            <div class="space-y-2">
+                <h2 class="text-xl font-bold" style="color:var(--text-primary); font-family: 'Outfit', sans-serif;">Verify Your Phone</h2>
+                <p class="text-sm" style="color:var(--text-muted)">We sent a 6-digit code to your phone number.</p>
+            </div>
+
+            <form id="otpForm" class="space-y-4 text-left" onsubmit="verifyOTP(event)">
+                <div class="flex flex-col space-y-1">
+                    <label class="text-xs font-semibold" style="color:var(--text-muted)">Verification Code</label>
+                    <input type="text" id="otpInput" required placeholder="123456" maxlength="6"
+                        class="bg-[#1a0729] border rounded-xl px-3 py-2 text-sm focus:outline-none text-center tracking-[0.5em] font-mono text-lg" style="border-color:var(--primary-accent); color:var(--text-primary);">
+                </div>
+
+                <button type="submit" id="otpSubmitBtn" class="w-full py-3 mt-2 rounded-xl text-white font-semibold text-sm shadow-lg active:scale-[.98] transition-all flex items-center justify-center gap-2" style="background:linear-gradient(135deg,var(--primary-accent),var(--accent-hover))">
+                    <span id="otpSubmitBtnText">Verify Phone Number</span>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- ─── Stripe Subscription Gatekeeper Modal ───────────────────────── -->
+    <div id="subscriptionGateModal" class="fixed inset-0 z-[9999] hidden flex items-center justify-center p-4 sm:p-6" style="background: rgba(26,7,41,0.95); backdrop-filter: blur(12px);">
+        <div class="w-full max-w-md rounded-2xl p-6 sm:p-8 space-y-6 shadow-2xl relative fade-in text-center" 
+             style="background:var(--card-bg); border:1px solid var(--primary-accent); color:var(--text-primary);">
+            
+            <!-- Icon -->
+            <div class="h-16 w-16 rounded-2xl flex items-center justify-center text-white font-bold text-3xl mx-auto shadow-lg"
+                 style="background:linear-gradient(135deg,var(--accent-hover),var(--primary-accent))">
+                💳
+            </div>
+
+            <!-- Content -->
+            <div class="space-y-2">
+                <h2 class="text-xl font-bold" style="color:var(--text-primary); font-family: 'Outfit', sans-serif;">Unlock Premium Estimating</h2>
+                <p class="text-sm" style="color:var(--text-muted)">Your free trial has ended. Subscribe to continue generating estimates.</p>
+            </div>
+
+            <!-- Subscribe Action -->
+            <button id="subscribeBtn" onclick="handleSubscribeClick()"
+                class="w-full py-3 rounded-xl text-white font-semibold text-sm shadow-lg active:scale-[.98] transition-all flex items-center justify-center gap-2"
+                style="background:linear-gradient(135deg,var(--primary-accent),var(--accent-hover))">
+                <span id="subscribeBtnText">Subscribe Now — $49/month</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- ─── Change Order Modal ───────────────────────────────────────────── -->
+    <div id="changeOrderModal" class="fixed inset-0 z-[9990] hidden flex items-center justify-center p-4" style="background:rgba(26,7,41,0.92);backdrop-filter:blur(10px);">
+        <div class="w-full max-w-lg rounded-2xl shadow-2xl fade-in" style="background:var(--card-bg);border:1px solid var(--primary-accent);max-height:90vh;overflow-y:auto;">
+            
+            <!-- Header -->
+            <div class="flex items-center justify-between p-5 border-b" style="border-color:var(--primary-accent);">
+                <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-sm" style="background:linear-gradient(135deg,#7c3aed,#521880)">📋</div>
+                    <div>
+                        <h2 class="font-bold text-sm" style="color:var(--text-primary)">New Change Order</h2>
+                        <p class="text-xs" style="color:var(--text-muted)">Estimate: <span id="coParentEstimateLabel">—</span></p>
+                    </div>
+                </div>
+                <button onclick="closeChangeOrderModal()" class="w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold hover:opacity-80 transition-opacity" style="background:rgba(255,255,255,0.08);color:var(--text-muted)">✕</button>
+            </div>
+
+            <!-- Intake Area -->
+            <div class="p-5 space-y-4" id="coIntakeSection">
+                <p class="text-xs" style="color:var(--text-muted)">Dictate or type what changed — added materials, labor, and exclusions. Gemini AI will extract and price the delta.</p>
+
+                <!-- Textarea -->
+                <textarea id="coTextInput" rows="5" placeholder="e.g. Add 12 sheets of 3/4 inch ACX plywood, 6 hours of additional framing labor at $65/hr. Does not include painting."
+                    class="w-full rounded-xl px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2"
+                    style="background:rgba(255,255,255,0.05);border:1px solid rgba(124,58,237,0.4);color:var(--text-primary);--tw-ring-color:#7c3aed;"></textarea>
+
+                <!-- Voice Dictation Row -->
+                <div class="flex items-center gap-3">
+                    <button id="coRecordBtn" onclick="toggleCoRecording()" class="flex items-center gap-2 px-4 py-2.5 rounded-xl text-white text-xs font-semibold transition-all" style="background:linear-gradient(135deg,#7c3aed,#521880);">
+                        <svg id="coMicIcon" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 016 0v6a3 3 0 01-3 3z"/></svg>
+                        <svg id="coStopIcon" class="w-4 h-4 hidden" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+                        <span id="coMicStatus">Dictate Change</span>
+                    </button>
+                    <span class="text-xs" style="color:var(--text-muted)">Voice will auto-fill the text area above</span>
+                </div>
+
+                <!-- Generate Button -->
+                <button id="coGenerateBtn" onclick="generateChangeOrder()" class="w-full py-3 rounded-xl text-white font-bold text-sm transition-all flex items-center justify-center gap-2" style="background:linear-gradient(135deg,#521880,#7c3aed);">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                    <span id="coGenerateBtnText">Generate Change Order with AI</span>
+                </button>
+            </div>
+
+            <!-- Result Section (revealed after successful generation) -->
+            <div id="coResultSection" class="hidden p-5 pt-0 space-y-4">
+                <div class="rounded-xl p-4" style="background:linear-gradient(135deg,#521880,#7c3aed);">
+                    <div class="text-xs text-purple-200 uppercase tracking-wider font-semibold mb-1">Change Order Total</div>
+                    <div id="coTotalDisplay" class="text-2xl font-black text-white">$0.00</div>
+                    <div id="coSummaryDisplay" class="text-xs text-purple-300 mt-1"></div>
+                </div>
+
+                <!-- Items Preview -->
+                <div id="coItemsPreview" class="text-xs space-y-1" style="color:var(--text-muted);">
+                    <!-- populated by JS -->
+                </div>
+
+                <!-- Exclusions Preview -->
+                <div id="coExclusionsWrap" class="hidden rounded-lg px-3 py-2 text-xs" style="background:rgba(185,28,28,0.1);border:1px solid rgba(185,28,28,0.3);color:#fca5a5;">
+                    <span class="font-semibold">Exclusions: </span><span id="coExclusionsText"></span>
+                </div>
+
+                <!-- SMS Dispatch Section -->
+                <div class="flex flex-col space-y-2.5 pt-3" style="border-top:1px solid rgba(192,132,252,0.2)">
+                    <p class="text-xs font-semibold" style="color:var(--text-primary)">📲 Send to Client via SMS</p>
+                    <div class="flex items-center gap-2">
+                        <input type="tel" id="coClientPhone" placeholder="(555) 123-4567"
+                            class="flex-1 bg-[#1a0729] border rounded-lg px-3 py-1.5 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
+                        <button id="coSendBtn" onclick="sendChangeOrderSMS()" class="px-4 py-2 rounded-lg text-white text-xs font-bold transition-all flex items-center gap-1.5" style="background:linear-gradient(135deg,#065f46,#059669);">
+                            <span id="coSendBtnText">Send</span>
+                        </button>
+                    </div>
+                    <div class="flex items-start gap-2 mt-1">
+                        <input type="checkbox" id="coClientConsent" class="mt-0.5 flex-shrink-0" style="accent-color: var(--primary-accent);">
+                        <label for="coClientConsent" class="text-[10px] leading-tight" style="color:var(--text-muted)">
+                            I confirm that the client has provided consent to receive SMS notifications related to this project. SMS is used for project-related notifications only. Clients may reply STOP to opt out.
+                        </label>
+                    </div>
+                </div>
+
+                <!-- New CO button -->
+                <button onclick="resetCoModal()" class="w-full py-2.5 rounded-xl text-xs font-semibold transition-all" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:var(--text-muted);">
+                    + Create Another Change Order
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ══════════════════════════════════════════════════════════════════
+        //  STATE
+        // ══════════════════════════════════════════════════════════════════
+
+        let currentEstimateId  = null;
+        let isDirty            = false;
+        let pendingSwitchId    = null;
+        let editableProject    = { materials: [], labor: [], client_name: null, client_address: null, scope_of_work: null };
+        window.userSettings    = null;
+        
+        // ── Change Order State ─────────────────────────────────────────────
+        let _coParentEstimateId = null;
+        let _coChangeOrderId    = null;
+        let _coRecording        = false;
+        let _coMediaRecorder    = null;
+        let _coAudioChunks      = [];
+        let authBearerToken     = localStorage.getItem('authBearerToken') || null;
+
+        // Ticker tracking
+        let _totalTickerRaf = null;
+        let _currentDisplayedTotal = 0;
+
+        // ── Fetch Interceptor for 401/403 Handling ────────────────────────────
+        const originalFetch = window.fetch;
+        window.fetch = async function(...args) {
+            const response = await originalFetch.apply(this, args);
+            if (response.status === 401) {
+                localStorage.removeItem('authBearerToken');
+                authBearerToken = null;
+                document.getElementById('dashboard').classList.add('hidden');
+                document.getElementById('loginGate').classList.remove('hidden');
+                showToast('Session expired. Please sign in again.', 'error');
+            } else if (response.status === 403 || response.status === 404) {
+                // If backend throws 403 (Email not registered), prompt self-serve onboarding
+                if (!document.getElementById('onboardingModal').classList.contains('flex')) {
+                    document.getElementById('loginGate').classList.add('hidden');
+                    document.getElementById('dashboard').classList.add('hidden');
+                    document.getElementById('onboardingModal').classList.remove('hidden');
+                    document.getElementById('onboardingModal').classList.add('flex');
+                }
+            }
+            return response;
+        };
+
+
+        // ── DOM refs ──────────────────────────────────────────────────────
+        const loginGate       = document.getElementById('loginGate');
+        const dashboard       = document.getElementById('dashboard');
+        const loginError      = document.getElementById('loginError');
+        const logoutBtn       = document.getElementById('logoutBtn');
+        const recordBtn       = document.getElementById('recordBtn');
+        const micIcon         = document.getElementById('micIcon');
+        const stopIcon        = document.getElementById('stopIcon');
+        const micStatus       = document.getElementById('micStatus');
+        const textInput       = document.getElementById('textInput');
+        const textBtn         = document.getElementById('textBtn');
+        const scopeInput      = document.getElementById('scopeInput');
+        const scopeCharCounter = document.getElementById('scopeCharCounter');
+        const clientNameInput   = document.getElementById('clientNameInput');
+        const clientAddressInput = document.getElementById('clientAddressInput');
+        const loadingEl       = document.getElementById('loadingIndicator');
+        const loadingText     = document.getElementById('loadingText');
+        const errorEl         = document.getElementById('errorContainer');
+        const errorTextEl     = document.getElementById('errorText');
+        const invoiceEl       = document.getElementById('invoiceContainer');
+        const approveBtn      = document.getElementById('approveBtn');
+        const approveBtnText  = document.getElementById('approveBtnText');
+        const approveBtnIcon  = document.getElementById('approveBtnIcon');
+        const projectSelector = document.getElementById('project-selector');
+        const settingsBtn     = document.getElementById('settingsBtn');
+        const ledgerEmpty     = document.getElementById('ledgerEmpty');
+        const ledgerControls  = document.getElementById('ledgerControls');
+        const ledgerTableWrap = document.getElementById('ledgerTableWrap');
+        const projectCountEl  = document.getElementById('projectCount');
+        const refreshBtn      = document.getElementById('refreshBtn');
+        const phoneBadge      = document.getElementById('phoneBadge');
+        const phoneBadgeText  = document.getElementById('phoneBadgeText');
+
+        let mediaRecorder, audioChunks = [], isRecording = false;
+
+        // ── Date display ──────────────────────────────────────────────────
+        const today = new Date().toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' });
+        document.getElementById('dateText').textContent = today;
+
+        // ══════════════════════════════════════════════════════════════════
+        //  TOAST NOTIFICATIONS
+        // ══════════════════════════════════════════════════════════════════
+
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+
+            const styles = {
+                success: { bg: '#14532d', border: '#22c55e',  text: '#86efac', icon: '✓' },
+                error:   { bg: '#450a0a', border: '#ef4444',  text: '#fca5a5', icon: '✕' },
+                info:    { bg: '#2e1065', border: '#7c3aed',  text: '#c4b5fd', icon: 'ℹ' },
+            };
+            const s = styles[type] || styles.info;
+
+            toast.className = 'toast-enter pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium max-w-xs shadow-2xl';
+            toast.style.cssText = `background:${s.bg};border:1px solid ${s.border};color:${s.text}`;
+            toast.innerHTML = `<span class="font-bold text-base">${s.icon}</span><span>${message}</span>`;
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.classList.remove('toast-enter');
+                toast.classList.add('toast-exit');
+                setTimeout(() => toast.remove(), 320);
+            }, 4000);
+        }
+
+        // ══════════════════════════════════════════════════════════════════
+        //  LOGIN / AUTH GATE
+        // ══════════════════════════════════════════════════════════════════
+
+        function showLoginError(msg) { loginError.textContent = msg; loginError.classList.remove('hidden'); }
+        function clearLoginError()   { loginError.classList.add('hidden'); }
+
+        function normalizePhoneClient(raw) { return raw.replace(/[\s\-(). ]/g, ''); }
+
+        let pendingRegistrationPhone = '';
+
+        // ── Self-Serve Registration ───────────────────────────────────────
+        async function submitRegistration(e) {
+            e.preventDefault();
+            const companyName = document.getElementById('regCompanyName').value.trim();
+            const phone = document.getElementById('regPhone').value.trim();
+            const btnText = document.getElementById('regSubmitBtnText');
+            
+            if (!companyName || !phone) return;
+            if (!authBearerToken) {
+                showToast('Authentication error. Please refresh.', 'error');
+                return;
+            }
+
+            btnText.textContent = 'Provisioning...';
+            try {
+                const resp = await fetch('/api/auth/register', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authBearerToken}`
+                    },
+                    body: JSON.stringify({ company_name: companyName, phone: phone })
+                });
+
+                const data = await resp.json();
+                if (resp.status === 202) {
+                    pendingRegistrationPhone = phone;
+                    document.getElementById('onboardingModal').classList.add('hidden');
+                    document.getElementById('onboardingModal').classList.remove('flex');
+                    document.getElementById('otpModal').classList.remove('hidden');
+                    document.getElementById('otpModal').classList.add('flex');
+                    showToast('OTP sent to your phone.', 'success');
+                } else if (resp.ok) {
+                    document.getElementById('onboardingModal').classList.add('hidden');
+                    document.getElementById('onboardingModal').classList.remove('flex');
+                    showToast('Workspace Provisioned!', 'success');
+                    activateDashboard();
+                } else {
+                    showToast(data.error || 'Registration failed.', 'error');
+                }
+            } catch (err) {
+                showToast('Network error during registration.', 'error');
+            } finally {
+                btnText.textContent = 'Create Workspace';
+            }
+        }
+
+        async function verifyOTP(e) {
+            e.preventDefault();
+            const otp = document.getElementById('otpInput').value.trim();
+            const btnText = document.getElementById('otpSubmitBtnText');
+
+            if (!otp || !pendingRegistrationPhone) return;
+
+            btnText.textContent = 'Verifying...';
+            try {
+                const resp = await fetch('/api/auth/verify-otp', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authBearerToken}` },
+                    body: JSON.stringify({ phone: pendingRegistrationPhone, otp: otp })
+                });
+
+                const data = await resp.json();
+                if (resp.ok) {
+                    document.getElementById('otpModal').classList.add('hidden');
+                    document.getElementById('otpModal').classList.remove('flex');
+                    showToast('Phone Verified!', 'success');
+                    showOnboardingWizard();
+                } else {
+                    showToast(data.error || 'Invalid or expired code. Please try again.', 'error');
+                }
+            } catch (err) {
+                showToast('Network error during verification.', 'error');
+            } finally {
+                btnText.textContent = 'Verify Phone Number';
+            }
+        }
+
+        async function handleGoogleLogin(response) {
+            if (!response.credential) {
+                showLoginError('Google Sign-In failed.');
+                return;
+            }
+            clearLoginError();
+            authBearerToken = response.credential;
+            localStorage.setItem('authBearerToken', authBearerToken);
+            try {
+                await activateDashboard();
+            } catch (err) { showLoginError('Could not reach server: ' + err.message); }
+        }
+
+        async function activateDashboard() {
+            loginGate.classList.add('hidden');
+            
+            // Load user settings profile to determine state
+            const profileStatus = await loadSettingsProfile();
+            
+            if (profileStatus === 'unauthorized') {
+                return;
+            }
+            if (profileStatus === 'unonboarded' || !profileStatus) {
+                dashboard.classList.add('hidden');
+                document.getElementById('onboardingModal').classList.remove('hidden');
+                document.getElementById('onboardingModal').classList.add('flex');
+                return;
+            }
+
+            dashboard.classList.remove('hidden');
+            initAudio();
+            
+            // Header badge fetch
+            try {
+                const r = await fetch(`/api/me`, { headers: { 'Authorization': `Bearer ${authBearerToken}` } });
+                if (r.ok) {
+                    const d = await r.json();
+                    phoneBadgeText.textContent = d.phone;
+                    phoneBadge.classList.remove('hidden');
+                }
+            } catch (_) {}
+
+            // Populate switcher & decide initial load based on URL hash
+            await fetchAndRenderEstimates();
+
+            const params = new URLSearchParams(window.location.search);
+            const hasSessionId = params.has('session_id');
+
+            if (!window.userSettings || !window.userSettings.isOnboarded) {
+                showOnboardingWizard();
+                hideSubscriptionGate();
+            } else {
+                hideOnboardingWizard();
+                if (window.userSettings.active_subscription === true) {
+                    hideSubscriptionGate();
+                    if (hasSessionId) {
+                        const newUrl = '/dashboard' + window.location.hash;
+                        window.history.replaceState({}, document.title, newUrl);
+                        showToast('Subscription activated! Welcome to Lone Ranger Estimator.', 'success');
+                    }
+                } else if (hasSessionId) {
+                    // Stripe Webhook Race Condition: Optimistic non-blocking loading state
+                    hideSubscriptionGate();
+                    showToast('Activating workspace tokens... Please wait.', 'info');
+                    
+                    let attempts = 0;
+                    const maxAttempts = 10;
+                    const intervalId = setInterval(async () => {
+                        attempts++;
+                        console.log(`Polling subscription status... Attempt ${attempts}/${maxAttempts}`);
+                        try {
+                            await loadSettingsProfile();
+                            if (window.userSettings && window.userSettings.active_subscription === true) {
+                                clearInterval(intervalId);
+                                hideSubscriptionGate();
+                                const newUrl = '/dashboard' + window.location.hash;
+                                window.history.replaceState({}, document.title, newUrl);
+                                showToast('Subscription activated! Welcome to Lone Ranger Estimator.', 'success');
+                            } else if (attempts >= maxAttempts) {
+                                clearInterval(intervalId);
+                                showSubscriptionGate();
+                                showToast('✕ Subscription verification timed out. Please refresh or contact support.', 'error');
+                            }
+                        } catch (err) {
+                            console.error('Polling error:', err);
+                            if (attempts >= maxAttempts) {
+                                clearInterval(intervalId);
+                                showSubscriptionGate();
+                            }
+                        }
+                    }, 2000);
+                } else {
+                    showSubscriptionGate();
+                }
+            }
+        }
+
+        settingsBtn.addEventListener('click', openSettingsModal);
+
+        logoutBtn.addEventListener('click', () => {
+            localStorage.removeItem('authBearerToken');
+            authBearerToken = null;
+            currentEstimateId = null;
+            isDirty = false;
+            editableProject = { materials: [], labor: [], client_name: null, client_address: null, scope_of_work: null };
+            scopeInput.value = '';
+            scopeCharCounter.textContent = '0 / 500';
+            clientNameInput.value = '';
+            clientAddressInput.value = '';
+            hideOnboardingWizard();
+            hideSubscriptionGate();
+            dashboard.classList.add('hidden');
+            loginGate.classList.remove('hidden');
+            clearLoginError();
+            phoneBadge.classList.add('hidden');
+            window.location.hash = '';
+        });
+
+        // ══════════════════════════════════════════════════════════════════
+        //  HASH-BASED ACTIVE ESTIMATE TRACKING & SWAP
+        // ══════════════════════════════════════════════════════════════════
+
+        // Project Switcher UI changed handler
+        projectSelector.addEventListener('change', () => {
+            const targetVal = projectSelector.value;
+            // Instantly revert selector display to active project until transition checks pass
+            projectSelector.value = currentEstimateId || '';
+            if (targetVal) {
+                handleProjectSwitchAttempt(targetVal);
+            }
+        });
+
+        function handleNewProjectClick() {
+            handleProjectSwitchAttempt(null);
+        }
+
+        function handleProjectSwitchAttempt(targetId) {
+            if (isDirty) {
+                pendingSwitchId = targetId;
+                document.getElementById('dirtyConfirmModal').classList.remove('hidden');
+            } else {
+                executeProjectSwitch(targetId);
+            }
+        }
+
+        function handleDirtyCancel() {
+            document.getElementById('dirtyConfirmModal').classList.add('hidden');
+            pendingSwitchId = null;
+            projectSelector.value = currentEstimateId || '';
+        }
+
+        function handleDirtyDiscard() {
+            document.getElementById('dirtyConfirmModal').classList.add('hidden');
+            isDirty = false;
+            const target = pendingSwitchId;
+            pendingSwitchId = null;
+            executeProjectSwitch(target);
+        }
+
+        async function handleDirtySave() {
+            document.getElementById('dirtyConfirmModal').classList.add('hidden');
+            const saved = await saveActiveEstimate();
+            if (saved) {
+                isDirty = false;
+                const target = pendingSwitchId;
+                pendingSwitchId = null;
+                executeProjectSwitch(target);
+            } else {
+                projectSelector.value = currentEstimateId || '';
+            }
+        }
+
+        function executeProjectSwitch(targetId) {
+            if (targetId === null) {
+                createNewProject();
+            } else {
+                loadEstimate(targetId);
+            }
+        }
+
+        // ── Reset / New Project flow ─────────────────────────────────────
+        function createNewProject() {
+            currentEstimateId = null;
+            window.location.hash = '';
+            editableProject = { materials: [], labor: [], client_name: null, client_address: null, scope_of_work: null };
+
+            document.getElementById('invoiceProject').value = 'Untitled Project';
+            
+            scopeInput.value = '';
+            scopeCharCounter.textContent = '0 / 500';
+            clientNameInput.value = '';
+            clientAddressInput.value = '';
+            
+            animateGrandTotal(0);
+            animateLedgerTotal(0);
+
+            renderItemsTable();
+            renderLaborTable();
+            renderLedgerTable();
+
+            invoiceEl.classList.remove('hidden');
+            invoiceEl.classList.add('fade-in');
+
+            // Force refresh dropdown select options to prepend unsaved project label
+            fetchAndRenderEstimates(null);
+            
+            isDirty = false;
+            showToast('Created new project "Untitled Project"', 'info');
+        }
+
+        // ── Load single estimate ──────────────────────────────────────────
+        async function loadEstimate(id) {
+            if (!id || !authBearerToken) return;
+            showLoading(true, 'Loading project details…');
+            try {
+                const resp = await fetch(`/api/estimates/${id}`, { headers: { 'Authorization': `Bearer ${authBearerToken}` } });
+                if (!resp.ok) throw new Error(`Project load failed (${resp.status})`);
+                
+                const data = await resp.json();
+                currentEstimateId = id;
+                window.location.hash = 'est-' + id;
+
+                const rawItems = data.items || [];
+                editableProject = {
+                    materials: rawItems.filter(i => i.type === 'material' || !i.role),
+                    labor:     rawItems.filter(i => i.type === 'labor' || i.role),
+                    client_name: data.client_name || null,
+                    client_address: data.client_address || null,
+                    scope_of_work: data.scope_of_work || null
+                };
+
+                document.getElementById('invoiceProject').value = data.project_name || 'Untitled Project';
+                scopeInput.value = data.scope_of_work || '';
+                scopeCharCounter.textContent = `${scopeInput.value.length} / 500`;
+                clientNameInput.value = data.client_name || '';
+                clientAddressInput.value = data.client_address || '';
+
+                renderLedgerTable();
+                renderInvoice();
+
+                projectSelector.value = id;
+                isDirty = false;
+
+                // ── Inject "+ New Change Order" button beneath estimate header ──
+                injectChangeOrderTrigger(id, data.client_phone || null);
+
+                showToast(`Loaded project "${data.project_name || 'Untitled Project'}"`, 'success');
+            } catch (err) {
+                showError('Could not load project: ' + err.message);
+                window.location.hash = '';
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // ── List estimates & populate dropdown ────────────────────────────
+        async function fetchAndRenderEstimates(autoSelectId = null) {
+            if (!authBearerToken) return;
+            try {
+                const resp = await originalFetch(`/api/estimates`, { headers: { 'Authorization': `Bearer ${authBearerToken}` } });
+                if (!resp.ok) {
+                    if (resp.status === 401) {
+                        localStorage.removeItem('authBearerToken');
+                        authBearerToken = null;
+                        dashboard.classList.add('hidden');
+                        loginGate.classList.remove('hidden');
+                        document.getElementById('onboardingModal').classList.add('hidden');
+                        document.getElementById('onboardingModal').classList.remove('flex');
+                        return;
+                    }
+                    if (resp.status === 403 || resp.status === 404) {
+                        dashboard.classList.add('hidden');
+                        loginGate.classList.add('hidden');
+                        document.getElementById('onboardingModal').classList.remove('hidden');
+                        document.getElementById('onboardingModal').classList.add('flex');
+                        return;
+                    }
+                    throw new Error('Failed to load estimates');
+                }
+                const estimates = await resp.json();
+                projectSelector.innerHTML = '';
+
+                if (estimates.length === 0 && !currentEstimateId) {
+                    const opt = document.createElement('option');
+                    opt.value = '';
+                    opt.textContent = 'No saved projects';
+                    projectSelector.appendChild(opt);
+
+                    ledgerEmpty.classList.remove('hidden');
+                    ledgerControls.classList.add('hidden');
+                    ledgerTableWrap.classList.add('hidden');
+                    invoiceEl.classList.add('hidden');
+                    currentEstimateId = null;
+                    window.location.hash = '';
+                    return;
+                }
+
+                ledgerEmpty.classList.add('hidden');
+                ledgerControls.classList.remove('hidden');
+
+                // Populate choices
+                estimates.forEach(est => {
+                    const opt = document.createElement('option');
+                    opt.value = est.id;
+                    opt.textContent = `${est.project_name} — ${est.item_count} items — ${fmtCurrency(est.total_amount)}`;
+                    projectSelector.appendChild(opt);
+                });
+
+                // Prepend unsaved placeholder if currently editing a new project
+                if (!currentEstimateId) {
+                    const activeName = document.getElementById('invoiceProject').value || 'Untitled Project';
+                    const opt = document.createElement('option');
+                    opt.value = '';
+                    opt.textContent = `[Unsaved] ${activeName}`;
+                    projectSelector.prepend(opt);
+                    projectSelector.value = '';
+                }
+
+                // Selection target waterfall
+                let hashId = null;
+                if (window.location.hash.startsWith('#est-')) {
+                    hashId = window.location.hash.replace('#est-', '');
+                }
+
+                const exists = (id) => estimates.some(e => e.id === id);
+                let targetId = null;
+
+                if (autoSelectId && exists(autoSelectId)) {
+                    targetId = autoSelectId;
+                } else if (currentEstimateId && exists(currentEstimateId)) {
+                    targetId = currentEstimateId;
+                } else if (hashId && exists(hashId)) {
+                    targetId = hashId;
+                }
+
+                if (targetId) {
+                    projectSelector.value = targetId;
+                    if (targetId !== currentEstimateId) {
+                        await loadEstimate(targetId);
+                    }
+                } else if (currentEstimateId) {
+                    // Handled - keeps switcher value aligned
+                } else if (estimates.length > 0) {
+                    // Empty workspace default logic
+                    projectSelector.value = '';
+                }
+                
+                projectCountEl.textContent = estimates.length;
+            } catch (err) {
+                console.error('fetchAndRenderEstimates:', err);
+            }
+        }
+
+        refreshBtn.addEventListener('click', () => fetchAndRenderEstimates(currentEstimateId));
+
+        // ══════════════════════════════════════════════════════════════════
+        //  isDirty TRACKING & BROWSER WARNINGS
+        // ══════════════════════════════════════════════════════════════════
+
+        document.getElementById('invoiceProject').addEventListener('input', () => {
+            isDirty = true;
+        });
+
+        window.addEventListener('beforeunload', (e) => {
+            if (isDirty) {
+                e.preventDefault();
+                e.returnValue = 'You have unsaved changes. Are you sure you want to leave?';
+                return e.returnValue;
+            }
+        });
+
+        // ══════════════════════════════════════════════════════════════════
+        //  SAVE ACTIVE PROJECT
+        // ══════════════════════════════════════════════════════════════════
+
+        async function saveActiveEstimate() {
+            if (!authBearerToken) {
+                showToast('⚠️ No active user session.', 'error');
+                return false;
+            }
+
+            const projectName = document.getElementById('invoiceProject').value.trim() || 'Untitled Project';
+            const items = [
+                ...editableProject.materials.map(m => ({ ...m, type: 'material' })),
+                ...editableProject.labor.map(l => ({ ...l, type: 'labor' }))
+            ];
+            const totalAmount = round2(
+                editableProject.materials.reduce((s,i) => s + (i.total || 0), 0) +
+                editableProject.labor.reduce((s,l) => s + (l.total || 0), 0)
+            );
+            const itemCount = items.length;
+
+            if (!currentEstimateId) {
+                currentEstimateId = 'est_' + Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
+                window.location.hash = 'est-' + currentEstimateId;
+            }
+
+            showLoading(true, 'Saving project…');
+            try {
+                const resp = await fetch(`/api/estimates/${currentEstimateId}/save`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authBearerToken}` },
+                    body: JSON.stringify({
+                        project_name: projectName,
+                        items,
+                        total_amount: totalAmount,
+                        item_count: itemCount,
+                        client_name: clientNameInput.value.trim() || null,
+                        client_address: clientAddressInput.value.trim() || null,
+                        scope_of_work: editableProject.scope_of_work || null
+                    })
+                });
+                const d = await resp.json();
+                if (!resp.ok) throw new Error(d.error || `Save failed (${resp.status})`);
+
+                isDirty = false;
+                showToast(`✓ Project "${projectName}" saved successfully`, 'success');
+                
+                await fetchAndRenderEstimates(currentEstimateId);
+                renderLedgerTable();
+                return true;
+            } catch (err) {
+                showToast('✕ Save failed: ' + err.message, 'error');
+                return false;
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════════
+        //  DELETE ACTIVE PROJECT (INLINE Cancel Warning UI)
+        // ══════════════════════════════════════════════════════════════════
+
+        function confirmDeleteEstimate() {
+            if (!currentEstimateId) {
+                showToast('⚠️ Cannot delete a project that hasn\'t been saved yet.', 'info');
+                return;
+            }
+            document.getElementById('deleteBtn').classList.add('hidden');
+            document.getElementById('saveBtn').classList.add('hidden');
+            document.getElementById('deleteConfirmBar').classList.remove('hidden');
+        }
+
+        function hideDeleteConfirm() {
+            document.getElementById('deleteConfirmBar').classList.add('hidden');
+            document.getElementById('deleteBtn').classList.remove('hidden');
+            document.getElementById('saveBtn').classList.remove('hidden');
+        }
+
+        async function deleteActiveEstimate() {
+            if (!currentEstimateId || !authBearerToken) return;
+            showLoading(true, 'Deleting project…');
+            try {
+                const resp = await fetch(`/api/estimates/${currentEstimateId}`, {
+                    method: 'DELETE', headers: { 'Authorization': `Bearer ${authBearerToken}` }
+                });
+                const d = await resp.json();
+                if (!resp.ok) throw new Error(d.error || `Delete failed (${resp.status})`);
+
+                showToast('✓ Project deleted successfully', 'success');
+                hideDeleteConfirm();
+                isDirty = false;
+
+                // Reset to empty state and refresh switcher
+                currentEstimateId = null;
+                window.location.hash = '';
+                await fetchAndRenderEstimates(null);
+            } catch (err) {
+                showToast('✕ Deletion failed: ' + err.message, 'error');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════════
+        //  PRICE SOURCE CONFIG
+        // ══════════════════════════════════════════════════════════════════
+
+        const SOURCE_CONFIG = {
+            override: { label: 'User Override', rowBorder: '#22c55e', badgeBg: '#14532d', badgeText: '#86efac' },
+            database: { label: 'Saved Price',   rowBorder: '#3b82f6', badgeBg: '#1e3a5f', badgeText: '#93c5fd' },
+            ai:       { label: 'AI Estimate',   rowBorder: '#f59e0b', badgeBg: '#451a03', badgeText: '#fcd34d' },
+        };
+
+        function sourceBadgeHTML(source) {
+            const cfg = SOURCE_CONFIG[source] || SOURCE_CONFIG.ai;
+            return `<span class="source-badge inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold"
+                         style="background:${cfg.badgeBg};color:${cfg.badgeText}">${cfg.label}</span>`;
+        }
+
+        // ── Ledger read-only table with source badges & row animations
+        function renderLedgerTable() {
+            const tbody = document.getElementById('ledgerBody');
+            tbody.innerHTML = '';
+            const materials = editableProject.materials || [];
+
+            if (materials.length === 0) {
+                ledgerTableWrap.classList.add('hidden');
+                animateLedgerTotal(0);
+                return;
+            }
+
+            ledgerTableWrap.classList.remove('hidden');
+            let runningTotal = 0;
+
+            materials.forEach((item, idx) => {
+                const cfg   = SOURCE_CONFIG[item.price_source] || SOURCE_CONFIG.ai;
+                const total = item.total || 0;
+                runningTotal += total;
+
+                const tr = document.createElement('tr');
+                tr.style.cssText = `
+                    border-left: 3px solid ${cfg.rowBorder};
+                    animation: rowSlideIn 0.25s ease-out forwards;
+                    animation-delay: ${idx * 75}ms;
+                    opacity: 0;
+                    background: rgba(82,24,128,.06);
+                `;
+                tr.innerHTML = `
+                    <td class="px-4 py-3 text-sm font-medium" style="color:var(--text-primary)">${esc(item.name || '')}</td>
+                    <td class="px-3 py-3 text-right text-sm tabular-nums" style="color:var(--text-muted)">${item.quantity || 0}</td>
+                    <td class="px-3 py-3 text-right text-sm tabular-nums" style="color:var(--text-accent)">${fmtCurrency(item.unit_price)}</td>
+                    <td class="px-3 py-3 text-center">${sourceBadgeHTML(item.price_source)}</td>
+                    <td class="px-3 py-3 text-right text-sm font-semibold tabular-nums" style="color:var(--text-primary)">${fmtCurrency(total)}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            animateLedgerTotal(runningTotal);
+        }
+
+        // ══════════════════════════════════════════════════════════════════
+        //  PHASE 5: ROLLING TOTAL TICKERS
+        // ══════════════════════════════════════════════════════════════════
+
+        function animateLedgerTotal(targetVal) {
+            const el = document.getElementById('ledgerTotal');
+            const start = _currentDisplayedTotal;
+            const end   = targetVal;
+            if (start === end) { el.textContent = fmtCurrency(end); return; }
+            const duration = 600;
+            const startTime = performance.now();
+            if (_totalTickerRaf) cancelAnimationFrame(_totalTickerRaf);
+            function tick(now) {
+                const elapsed  = now - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                const ease = 1 - Math.pow(1 - progress, 3);
+                const current = start + (end - start) * ease;
+                el.textContent = fmtCurrency(Math.round(current * 100) / 100);
+                if (progress < 1) {
+                    _totalTickerRaf = requestAnimationFrame(tick);
+                } else {
+                    _currentDisplayedTotal = end;
+                    el.textContent = fmtCurrency(end);
+                }
+            }
+            _totalTickerRaf = requestAnimationFrame(tick);
+        }
+
+        // ══════════════════════════════════════════════════════════════════
+        //  AUDIO RECORDING
+        // ══════════════════════════════════════════════════════════════════
+
+        async function initAudio() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+                mediaRecorder.onstop = async () => {
+                    const blob = new Blob(audioChunks, { type: 'audio/webm' });
+                    audioChunks = [];
+                    await submitAudio(blob);
+                };
+            } catch (err) { showError('Microphone access is required for voice input.'); }
+        }
+
+        recordBtn.addEventListener('click', () => {
+            if (!mediaRecorder) return;
+            if (!isRecording) {
+                hideError();
+                audioChunks = [];
+                mediaRecorder.start();
+                isRecording = true;
+                recordBtn.style.background = 'linear-gradient(135deg,#dc2626,#b91c1c)';
+                recordBtn.classList.add('recording-active');
+                micIcon.classList.add('hidden');
+                stopIcon.classList.remove('hidden');
+                micStatus.textContent = 'Recording… Tap to Stop';
+                micStatus.style.color = '#f87171';
+            } else {
+                mediaRecorder.stop();
+                isRecording = false;
+                recordBtn.style.background = 'linear-gradient(135deg,var(--accent-hover),var(--primary-accent))';
+                recordBtn.classList.remove('recording-active');
+                micIcon.classList.remove('hidden');
+                stopIcon.classList.add('hidden');
+                micStatus.textContent = 'Processing…';
+                micStatus.style.color = 'var(--text-muted)';
+                setInputsDisabled(true);
+            }
+        });
+
+        // ── Text Submit ───────────────────────────────────────────────────
+        textBtn.addEventListener('click', async () => {
+            const text = textInput.value.trim();
+            if (!text || !authBearerToken) return;
+            hideError();
+            setInputsDisabled(true);
+            showLoading(true, 'Extracting items with Gemini AI…');
+            try {
+                const resp = await fetch('/api/process-text', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authBearerToken}` },
+                    body: JSON.stringify({
+                        text,
+                        estimateId: currentEstimateId
+                    }),
+                });
+                if (!resp.ok) { const d = await resp.json(); throw new Error(d.error || resp.status); }
+                const data = await resp.json();
+                textInput.value = '';
+                showToast(`✓ Added ${data.itemCount} item(s) to "${data.projectName}"`, 'success');
+                
+                if (data.estimateId) {
+                    currentEstimateId = data.estimateId;
+                    window.location.hash = 'est-' + data.estimateId;
+                    await loadEstimate(data.estimateId);
+                    await fetchAndRenderEstimates(data.estimateId);
+                }
+            } catch (err) {
+                showError('Failed to process text: ' + err.message);
+            } finally {
+                showLoading(false);
+                setInputsDisabled(false);
+                micStatus.textContent = 'Tap to Record';
+                micStatus.style.color = 'var(--text-muted)';
+            }
+        });
+
+        // ── Scope Input Change ────────────────────────────────────────────
+        scopeInput.addEventListener('input', () => {
+            isDirty = true;
+            editableProject.scope_of_work = scopeInput.value;
+            scopeCharCounter.textContent = `${scopeInput.value.length} / 500`;
+        });
+
+        clientNameInput.addEventListener('input', () => {
+            isDirty = true;
+            editableProject.client_name = clientNameInput.value.trim();
+        });
+
+        clientAddressInput.addEventListener('input', () => {
+            isDirty = true;
+            editableProject.client_address = clientAddressInput.value.trim();
+        });
+
+        // ── Audio Submit ──────────────────────────────────────────────────
+        async function submitAudio(blob) {
+            if (!authBearerToken) return;
+            showLoading(true, 'Extracting items from audio…');
+            const fd = new FormData();
+            fd.append('audio', blob, 'recording.webm');
+                        if (currentEstimateId) {
+                fd.append('estimateId', currentEstimateId);
+            }
+            try {
+                const resp = await fetch('/api/process', { method: 'POST', headers: { 'Authorization': `Bearer ${authBearerToken}` }, body: fd });
+                if (!resp.ok) { const d = await resp.json(); throw new Error(d.error || resp.status); }
+                const data = await resp.json();
+                showToast(`✓ Added ${data.itemCount} item(s) to "${data.projectName}"`, 'success');
+                
+                if (data.estimateId) {
+                    currentEstimateId = data.estimateId;
+                    window.location.hash = 'est-' + data.estimateId;
+                    await loadEstimate(data.estimateId);
+                    await fetchAndRenderEstimates(data.estimateId);
+                }
+            } catch (err) {
+                showError('Failed to process audio: ' + err.message);
+            } finally {
+                showLoading(false);
+                setInputsDisabled(false);
+                micStatus.textContent = 'Tap to Record';
+                micStatus.style.color = 'var(--text-muted)';
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════════
+        //  INVOICE RENDERING (editable — right column)
+        // ══════════════════════════════════════════════════════════════════
+
+        function renderInvoice() {
+            document.getElementById('invoiceDate').textContent = today;
+            renderItemsTable();
+            renderLaborTable();
+            updateGrandTotal();
+            invoiceEl.classList.remove('hidden');
+            invoiceEl.classList.add('fade-in');
+        }
+
+        function renderItemsTable() {
+            const tbody = document.getElementById('itemsBody');
+            tbody.innerHTML = '';
+            if (!editableProject.materials || editableProject.materials.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="7" class="px-5 py-4 text-center italic text-sm" style="color:var(--text-muted)">No materials — click "Add Material" to start</td></tr>`;
+                return;
+            }
+            editableProject.materials.forEach((item, idx) => {
+                const cfg = SOURCE_CONFIG[item.price_source] || SOURCE_CONFIG.ai;
+                const tr = document.createElement('tr');
+                tr.style.cssText = `
+                    border-left: 3px solid ${cfg.rowBorder};
+                    animation: rowSlideIn 0.25s ease-out forwards;
+                    animation-delay: ${idx * 75}ms;
+                    opacity: 0;
+                    background: rgba(82,24,128,.05);
+                    transition: background .15s;
+                `;
+                tr.innerHTML = `
+                    <td class="px-4 py-3">
+                        <input type="text" value="${esc(item.name||'')}" data-field="name" data-type="materials" data-idx="${idx}"
+                            class="editable-cell w-full text-sm font-medium bg-transparent border-0 p-0 focus:ring-0"
+                            style="color:var(--text-primary)">
+                    </td>
+                    <td class="px-3 py-3 text-right">
+                        <input type="number" value="${item.quantity||0}" data-field="quantity" data-type="materials" data-idx="${idx}" step="any"
+                            class="editable-cell w-14 text-right text-sm tabular-nums bg-transparent border-0 p-0 focus:ring-0"
+                            style="color:var(--text-muted)">
+                    </td>
+                    <td class="px-3 py-3">
+                        <input type="text" value="${esc(item.unit||'')}" data-field="unit" data-type="materials" data-idx="${idx}"
+                            class="editable-cell w-16 text-sm bg-transparent border-0 p-0 focus:ring-0"
+                            style="color:var(--text-muted)">
+                    </td>
+                    <td class="px-3 py-3 text-right">
+                        <input type="number" value="${item.unit_price||0}" data-field="unit_price" data-type="materials" data-idx="${idx}" step="0.01"
+                            class="editable-cell w-20 text-right text-sm tabular-nums bg-transparent border-0 p-0 focus:ring-0"
+                            style="color:var(--text-accent)">
+                    </td>
+                    <td class="px-3 py-3 text-center">${sourceBadgeHTML(item.price_source)}</td>
+                    <td class="px-3 py-3 text-right text-sm font-semibold tabular-nums" data-total-idx="${idx}" data-total-type="materials"
+                        style="color:var(--text-primary)">${fmtCurrency(item.total)}</td>
+                    <td class="px-2 py-3 text-center no-print">
+                        <button onclick="deleteRow('materials',${idx})" class="hover:text-red-400 transition-colors text-sm"
+                            style="color:var(--text-muted)" title="Delete">🗑</button>
+                    </td>
+                `;
+                tr.addEventListener('mouseenter', () => tr.style.background = 'rgba(82,24,128,.12)');
+                tr.addEventListener('mouseleave', () => tr.style.background = 'rgba(82,24,128,.05)');
+                tbody.appendChild(tr);
+            });
+            tbody.querySelectorAll('input').forEach(inp => inp.addEventListener('input', handleCellEdit));
+        }
+
+        function renderLaborTable() {
+            const tbody = document.getElementById('laborBody');
+            tbody.innerHTML = '';
+            if (!editableProject.labor || editableProject.labor.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="px-5 py-4 text-center italic text-sm" style="color:var(--text-muted)">No labor — click "Add Labor" to start</td></tr>`;
+                return;
+            }
+            editableProject.labor.forEach((item, idx) => {
+                const tr = document.createElement('tr');
+                tr.style.cssText = `
+                    background: rgba(82,24,128,.05);
+                    animation: rowSlideIn 0.25s ease-out forwards;
+                    animation-delay: ${idx * 75}ms;
+                    opacity: 0;
+                    transition: background .15s;
+                `;
+                tr.innerHTML = `
+                    <td class="px-4 py-3">
+                        <input type="text" value="${esc(item.role||'')}" data-field="role" data-type="labor" data-idx="${idx}"
+                            class="editable-cell w-full text-sm font-medium bg-transparent border-0 p-0 focus:ring-0"
+                            style="color:var(--text-primary)">
+                    </td>
+                    <td class="px-3 py-3 text-right">
+                        <input type="number" value="${item.hours||0}" data-field="hours" data-type="labor" data-idx="${idx}" step="any"
+                            class="editable-cell w-14 text-right text-sm tabular-nums bg-transparent border-0 p-0 focus:ring-0"
+                            style="color:var(--text-muted)">
+                    </td>
+                    <td class="px-3 py-3 text-right">
+                        <input type="number" value="${item.rate||0}" data-field="rate" data-type="labor" data-idx="${idx}" step="0.01"
+                            class="editable-cell w-20 text-right text-sm tabular-nums bg-transparent border-0 p-0 focus:ring-0"
+                            style="color:var(--text-accent)">
+                    </td>
+                    <td class="px-3 py-3 text-right text-sm font-semibold tabular-nums" data-total-idx="${idx}" data-total-type="labor"
+                        style="color:var(--text-primary)">${fmtCurrency(item.total)}</td>
+                    <td class="px-2 py-3 text-center no-print">
+                        <button onclick="deleteRow('labor',${idx})" class="hover:text-red-400 transition-colors text-sm"
+                            style="color:var(--text-muted)" title="Delete">🗑</button>
+                    </td>
+                `;
+                tr.addEventListener('mouseenter', () => tr.style.background = 'rgba(82,24,128,.12)');
+                tr.addEventListener('mouseleave', () => tr.style.background = 'rgba(82,24,128,.05)');
+                tbody.appendChild(tr);
+            });
+            tbody.querySelectorAll('input').forEach(inp => inp.addEventListener('input', handleCellEdit));
+        }
+
+        // ══════════════════════════════════════════════════════════════════
+        //  CELL EDITING → editableProject STATE → LIVE RECALC
+        // ══════════════════════════════════════════════════════════════════
+
+        function handleCellEdit(e) {
+            const inp   = e.target;
+            const type  = inp.dataset.type;
+            const idx   = parseInt(inp.dataset.idx);
+            const field = inp.dataset.field;
+
+            isDirty = true;
+
+            if (['name','role','unit'].includes(field)) {
+                editableProject[type][idx][field] = inp.value;
+            } else {
+                editableProject[type][idx][field] = parseFloat(inp.value) || 0;
+            }
+            recalcRow(type, idx);
+
+            const row       = inp.closest('tr');
+            const totalCell = row.querySelector(`td[data-total-type="${type}"][data-total-idx="${idx}"]`);
+            if (totalCell) totalCell.textContent = fmtCurrency(editableProject[type][idx].total);
+
+            updateGrandTotal();
+        }
+
+        function recalcRow(type, idx) {
+            const row = editableProject[type][idx];
+            if (type === 'materials') {
+                row.total = round2((row.quantity||0) * (row.unit_price||0));
+            } else {
+                row.total = round2((row.hours||0) * (row.rate||0));
+            }
+        }
+
+        function updateGrandTotal() {
+            const mTotal = (editableProject.materials||[]).reduce((s,i) => s+(i.total||0), 0);
+            const lTotal = (editableProject.labor||[]).reduce((s,l) => s+(l.total||0), 0);
+            const newTotal = round2(mTotal + lTotal);
+            animateGrandTotal(newTotal);
+            animateLedgerTotal(round2(mTotal));
+        }
+
+        let _grandTickerRaf = null;
+        let _currentGrand   = 0;
+
+        function animateGrandTotal(targetVal) {
+            const el    = document.getElementById('grandTotal');
+            const start = _currentGrand;
+            const end   = targetVal;
+            if (start === end) { el.textContent = fmtCurrency(end); return; }
+            const duration  = 600;
+            const startTime = performance.now();
+            if (_grandTickerRaf) cancelAnimationFrame(_grandTickerRaf);
+            function tick(now) {
+                const progress = Math.min((now - startTime) / duration, 1);
+                const ease = 1 - Math.pow(1 - progress, 3);
+                el.textContent = fmtCurrency(Math.round((start + (end-start)*ease)*100)/100);
+                if (progress < 1) {
+                    _grandTickerRaf = requestAnimationFrame(tick);
+                } else {
+                    _currentGrand = end;
+                    el.textContent = fmtCurrency(end);
+                }
+            }
+            _grandTickerRaf = requestAnimationFrame(tick);
+        }
+
+        // ══════════════════════════════════════════════════════════════════
+        //  ADD / DELETE ROWS
+        // ══════════════════════════════════════════════════════════════════
+
+        function addItemRow() {
+            isDirty = true;
+            editableProject.materials.push({ name:'', quantity:0, unit:'', unit_price:0, total:0, price_source:'ai' });
+            renderItemsTable();
+            const inputs = document.querySelectorAll('#itemsBody input[data-field="name"]');
+            if (inputs.length) inputs[inputs.length-1].focus();
+        }
+
+        function addLaborRow() {
+            isDirty = true;
+            const defaultRate = window.userSettings?.default_labor_rate || 55;
+            editableProject.labor.push({ role:'', hours:0, rate:defaultRate, total:0 });
+            renderLaborTable();
+            const inputs = document.querySelectorAll('#laborBody input[data-field="role"]');
+            if (inputs.length) inputs[inputs.length-1].focus();
+        }
+
+        function deleteRow(type, idx) {
+            isDirty = true;
+            editableProject[type].splice(idx, 1);
+            if (type === 'materials') { renderItemsTable(); renderLedgerTable(); }
+            else renderLaborTable();
+            updateGrandTotal();
+        }
+
+        // ══════════════════════════════════════════════════════════════════
+        //  PHASE 5: PDF BUTTON STATE MACHINE
+        // ══════════════════════════════════════════════════════════════════
+
+        const PDF_STATES = {
+            default: {
+                text: 'Generate &amp; Email PDF Invoice',
+                icon: `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                           d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>`,
+                bg: 'linear-gradient(135deg,#065f46,#047857)',
+                disabled: false,
+            },
+            processing: {
+                text: 'Generating…',
+                icon: `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="animate-spin origin-center"
+                           d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>`,
+                bg: 'linear-gradient(135deg,#374151,#1f2937)',
+                disabled: true,
+            },
+            success: {
+                text: 'Sent!',
+                icon: `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>`,
+                bg: 'linear-gradient(135deg,#166534,#15803d)',
+                disabled: true,
+            },
+        };
+
+        function setPdfBtnState(state) {
+            const cfg = PDF_STATES[state];
+            approveBtnText.innerHTML  = cfg.text;
+            approveBtnIcon.innerHTML  = cfg.icon;
+            approveBtn.disabled       = cfg.disabled;
+            approveBtn.style.background = cfg.bg;
+            approveBtn.style.opacity  = cfg.disabled ? '0.85' : '1';
+        }
+
+        async function handleApproveAndEmail() {
+            if (!authBearerToken){ showError('No user session. Please log out and log back in.'); return; }
+
+            const projName = document.getElementById('invoiceProject').value.trim() || 'Untitled Project';
+            hideError();
+            setPdfBtnState('processing');
+            showLoading(true, 'Generating PDF and sending email…');
+
+            try {
+                const resp = await fetch('/api/generate-pdf', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authBearerToken}` },
+                    body: JSON.stringify({
+                        projectName: projName,
+                        project:     editableProject,
+                    }),
+                });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.error || `Server error ${resp.status}`);
+
+                setPdfBtnState('success');
+                showToast('📧 PDF emailed successfully', 'success');
+
+                // Hold success state 3s then reset
+                setTimeout(async () => {
+                    setPdfBtnState('default');
+                    // Reset to empty state to force user to reload or switch
+                    invoiceEl.classList.add('hidden');
+                    currentEstimateId = null;
+                    window.location.hash = '';
+                    editableProject = { materials: [], labor: [], client_name: null, client_address: null, scope_of_work: null };
+                    scopeInput.value = '';
+                    scopeCharCounter.textContent = '0 / 500';
+                    clientNameInput.value = '';
+                    clientAddressInput.value = '';
+                    await fetchAndRenderEstimates();
+                }, 3000);
+
+            } catch (err) {
+                showError('Email failed: ' + err.message);
+                setPdfBtnState('default');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════════
+        //  CSV PROGRESS BAR SIMULATION
+        // ══════════════════════════════════════════════════════════════════
+
+        async function uploadPricingCSV() {
+            const fileInput     = document.getElementById('csvFileInput');
+            const btn           = document.getElementById('csvUploadBtn');
+            const btnText       = document.getElementById('csvUploadBtnText');
+            const progressWrap  = document.getElementById('csvProgressWrap');
+            const progressBar   = document.getElementById('csvProgressBar');
+            const progressPct   = document.getElementById('csvProgressPct');
+            const progressLabel = document.getElementById('csvProgressLabel');
+
+            if (!fileInput.files || fileInput.files.length === 0) {
+                showToast('⚠ Please choose a CSV file first.', 'info');
+                return;
+            }
+            if (!authBearerToken) {
+                showToast('⚠ No user session. Please log out and back in.', 'error');
+                return;
+            }
+
+            btn.disabled = true;
+            btn.style.opacity = '0.6';
+            btnText.textContent = 'Uploading…';
+            progressWrap.classList.remove('hidden');
+            progressBar.style.width = '0%';
+            progressPct.textContent = '0%';
+            progressLabel.textContent = 'Uploading…';
+
+            let simPct = 0;
+            const simInterval = setInterval(() => {
+                simPct = Math.min(simPct + (Math.random() * 8 + 3), 90);
+                progressBar.style.width = simPct + '%';
+                progressPct.textContent = Math.round(simPct) + '%';
+            }, 200);
+
+            const fd = new FormData();
+            fd.append('file',  fileInput.files[0]);
+            
+            try {
+                const resp = await fetch('/api/upload-csv', { method: 'POST', headers: { 'Authorization': `Bearer ${authBearerToken}` }, body: fd });
+                clearInterval(simInterval);
+
+                progressBar.style.width = '100%';
+                progressPct.textContent = '100%';
+                progressLabel.textContent = 'Complete!';
+
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.error || `Server error ${resp.status}`);
+
+                const skipNote = data.skipped > 0 ? ` — ${data.skipped} row(s) skipped` : '';
+                showToast(`✓ Imported ${data.imported} price(s) to your price book${skipNote}`, 'success');
+
+                fileInput.value = '';
+                document.getElementById('csvFileName').textContent = 'No file chosen — click to browse';
+
+                setTimeout(() => {
+                    progressWrap.classList.add('hidden');
+                    progressBar.style.width = '0%';
+                }, 2000);
+
+            } catch (err) {
+                clearInterval(simInterval);
+                progressWrap.classList.add('hidden');
+                showToast('✕ Upload failed: ' + err.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.style.opacity = '1';
+                btnText.textContent = 'Upload Pricing CSV';
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════════
+        //  SETTINGS MODAL INTERACTIONS & API ACTIONS
+        // ══════════════════════════════════════════════════════════════════
+
+        // ══════════════════════════════════════════════════════════════════
+        //  CONTRACTOR SETUP WIZARD / ONBOARDING ACTIONS
+        // ══════════════════════════════════════════════════════════════════
+
+        function showOnboardingWizard() {
+            const modal = document.getElementById('onboardWizardModal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            
+            // Set fields to empty or defaults
+            document.getElementById('onboardCompanyName').value = '';
+            document.getElementById('onboardContactEmail').value = '';
+            document.getElementById('onboardCompanyAddress').value = '';
+            document.getElementById('onboardLaborRate').value = 55;
+            document.getElementById('onboardLicenseNumber').value = '';
+        }
+
+        function hideOnboardingWizard() {
+            const modal = document.getElementById('onboardWizardModal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
+        function showSubscriptionGate() {
+            const modal = document.getElementById('subscriptionGateModal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            setInputsDisabled(true);
+        }
+
+        function hideSubscriptionGate() {
+            const modal = document.getElementById('subscriptionGateModal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+            if (window.userSettings && window.userSettings.isOnboarded) {
+                setInputsDisabled(false);
+            }
+        }
+
+        async function handleSubscribeClick() {
+            const btn = document.getElementById('subscribeBtn');
+            const btnText = document.getElementById('subscribeBtnText');
+            
+            const originalText = 'Subscribe Now — $49/month';
+            btn.disabled = true;
+            btn.style.opacity = '0.7';
+            btn.style.pointerEvents = 'none';
+            btnText.innerHTML = '<svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline-block" style="width: 16px; height: 16px;" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Redirecting to Checkout...';
+
+            try {
+                const resp = await fetch('/api/billing/create-checkout-session', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authBearerToken}` },
+                    body: JSON.stringify({
+                        })
+                });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.message || 'Failed to initiate Stripe checkout');
+                
+                if (data.url) {
+                    window.location.href = data.url;
+                } else {
+                    throw new Error('No checkout URL returned.');
+                }
+            } catch (err) {
+                showToast('✕ Subscription checkout failed: ' + err.message, 'error');
+                btn.disabled = false;
+                btn.style.opacity = '1';
+                btn.style.pointerEvents = '';
+                btnText.textContent = originalText;
+            }
+        }
+
+        async function submitOnboarding(event) {
+            event.preventDefault();
+            const btn = document.getElementById('onboardSubmitBtn');
+            const btnText = document.getElementById('onboardSubmitBtnText');
+
+            btn.disabled = true;
+            btn.style.opacity = '0.7';
+            btn.style.pointerEvents = 'none';
+            btnText.innerHTML = '<svg class="animate-spin -ml-1 mr-1.5 h-3 w-3 text-white inline-block" style="width:12px; height:12px;" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Configuring Secure Environment...';
+
+            const payload = {
+                contact_email: document.getElementById('onboardContactEmail').value.trim(),
+                company_address: document.getElementById('onboardCompanyAddress').value.trim(),
+                default_labor_rate: parseFloat(document.getElementById('onboardLaborRate').value) || 55,
+                license_number: document.getElementById('onboardLicenseNumber').value.trim(),
+                isOnboarded: true
+            };
+
+            try {
+                const resp = await fetch('/api/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authBearerToken}` },
+                    body: JSON.stringify({
+                        ...payload
+                    })
+                });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.error || `Save failed (${resp.status})`);
+
+                window.userSettings = {
+                    ...window.userSettings,
+                    ...payload
+                };
+
+                btnText.innerHTML = '<svg class="-ml-1 mr-1.5 h-3 w-3 text-white inline-block" style="width:12px; height:12px;" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>Workspace Unlocked!';
+                btn.style.background = 'linear-gradient(135deg, #059669, #10b981)';
+                
+                setTimeout(() => {
+                    btn.disabled = false;
+                    btn.style.opacity = '1';
+                    btn.style.pointerEvents = '';
+                    btnText.innerHTML = 'Complete Profile & Launch';
+                    btn.style.background = '';
+                    
+                    hideOnboardingWizard();
+                    showToast('✓ Workspace successfully initialized', 'success');
+                    activateDashboard(); // Bootstrap to standard Dashboard / Stripe Gate
+                    
+                    setTimeout(() => {
+                        showToast('💡 Pro tip: Upload your company logo in Settings to personalize your PDF estimates.', 'info');
+                    }, 1000);
+                }, 2000);
+
+            } catch (err) {
+                showToast('✕ Profile configuration failed: ' + err.message, 'error');
+                btn.disabled = false;
+                btn.style.opacity = '1';
+                btn.style.pointerEvents = '';
+                btnText.innerHTML = 'Complete Profile & Launch';
+                btn.style.background = '';
+            }
+        }
+
+        async function loadSettingsProfile() {
+            if (!authBearerToken) return false;
+            try {
+                const resp = await originalFetch(`/api/settings`, { headers: { 'Authorization': `Bearer ${authBearerToken}` } });
+                if (resp.ok) {
+                    window.userSettings = await resp.json();
+                    return true;
+                } else if (resp.status === 401) {
+                    localStorage.removeItem('authBearerToken');
+                    authBearerToken = null;
+                    dashboard.classList.add('hidden');
+                    loginGate.classList.remove('hidden');
+                    document.getElementById('onboardingModal').classList.add('hidden');
+                    document.getElementById('onboardingModal').classList.remove('flex');
+                    return 'unauthorized';
+                } else if (resp.status === 403 || resp.status === 404) {
+                    dashboard.classList.add('hidden');
+                    loginGate.classList.add('hidden');
+                    document.getElementById('onboardingModal').classList.remove('hidden');
+                    document.getElementById('onboardingModal').classList.add('flex');
+                    return 'unonboarded';
+                }
+            } catch (err) {
+                console.error('Failed to load settings profile:', err);
+            }
+            return false;
+        }
+
+        function openSettingsModal() {
+            if (!authBearerToken) {
+                showToast('⚠ Please log in first.', 'info');
+                return;
+            }
+            document.getElementById('settingsModal').classList.remove('hidden');
+            document.getElementById('settingsModal').classList.add('flex');
+            
+            const s = window.userSettings || {
+                company_name: '',
+                company_address: '',
+                company_logo_url: '',
+                license_number: '',
+                contact_email: '',
+                default_labor_rate: 55,
+                global_markup_percent: 0,
+                tax_rate: 5.5
+            };
+            
+            document.getElementById('settingsCompanyName').value = s.company_name || '';
+            document.getElementById('settingsContactEmail').value = s.contact_email || '';
+            document.getElementById('settingsCompanyAddress').value = s.company_address || '';
+            document.getElementById('settingsLicenseNumber').value = s.license_number || '';
+            document.getElementById('settingsLaborRate').value = s.default_labor_rate !== undefined ? s.default_labor_rate : 55;
+            document.getElementById('settingsMarkupPercent').value = s.global_markup_percent !== undefined ? s.global_markup_percent : 0;
+            document.getElementById('settingsTaxRate').value = s.tax_rate !== undefined ? s.tax_rate : 5.5;
+
+            updateLogoPreview(s.company_logo_url);
+        }
+
+        function closeSettingsModal() {
+            document.getElementById('settingsModal').classList.add('hidden');
+            document.getElementById('settingsModal').classList.remove('flex');
+        }
+
+        function updateLogoPreview(url) {
+            const previewImg = document.getElementById('settingsLogoPreview');
+            const placeholder = document.getElementById('settingsLogoPlaceholder');
+            if (url) {
+                previewImg.src = url;
+                previewImg.classList.remove('hidden');
+                placeholder.classList.add('hidden');
+            } else {
+                previewImg.src = '';
+                previewImg.classList.add('hidden');
+                placeholder.classList.remove('hidden');
+            }
+        }
+
+        async function uploadLogoFile() {
+            const fileInput = document.getElementById('settingsLogoFileInput');
+            if (!fileInput.files || fileInput.files.length === 0) return;
+            
+            const file = fileInput.files[0];
+            if (file.size > 2 * 1024 * 1024) {
+                showToast('✕ Logo image exceeds 2MB limit', 'error');
+                fileInput.value = '';
+                return;
+            }
+
+            showLoading(true, 'Uploading logo image…');
+            const fd = new FormData();
+            fd.append('logo', file);
+            
+            try {
+                const resp = await fetch('/api/settings/logo', {
+                    method: 'POST', headers: { 'Authorization': `Bearer ${authBearerToken}` },
+                    body: fd
+                });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.error || `Upload failed (${resp.status})`);
+                
+                if (!window.userSettings) window.userSettings = {};
+                window.userSettings.company_logo_url = data.company_logo_url;
+                updateLogoPreview(data.company_logo_url);
+                showToast('✓ Logo uploaded successfully', 'success');
+            } catch (err) {
+                showToast('✕ Logo upload failed: ' + err.message, 'error');
+            } finally {
+                showLoading(false);
+                fileInput.value = '';
+            }
+        }
+
+        async function saveSettingsForm(event) {
+            event.preventDefault();
+            const btn = document.getElementById('settingsSaveBtn');
+            const btnText = document.getElementById('settingsSaveBtnText');
+            
+            btn.disabled = true;
+            btn.style.opacity = '0.7';
+            btn.style.pointerEvents = 'none';
+            btnText.innerHTML = '<svg class="animate-spin -ml-1 mr-1.5 h-3 w-3 text-white inline-block" style="width: 12px; height: 12px;" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Saving…';
+
+            const payload = {
+                company_name: document.getElementById('settingsCompanyName').value.trim(),
+                contact_email: document.getElementById('settingsContactEmail').value.trim(),
+                company_address: document.getElementById('settingsCompanyAddress').value.trim(),
+                license_number: document.getElementById('settingsLicenseNumber').value.trim(),
+                default_labor_rate: parseFloat(document.getElementById('settingsLaborRate').value) || 0,
+                global_markup_percent: parseFloat(document.getElementById('settingsMarkupPercent').value) || 0,
+                tax_rate: parseFloat(document.getElementById('settingsTaxRate').value) || 0
+            };
+
+            try {
+                const resp = await fetch('/api/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authBearerToken}` },
+                    body: JSON.stringify({
+                        ...payload
+                    })
+                });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.error || `Save failed (${resp.status})`);
+
+                window.userSettings = {
+                    ...window.userSettings,
+                    ...payload
+                };
+
+                btnText.innerHTML = '<svg class="-ml-1 mr-1.5 h-3 w-3 text-white inline-block" style="width: 12px; height: 12px;" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>Profile Saved!';
+                btn.style.background = 'linear-gradient(135deg, #059669, #10b981)';
+                
+                setTimeout(() => {
+                    btn.disabled = false;
+                    btn.style.opacity = '1';
+                    btn.style.pointerEvents = '';
+                    btnText.innerHTML = 'Save Configuration';
+                    btn.style.background = '';
+                    closeSettingsModal();
+                }, 2000);
+
+                showToast('✓ Business settings saved successfully', 'success');
+
+            } catch (err) {
+                showToast('✕ Save settings failed: ' + err.message, 'error');
+                btn.disabled = false;
+                btn.style.opacity = '1';
+                btn.style.pointerEvents = '';
+                btnText.innerHTML = 'Save Configuration';
+                btn.style.background = '';
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════════
+        //  HELPERS
+        // ══════════════════════════════════════════════════════════════════
+
+        function fmtCurrency(val) {
+            if (val === undefined || val === null) return '—';
+            return '$' + Number(val).toLocaleString('en-US', { minimumFractionDigits:2, maximumFractionDigits:2 });
+        }
+
+        function round2(n) { return Math.round(n * 100) / 100; }
+
+        function esc(str) {
+            const d = document.createElement('div');
+            d.textContent = str;
+            return d.innerHTML.replace(/"/g, '&quot;');
+        }
+
+        function showLoading(on, msg) {
+            if (msg) loadingText.textContent = msg;
+            loadingEl.classList.toggle('hidden', !on);
+            loadingEl.classList.toggle('flex', on);
+        }
+
+        function showError(msg) {
+            errorTextEl.textContent = msg;
+            errorEl.classList.remove('hidden');
+        }
+
+        function hideError() { errorEl.classList.add('hidden'); }
+
+        function setInputsDisabled(disabled) {
+            recordBtn.disabled = disabled;
+            textBtn.disabled   = disabled;
+            textInput.disabled = disabled;
+            scopeInput.disabled = disabled;
+            clientNameInput.disabled = disabled;
+            clientAddressInput.disabled = disabled;
+            [recordBtn, textBtn].forEach(el => {
+                el.style.opacity = disabled ? '0.5' : '1';
+                el.style.pointerEvents = disabled ? 'none' : '';
+            });
+        }
+
+        // Init PDF button
+        setPdfBtnState('default');
+
+        // Auto-login on load
+        (async function autoLogin() {
+            const savedToken = localStorage.getItem('authBearerToken');
+            if (savedToken) {
+                authBearerToken = savedToken;
+                try {
+                    await activateDashboard();
+                } catch (err) {
+                    console.error('Error during autoLogin:', err);
+                }
+            }
+        })();
+
+        // ══════════════════════════════════════════════════════════════════
+        //  CHANGE ORDER ENGINE — FRONTEND
+        // ══════════════════════════════════════════════════════════════════
+
+        function injectChangeOrderTrigger(estimateId, prefillClientPhone) {
+            const existing = document.getElementById('changeOrderTriggerBar');
+            if (existing) existing.remove();
+            const safePhone = (prefillClientPhone || '').replace(/'/g, "\\'");
+            const bar = document.createElement('div');
+            bar.id = 'changeOrderTriggerBar';
+            bar.style.cssText = 'margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:0 2px;';
+            bar.innerHTML = `
+                <button onclick="openChangeOrderModal('${estimateId}','${safePhone}')"
+                    class="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-xs font-bold transition-all active:scale-[.98]"
+                    style="background:linear-gradient(135deg,#7c3aed,#521880);box-shadow:0 4px 15px rgba(124,58,237,0.3);">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+                    New Change Order
+                </button>
+                <span id="coStatusInline" class="text-xs" style="color:var(--text-muted);"></span>
+            `;
+            const nameInput = document.getElementById('invoiceProject');
+            if (nameInput && nameInput.parentElement) {
+                nameInput.parentElement.insertAdjacentElement('afterend', bar);
+            } else {
+                invoiceEl.prepend(bar);
+            }
+        }
+
+        function openChangeOrderModal(estimateId, prefillPhone) {
+            _coParentEstimateId = estimateId || currentEstimateId;
+            _coChangeOrderId = null;
+            document.getElementById('coParentEstimateLabel').textContent = _coParentEstimateId || '—';
+            document.getElementById('coTextInput').value = '';
+            document.getElementById('coClientPhone').value = prefillPhone || '';
+            document.getElementById('coOnboardCompanyName').value = window.userSettings?.company_name || '';
+            resetCoModal();
+            const modal = document.getElementById('changeOrderModal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            document.getElementById('coTextInput').focus();
+        }
+
+        function closeChangeOrderModal() {
+            if (_coRecording && _coMediaRecorder) { try { _coMediaRecorder.stop(); } catch(_){} _coRecording = false; }
+            const modal = document.getElementById('changeOrderModal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
+        function resetCoModal() {
+            document.getElementById('coIntakeSection').classList.remove('hidden');
+            document.getElementById('coResultSection').classList.add('hidden');
+            const btn = document.getElementById('coGenerateBtn');
+            btn.disabled = false;
+            document.getElementById('coGenerateBtnText').textContent = 'Generate Change Order with AI';
+            document.getElementById('coMicStatus').textContent = 'Dictate Change';
+            document.getElementById('coMicIcon').classList.remove('hidden');
+            document.getElementById('coStopIcon').classList.add('hidden');
+            document.getElementById('coRecordBtn').style.background = 'linear-gradient(135deg,#7c3aed,#521880)';
+        }
+
+        async function toggleCoRecording() {
+            const recBtn = document.getElementById('coRecordBtn');
+            const micIcon = document.getElementById('coMicIcon');
+            const stopIcon = document.getElementById('coStopIcon');
+            const micStatus = document.getElementById('coMicStatus');
+            const textarea = document.getElementById('coTextInput');
+            if (!_coRecording) {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    _coAudioChunks = [];
+                    _coMediaRecorder = new MediaRecorder(stream);
+                    _coMediaRecorder.ondataavailable = e => { if (e.data.size > 0) _coAudioChunks.push(e.data); };
+                    _coMediaRecorder.onstop = () => { _coAudioChunks = []; };
+                    _coMediaRecorder.start();
+                    _coRecording = true;
+                    recBtn.style.background = 'linear-gradient(135deg,#dc2626,#b91c1c)';
+                    micIcon.classList.add('hidden');
+                    stopIcon.classList.remove('hidden');
+                    micStatus.textContent = 'Recording… Tap to Stop';
+                    const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+                    if (SpeechRec) {
+                        const recognition = new SpeechRec();
+                        recognition.continuous = true;
+                        recognition.interimResults = true;
+                        recognition.lang = 'en-US';
+                        let committed = textarea.value;
+                        recognition.onresult = ev => {
+                            let interim = '', final = '';
+                            for (let i = ev.resultIndex; i < ev.results.length; i++) {
+                                if (ev.results[i].isFinal) final += ev.results[i][0].transcript;
+                                else interim += ev.results[i][0].transcript;
+                            }
+                            committed += final;
+                            textarea.value = committed + interim;
+                        };
+                        recognition.start();
+                        recBtn._recognition = recognition;
+                    }
+                } catch (err) { showToast('Microphone access denied: ' + err.message, 'error'); }
+            } else {
+                if (_coMediaRecorder) { try { _coMediaRecorder.stop(); } catch(_){} }
+                if (recBtn._recognition) { try { recBtn._recognition.stop(); } catch(_){} recBtn._recognition = null; }
+                _coRecording = false;
+                micIcon.classList.remove('hidden');
+                stopIcon.classList.add('hidden');
+                micStatus.textContent = 'Dictate Change';
+                recBtn.style.background = 'linear-gradient(135deg,#7c3aed,#521880)';
+            }
+        }
+
+        async function generateChangeOrder() {
+            const text = document.getElementById('coTextInput').value.trim();
+            if (!text) { showToast('Describe the change before generating.', 'info'); return; }
+            if (!_coParentEstimateId) { showToast('No parent estimate selected.', 'error'); return; }
+            if (!authBearerToken) { showToast('Session expired. Please log in again.', 'error'); return; }
+            const btn = document.getElementById('coGenerateBtn');
+            const btnText = document.getElementById('coGenerateBtnText');
+            btn.disabled = true;
+            btnText.textContent = 'Extracting with Gemini AI…';
+            try {
+                const resp = await fetch('/api/change-orders/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authBearerToken}` },
+                    body: JSON.stringify({ parentEstimateId: _coParentEstimateId, text }),
+                });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.error || `Generation failed (${resp.status})`);
+                _coChangeOrderId = data.changeOrderId;
+                document.getElementById('coIntakeSection').classList.add('hidden');
+                document.getElementById('coResultSection').classList.remove('hidden');
+                document.getElementById('coTotalDisplay').textContent = `$${Number(data.change_order_total || 0).toFixed(2)}`;
+                document.getElementById('coSummaryDisplay').textContent = data.change_summary || '';
+                const preview = document.getElementById('coItemsPreview');
+                const matLines = (data.added_materials || []).map(m =>
+                    `<div class="flex justify-between py-0.5" style="border-bottom:1px solid rgba(255,255,255,0.06)"><span>${esc(m.name)} (${m.quantity} ${m.unit||'ea'})</span><span style="color:var(--text-accent)">$${Number(m.total||0).toFixed(2)}</span></div>`
+                ).join('');
+                const labLines = (data.added_labor || []).map(l =>
+                    `<div class="flex justify-between py-0.5" style="border-bottom:1px solid rgba(255,255,255,0.06)"><span>${esc(l.role)} (${l.hours}h @ $${Number(l.rate||0).toFixed(2)}/hr)</span><span style="color:var(--text-accent)">$${Number(l.total||0).toFixed(2)}</span></div>`
+                ).join('');
+                preview.innerHTML = (matLines + labLines) || '<div class="italic py-1 text-center">No line items extracted.</div>';
+                if (data.exclusions && data.exclusions.length > 0) {
+                    document.getElementById('coExclusionsWrap').classList.remove('hidden');
+                    document.getElementById('coExclusionsText').textContent = data.exclusions.join('; ');
+                } else {
+                    document.getElementById('coExclusionsWrap').classList.add('hidden');
+                }
+                const statusEl = document.getElementById('coStatusInline');
+                if (statusEl) statusEl.textContent = `✓ ${data.changeOrderId} generated`;
+                showToast(`✓ Change Order generated — Additional: $${Number(data.change_order_total||0).toFixed(2)}`, 'success');
+            } catch (err) {
+                btn.disabled = false;
+                btnText.textContent = 'Generate Change Order with AI';
+                showToast('✕ Generation failed: ' + err.message, 'error');
+            }
+        }
+
+        async function sendChangeOrderSMS() {
+            const rawPhone = document.getElementById('coClientPhone').value.trim();
+            const consentElement = document.getElementById('coClientConsent');
+            const hasConsent = consentElement ? consentElement.checked : true;
+            
+            if (!rawPhone) { showToast('Enter the client\'s phone number.', 'info'); return; }
+            if (!hasConsent) { showToast('You must confirm client consent before sending.', 'error'); return; }
+            if (!_coChangeOrderId || !_coParentEstimateId) { showToast('Generate a change order first.', 'error'); return; }
+            if (!authBearerToken) { showToast('Session expired.', 'error'); return; }
+            const digits = rawPhone.replace(/\D/g, '');
+            const e164 = digits.length === 10 ? '+1' + digits : (digits.startsWith('1') && digits.length === 11 ? '+' + digits : '+' + digits);
+            const btn = document.getElementById('coSendBtn');
+            const btnText = document.getElementById('coSendBtnText');
+            btn.disabled = true;
+            btnText.textContent = '…';
+            try {
+                const resp = await fetch('/api/change-orders/send', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authBearerToken}` },
+                    body: JSON.stringify({ changeOrderId: _coChangeOrderId, parentEstimateId: _coParentEstimateId, clientPhone: e164 }),
+                });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.error || `Send failed (${resp.status})`);
+                btnText.textContent = '✓ Sent!';
+                btn.style.background = 'linear-gradient(135deg,#1e3a5f,#2563eb)';
+                showToast(`📲 Change Order SMS sent to ${data.sent_to}`, 'success');
+                const statusEl = document.getElementById('coStatusInline');
+                if (statusEl) statusEl.textContent = `✓ CO sent to ${data.sent_to}`;
+                setTimeout(() => { btn.disabled = false; btnText.textContent = 'Send'; btn.style.background = 'linear-gradient(135deg,#065f46,#059669)'; }, 4000);
+            } catch (err) {
+                btn.disabled = false;
+                btnText.textContent = 'Send';
+                showToast('✕ SMS failed: ' + err.message, 'error');
+            }
+        }
+
+
+
+    </script>
+</body>
+</html>

@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lone Ranger Estimator — Solo Contractor. Professional Estimates.</title>
+  <meta name="description" content="AI-powered estimating tool for solo residential contractors. Text or speak your job scope. Get a professional PDF estimate in 60 seconds.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    /* ============================================
+       CSS CUSTOM PROPERTIES — DESIGN TOKENS
+    ============================================ */
+    :root {
+      --base-bg: #210936;
+      --card-bg: #2d0f47;
+      --header-bg: #1a0729;
+      --primary-accent: #521880;
+      --accent-hover: #6d28d9;
+      --text-primary: #e9d5ff;
+      --text-muted: #9b59d0;
+      --text-accent: #c084fc;
+      --success: #22c55e;
+      --success-bg: #14532d;
+      --success-text: #86efac;
+      --radius-card: 1.25rem;
+      --radius-btn: 1rem;
+    }
+
+    /* ============================================
+       RESET & BASE
+     ============================================ */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: var(--base-bg);
+      color: var(--text-primary);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+    a { text-decoration: none; color: inherit; }
+    ul { list-style: none; }
+
+    /* Custom scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--primary-accent); border-radius: 3px; }
+
+    /* ============================================
+       TYPOGRAPHY
+    ============================================ */
+    h1, h2, h3 { font-family: 'Outfit', sans-serif; }
+
+    /* ============================================
+       SCROLL ANIMATIONS
+    ============================================ */
+    .scroll-animate {
+      opacity: 0;
+      transform: translateY(24px);
+      transition: opacity 0.6s ease-out, transform 0.6s ease-out;
+    }
+    .scroll-animate.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .scroll-animate.delay-1 { transition-delay: 75ms; }
+    .scroll-animate.delay-2 { transition-delay: 150ms; }
+    .scroll-animate.delay-3 { transition-delay: 225ms; }
+    .scroll-animate.delay-4 { transition-delay: 300ms; }
+    .scroll-animate.delay-5 { transition-delay: 375ms; }
+    .scroll-animate.delay-6 { transition-delay: 450ms; }
+
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    /* ============================================
+       LAYOUT UTILITIES
+    ============================================ */
+    .container { max-width: 1152px; margin: 0 auto; padding: 0 1.5rem; }
+    .container-sm { max-width: 640px; margin: 0 auto; padding: 0 1.5rem; }
+    .section { padding: 6rem 1.5rem; }
+    .section-alt { padding: 6rem 1.5rem; background: rgba(26, 7, 41, 0.5); }
+    .text-center { text-align: center; }
+
+    /* ============================================
+       BUTTONS
+    ============================================ */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem 2rem;
+      border-radius: var(--radius-btn);
+      font-family: 'Inter', sans-serif;
+      font-weight: 600;
+      font-size: 1.05rem;
+      cursor: pointer;
+      transition: all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+      border: none;
+      text-decoration: none;
+    }
+    .btn-primary {
+      background: var(--primary-accent);
+      color: var(--text-primary);
+      box-shadow: 0 4px 24px rgba(82, 24, 128, 0.3);
+    }
+    .btn-primary:hover {
+      background: var(--accent-hover);
+      box-shadow: 0 8px 32px rgba(109, 40, 217, 0.4);
+      transform: translateY(-1px);
+    }
+    .btn-ghost {
+      background: transparent;
+      color: var(--text-accent);
+      border: 1px solid var(--primary-accent);
+    }
+    .btn-ghost:hover {
+      background: rgba(82, 24, 128, 0.2);
+      transform: translateY(-1px);
+    }
+    .btn-sm {
+      padding: 0.625rem 1.25rem;
+      font-size: 0.95rem;
+    }
+
+    /* ============================================
+       CARDS
+    ============================================ */
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--primary-accent);
+      border-radius: var(--radius-card);
+      padding: 1.5rem;
+      transition: border-color 0.3s ease;
+    }
+    .card:hover { border-color: var(--accent-hover); }
+
+    /* ============================================
+       DECORATIVE ORBS
+    ============================================ */
+    .orb {
+      position: absolute;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(109, 40, 217, 0.15) 0%, rgba(33, 9, 54, 0) 70%);
+      pointer-events: none;
+    }
+
+    /* ============================================
+       HEADER / NAV
+    ============================================ */
+    header {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 100;
+      background: rgba(26, 7, 41, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid rgba(82, 24, 128, 0.3);
+      transition: background 0.3s ease, box-shadow 0.3s ease;
+    }
+    header.scrolled {
+      background: rgba(26, 7, 41, 0.97);
+      box-shadow: 0 4px 32px rgba(0,0,0,0.4);
+    }
+    nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1rem 2rem;
+      max-width: 1152px;
+      margin: 0 auto;
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      text-decoration: none;
+    }
+    .logo-mark {
+      width: 40px; height: 40px;
+      border-radius: 0.5rem;
+      background: linear-gradient(135deg, var(--accent-hover), var(--primary-accent));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .logo-mark svg { width: 20px; height: 20px; color: var(--text-primary); }
+    .logo-text {
+      font-family: 'Outfit', sans-serif;
+      font-weight: 700;
+      font-size: 1.1rem;
+      color: var(--text-primary);
+    }
+    .nav-signin {
+      padding: 0.625rem 1.25rem;
+      border-radius: 0.75rem;
+      border: 1px solid var(--primary-accent);
+      color: var(--text-accent);
+      font-weight: 500;
+      font-size: 0.95rem;
+      transition: all 0.2s ease;
+    }
+    .nav-signin:hover { background: rgba(82, 24, 128, 0.2); }
+
+    /* Mobile nav */
+    .hamburger {
+      display: none;
+      background: none;
+      border: none;
+      color: var(--text-primary);
+      cursor: pointer;
+      padding: 0.25rem;
+    }
+    .mobile-menu {
+      display: none;
+      background: var(--header-bg);
+      border-top: 1px solid var(--primary-accent);
+      padding: 1rem 1.5rem;
+    }
+    .mobile-menu.open { display: block; }
+    .mobile-menu a {
+      display: block;
+      text-align: center;
+      padding: 0.75rem;
+      border-radius: 0.75rem;
+      border: 1px solid var(--primary-accent);
+      color: var(--text-accent);
+      font-weight: 500;
+    }
+
+    @media (max-width: 768px) {
+      .hamburger { display: block; }
+      .nav-signin { display: none; }
+    }
+
+    /* ============================================
+       HERO
+    ============================================ */
+    .hero {
+      position: relative;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding-top: 5rem;
+      overflow: hidden;
+    }
+    .hero-content {
+      position: relative;
+      z-index: 10;
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 5rem 1.5rem;
+      text-align: center;
+    }
+    .hero h1 {
+      font-size: clamp(2.25rem, 6vw, 3.75rem);
+      font-weight: 900;
+      line-height: 1.08;
+      letter-spacing: -0.03em;
+      color: var(--text-primary);
+      animation: fadeInUp 0.6s ease-out forwards;
+    }
+    .hero p {
+      margin-top: 1.5rem;
+      font-size: clamp(1rem, 2.5vw, 1.2rem);
+      color: var(--text-muted);
+      max-width: 600px;
+      margin-left: auto;
+      margin-right: auto;
+      line-height: 1.7;
+      animation: fadeInUp 0.6s ease-out 0.1s both;
+    }
+    .hero-btns {
+      margin-top: 2.5rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      align-items: center;
+      justify-content: center;
+      animation: fadeInUp 0.6s ease-out 0.2s both;
+    }
+    .hero-btns .btn { min-width: 220px; }
+
+    .hero .orb-1 { width: 600px; height: 600px; top: -200px; left: -200px; }
+    .hero .orb-2 { width: 400px; height: 400px; top: 30%; right: -120px; }
+    .hero .orb-3 { width: 300px; height: 300px; bottom: 80px; left: 25%; }
+
+    /* ============================================
+       HOW IT WORKS
+    ============================================ */
+    .section-title {
+      font-size: clamp(1.75rem, 4vw, 2.5rem);
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 4rem;
+    }
+    .steps-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 2rem;
+    }
+    .step-card {
+      text-align: center;
+    }
+    .step-icon {
+      width: 64px; height: 64px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent-hover), var(--primary-accent));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 1.5rem;
+      font-size: 1.75rem;
+    }
+    .step-card h3 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 0.75rem;
+    }
+    .step-card p {
+      color: var(--text-muted);
+      line-height: 1.7;
+      font-size: 0.95rem;
+    }
+
+    @media (max-width: 768px) {
+      .steps-grid { grid-template-columns: 1fr; gap: 1.25rem; }
+    }
+
+    /* ============================================
+       FEATURES
+    ============================================ */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1.5rem;
+    }
+    .feature-card h3 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 0.5rem;
+    }
+    .feature-card p {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      line-height: 1.7;
+    }
+
+    @media (max-width: 768px) {
+      .features-grid { grid-template-columns: 1fr; }
+    }
+
+    /* ============================================
+       PDF PREVIEW
+    ============================================ */
+    .pdf-section-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 3rem;
+      align-items: center;
+    }
+    .pdf-section-grid h2 {
+      font-size: clamp(1.75rem, 4vw, 2.25rem);
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 1.25rem;
+    }
+    .pdf-section-grid p {
+      color: var(--text-muted);
+      font-size: 1rem;
+      line-height: 1.8;
+    }
+    .pdf-mockup {
+      background: #ffffff;
+      border-radius: 0.75rem;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+      padding: 1.5rem;
+      transform: rotate(1deg);
+      transition: transform 0.3s ease;
+    }
+    .pdf-mockup:hover { transform: rotate(0deg); }
+    .pdf-header {
+      border-bottom: 2px solid #521880;
+      padding-bottom: 1rem;
+      margin-bottom: 1rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+    .pdf-logo-placeholder {
+      width: 48px; height: 48px;
+      border-radius: 0.5rem;
+      background: linear-gradient(135deg, #6d28d9, #521880);
+    }
+    .pdf-line { height: 8px; border-radius: 4px; background: #e5e7eb; margin-bottom: 6px; }
+    .pdf-line-dark { background: #374151; }
+    .pdf-line-accent { background: #521880; }
+    .pdf-table-header { background: rgba(82, 24, 128, 0.1); padding: 0.5rem 0.75rem; }
+    .pdf-table-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 0.5rem 0.75rem;
+      border-top: 1px solid #f3f4f6;
+    }
+    .pdf-total-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 1rem;
+      margin-top: 0.5rem;
+      border-top: 1px solid #e5e7eb;
+    }
+
+    @media (max-width: 900px) {
+      .pdf-section-grid { grid-template-columns: 1fr; }
+    }
+
+    /* ============================================
+       PRICING
+    ============================================ */
+    .pricing-card {
+      background: var(--card-bg);
+      border: 1px solid var(--primary-accent);
+      border-radius: var(--radius-card);
+      padding: 2.5rem;
+      max-width: 460px;
+      margin: 0 auto;
+    }
+    .price-amount {
+      font-family: 'Outfit', sans-serif;
+      font-size: 3.5rem;
+      font-weight: 900;
+      color: var(--text-primary);
+    }
+    .price-period { color: var(--text-muted); font-size: 1.1rem; }
+    .price-note { color: var(--text-muted); margin-bottom: 2rem; margin-top: 0.5rem; }
+    .feature-list { margin-bottom: 2rem; }
+    .feature-list li {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      color: var(--text-primary);
+      padding: 0.5rem 0;
+      font-size: 0.95rem;
+    }
+    .check-icon {
+      width: 20px; height: 20px;
+      color: var(--success);
+      flex-shrink: 0;
+    }
+
+    /* ============================================
+       TESTIMONIALS
+    ============================================ */
+    .testimonials-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+    }
+    .testimonial-card { padding: 1.5rem; }
+    .stars { display: flex; gap: 0.25rem; margin-bottom: 1rem; }
+    .star { color: var(--text-accent); font-size: 0.9rem; }
+    .testimonial-quote {
+      color: var(--text-primary);
+      line-height: 1.7;
+      margin-bottom: 1rem;
+      font-size: 0.95rem;
+    }
+    .testimonial-author { color: var(--text-muted); font-size: 0.85rem; }
+
+    @media (max-width: 768px) {
+      .testimonials-grid { grid-template-columns: 1fr; }
+    }
+
+    /* ============================================
+       CTA BANNER
+    ============================================ */
+    .cta-banner {
+      background: linear-gradient(135deg, var(--primary-accent), var(--accent-hover));
+      border-radius: var(--radius-card);
+      padding: 4rem 2rem;
+      text-align: center;
+      max-width: 860px;
+      margin: 0 auto;
+    }
+    .cta-banner h2 {
+      font-size: clamp(1.75rem, 4vw, 2.5rem);
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 1rem;
+    }
+    .cta-banner p {
+      color: var(--text-accent);
+      font-size: 1.1rem;
+      margin-bottom: 2rem;
+    }
+    .btn-dark {
+      background: var(--base-bg);
+      color: var(--text-primary);
+      border: none;
+    }
+    .btn-dark:hover {
+      background: var(--header-bg);
+      transform: translateY(-1px);
+    }
+
+    /* ============================================
+       FOOTER
+    ============================================ */
+    footer {
+      background: var(--header-bg);
+      border-top: 1px solid var(--primary-accent);
+      padding: 3rem 2rem;
+    }
+    .footer-inner {
+      max-width: 1152px;
+      margin: 0 auto;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1.5rem;
+    }
+    .footer-tagline { color: var(--text-muted); font-size: 0.875rem; text-align: center; }
+    .footer-links { display: flex; gap: 1.5rem; flex-wrap: wrap; }
+    .footer-links a { color: var(--text-accent); font-size: 0.875rem; transition: color 0.2s; }
+    .footer-links a:hover { color: var(--text-primary); }
+
+    @media (max-width: 640px) {
+      .footer-inner { flex-direction: column; align-items: center; text-align: center; }
+      .hero-btns .btn { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ============================================
+       HEADER
+  ============================================ -->
+  <header id="site-header">
+    <nav>
+      <a href="/" class="logo">
+        <div class="logo-mark">
+          <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z"/>
+          </svg>
+        </div>
+        <span class="logo-text">Lone Ranger Estimator</span>
+      </a>
+      <a href="/dashboard" class="nav-signin">Sign In</a>
+      <button class="hamburger" id="hamburger-btn" aria-label="Toggle menu">
+        <svg id="icon-menu" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+        </svg>
+        <svg id="icon-close" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </nav>
+    <div class="mobile-menu" id="mobile-menu">
+      <a href="/dashboard">Sign In</a>
+    </div>
+  </header>
+
+  <!-- ============================================
+       HERO
+  ============================================ -->
+  <section class="hero">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+    <div class="hero-content">
+      <h1>Bid Jobs From Your Truck in 60 Seconds</h1>
+      <p>Text or speak your materials and labor. Get a professional PDF estimate instantly. Send it to your client before you leave the driveway.</p>
+      <div class="hero-btns">
+        <a href="/dashboard" class="btn btn-primary">Start Free Trial — $49/mo</a>
+        <a href="#how-it-works" class="btn btn-ghost">See How It Works</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================
+       HOW IT WORKS
+  ============================================ -->
+  <section class="section" id="how-it-works">
+    <div class="container">
+      <h2 class="section-title text-center scroll-animate">From Job Site to Invoice in Three Steps</h2>
+      <div class="steps-grid">
+        <div class="card step-card scroll-animate delay-1">
+          <div class="step-icon">🎙️</div>
+          <h3>Speak or Type Your Scope</h3>
+          <p>Standing on a job site or sitting in your truck, describe the work naturally. Materials, labor, quantities — just talk.</p>
+        </div>
+        <div class="card step-card scroll-animate delay-2">
+          <div class="step-icon">⚡</div>
+          <h3>AI Prices It Instantly</h3>
+          <p>Gemini AI extracts every line item and prices it against your private supplier catalog. Your rates, your prices, nobody else's.</p>
+        </div>
+        <div class="card step-card scroll-animate delay-3">
+          <div class="step-icon">📄</div>
+          <h3>Professional PDF, Emailed Instantly</h3>
+          <p>Your branded estimate lands in your inbox with your logo, license number, itemized tables, Wisconsin tax, and signature lines. Ready to forward to your client.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================
+       FEATURES
+  ============================================ -->
+  <section class="section-alt" id="features">
+    <div class="container">
+      <h2 class="section-title text-center scroll-animate">Everything You Need to Bid Like a Pro</h2>
+      <div class="features-grid">
+        <div class="card feature-card scroll-animate delay-1">
+          <h3>AI Voice &amp; Text Parser</h3>
+          <p>Speak naturally or type your job scope. Gemini AI automatically identifies materials, labor tasks, and pricing — turning your field notes into professional estimates in seconds.</p>
+        </div>
+        <div class="card feature-card scroll-animate delay-2">
+          <h3>Private Pricing Database</h3>
+          <p>Upload your own CSV pricing catalog with your supplier rates. The AI references your custom prices first, falling back to regional averages only for items not in your list.</p>
+        </div>
+        <div class="card feature-card scroll-animate delay-3">
+          <h3>Interactive Ledger Editor</h3>
+          <p>Review and fine-tune every line item in an editable grid. Quantities, prices, and descriptions update in real-time with automatic tax and total recalculations.</p>
+        </div>
+        <div class="card feature-card scroll-animate delay-4">
+          <h3>Change Order Engine</h3>
+          <p>When scope changes mid-project, dictate the changes and let AI calculate the delta cost. Document price adjustments instantly to prevent scope creep disputes.</p>
+        </div>
+        <div class="card feature-card scroll-animate delay-5">
+          <h3>SMS Client Approval Portal</h3>
+          <p>Send change orders directly to your client via text message. They tap a secure link, review the changes, and approve with one click — no hunting for signatures.</p>
+        </div>
+        <div class="card feature-card scroll-animate delay-6">
+          <h3>Multi-Project Workspace</h3>
+          <p>Store all your estimates and change orders in one digital filing cabinet. Search, reload, and reference any historical project from anywhere.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================
+       PDF PREVIEW
+  ============================================ -->
+  <section class="section">
+    <div class="container">
+      <div class="pdf-section-grid">
+        <div class="scroll-animate">
+          <h2>Every Estimate Looks Like It Came From a $10M Company</h2>
+          <p>Your logo, your license number, your address. Itemized materials and labor tables. Wisconsin sales tax calculated automatically. 30-day validity clause. Dual signature lines. Sequential estimate numbers. This is what your client receives.</p>
+        </div>
+        <div class="scroll-animate delay-2">
+          <div class="pdf-mockup">
+            <div class="pdf-header">
+              <div style="display:flex;align-items:center;gap:12px;">
+                <div class="pdf-logo-placeholder"></div>
+                <div>
+                  <div class="pdf-line pdf-line-dark" style="width:140px;"></div>
+                  <div class="pdf-line" style="width:100px;margin-top:6px;"></div>
+                </div>
+              </div>
+              <div style="text-align:right;">
+                <div class="pdf-line" style="width:80px;margin-left:auto;"></div>
+                <div class="pdf-line pdf-line-accent" style="width:60px;margin-left:auto;margin-top:6px;height:12px;"></div>
+              </div>
+            </div>
+            <div style="margin-bottom:1rem;">
+              <div class="pdf-line" style="width:96px;"></div>
+              <div class="pdf-line" style="width:180px;margin-top:6px;height:10px;"></div>
+              <div class="pdf-line" style="width:140px;margin-top:4px;"></div>
+            </div>
+            <div style="border:1px solid #e5e7eb;border-radius:0.5rem;overflow:hidden;margin-bottom:1rem;">
+              <div class="pdf-table-header">
+                <div class="pdf-line pdf-line-accent" style="width:64px;height:6px;"></div>
+              </div>
+              <div class="pdf-table-row">
+                <div class="pdf-line" style="width:120px;"></div>
+                <div class="pdf-line" style="width:48px;"></div>
+              </div>
+              <div class="pdf-table-row">
+                <div class="pdf-line" style="width:100px;"></div>
+                <div class="pdf-line" style="width:40px;"></div>
+              </div>
+              <div class="pdf-table-row">
+                <div class="pdf-line" style="width:110px;"></div>
+                <div class="pdf-line" style="width:44px;"></div>
+              </div>
+            </div>
+            <div class="pdf-total-row">
+              <div class="pdf-line" style="width:80px;"></div>
+              <div class="pdf-line pdf-line-accent" style="width:96px;height:14px;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================
+       PRICING
+  ============================================ -->
+  <section class="section-alt" id="pricing">
+    <div class="container-sm">
+      <h2 class="section-title text-center scroll-animate">One Plan. Everything Included.</h2>
+      <div class="pricing-card scroll-animate delay-1">
+        <div style="margin-bottom:0.5rem;">
+          <span class="price-amount">$49</span>
+          <span class="price-period">/month</span>
+        </div>
+        <p class="price-note">No contracts. Cancel anytime.</p>
+        <ul class="feature-list">
+          <li>
+            <svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            Unlimited estimates
+          </li>
+          <li>
+            <svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            AI voice and text parsing
+          </li>
+          <li>
+            <svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            Private supplier price book
+          </li>
+          <li>
+            <svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            Professional PDF generation
+          </li>
+          <li>
+            <svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            Change order engine
+          </li>
+          <li>
+            <svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            SMS client approval
+          </li>
+          <li>
+            <svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            Multi-project workspace
+          </li>
+          <li>
+            <svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            Your branding on every document
+          </li>
+        </ul>
+        <a href="/dashboard" class="btn btn-primary" style="width:100%;display:block;text-align:center;">Start Free Trial</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================
+       TESTIMONIALS
+  ============================================ -->
+  <section class="section">
+    <div class="container">
+      <h2 class="section-title text-center scroll-animate">Built for Wisconsin Contractors</h2>
+      <div class="testimonials-grid">
+        <div class="card testimonial-card scroll-animate delay-1">
+          <div class="stars">
+            <span class="star">★</span><span class="star">★</span><span class="star">★</span><span class="star">★</span><span class="star">★</span>
+          </div>
+          <p class="testimonial-quote">"I sent my first estimate from my truck before I even started the job. Game changer."</p>
+          <p class="testimonial-author">— Mike R., Rhinelander WI</p>
+        </div>
+        <div class="card testimonial-card scroll-animate delay-2">
+          <div class="stars">
+            <span class="star">★</span><span class="star">★</span><span class="star">★</span><span class="star">★</span><span class="star">★</span>
+          </div>
+          <p class="testimonial-quote">"My clients think I have an office staff. It's just me and this app."</p>
+          <p class="testimonial-author">— Dave K., Wausau WI</p>
+        </div>
+        <div class="card testimonial-card scroll-animate delay-3">
+          <div class="stars">
+            <span class="star">★</span><span class="star">★</span><span class="star">★</span><span class="star">★</span><span class="star">★</span>
+          </div>
+          <p class="testimonial-quote">"The change order feature alone is worth the subscription. No more verbal agreements."</p>
+          <p class="testimonial-author">— Tom S., Eagle River WI</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================
+       CTA BANNER
+  ============================================ -->
+  <section class="section">
+    <div class="container">
+      <div class="cta-banner scroll-animate">
+        <h2>Your Next Estimate is 60 Seconds Away</h2>
+        <p>Solo contractor. Professional estimates.</p>
+        <a href="/dashboard" class="btn btn-dark">Launch Free Workspace →</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================
+       FOOTER
+  ============================================ -->
+  <footer>
+    <div class="footer-inner">
+      <a href="/" class="logo">
+        <div class="logo-mark">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z"/>
+          </svg>
+        </div>
+        <span class="logo-text">Lone Ranger Estimator</span>
+      </a>
+      <p class="footer-tagline">Built by a contractor, for contractors in Northern Wisconsin</p>
+      <div class="footer-links">
+        <a href="/dashboard">Dashboard</a>
+        <a href="/privacy.html">Privacy Policy</a>
+        <a href="/terms.html">Terms of Service</a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- ============================================
+       JAVASCRIPT
+  ============================================ -->
+  <script>
+    // Sticky header on scroll
+    const header = document.getElementById('site-header');
+    window.addEventListener('scroll', () => {
+      header.classList.toggle('scrolled', window.scrollY > 10);
+    });
+
+    // Mobile menu toggle
+    const hamburgerBtn = document.getElementById('hamburger-btn');
+    const mobileMenu = document.getElementById('mobile-menu');
+    const iconMenu = document.getElementById('icon-menu');
+    const iconClose = document.getElementById('icon-close');
+
+    hamburgerBtn.addEventListener('click', () => {
+      const isOpen = mobileMenu.classList.toggle('open');
+      iconMenu.style.display = isOpen ? 'none' : 'block';
+      iconClose.style.display = isOpen ? 'block' : 'none';
+    });
+
+    // Scroll-triggered animations using IntersectionObserver
+    const animatedEls = document.querySelectorAll('.scroll-animate');
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+          observer.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.12 });
+
+    animatedEls.forEach(el => observer.observe(el));
+
+    // Smooth scroll for anchor links
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+      anchor.addEventListener('click', (e) => {
+        const target = document.querySelector(anchor.getAttribute('href'));
+        if (target) {
+          e.preventDefault();
+          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          // Close mobile menu if open
+          mobileMenu.classList.remove('open');
+          iconMenu.style.display = 'block';
+          iconClose.style.display = 'none';
+        }
+      });
+    });
+  </script>
+
+</body>
+</html>

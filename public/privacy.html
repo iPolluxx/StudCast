@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy | Lone Ranger Estimator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --base-bg: #210936;
+      --card-bg: #2d0f47;
+      --header-bg: #1a0729;
+      --primary-accent: #521880;
+      --accent-hover: #6d28d9;
+      --text-primary: #e9d5ff;
+      --text-muted: #9b59d0;
+      --text-accent: #c084fc;
+      --success: #22c55e;
+      --radius-card: 1.25rem;
+      --radius-btn: 1rem;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: var(--base-bg);
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    
+    h1, h2, h3 { font-family: 'Outfit', sans-serif; }
+
+    /* Header / Nav */
+    header {
+      background: rgba(26, 7, 41, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid rgba(82, 24, 128, 0.3);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1rem 2rem;
+      max-width: 1152px;
+      margin: 0 auto;
+      width: 100%;
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      text-decoration: none;
+    }
+    .logo-mark {
+      width: 40px; height: 40px;
+      border-radius: 0.5rem;
+      background: linear-gradient(135deg, var(--accent-hover), var(--primary-accent));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .logo-mark svg { width: 20px; height: 20px; color: var(--text-primary); }
+    .logo-text {
+      font-family: 'Outfit', sans-serif;
+      font-weight: 700;
+      font-size: 1.1rem;
+      color: var(--text-primary);
+    }
+    .nav-back {
+      padding: 0.625rem 1.25rem;
+      border-radius: 0.75rem;
+      border: 1px solid var(--primary-accent);
+      color: var(--text-accent);
+      font-weight: 500;
+      font-size: 0.95rem;
+      text-decoration: none;
+      transition: all 0.2s ease;
+    }
+    .nav-back:hover { background: rgba(82, 24, 128, 0.2); }
+
+    /* Main content */
+    .content-container {
+      max-width: 800px;
+      margin: 3rem auto;
+      padding: 0 1.5rem;
+      flex: 1;
+      width: 100%;
+    }
+    .doc-card {
+      background: var(--card-bg);
+      border: 1px solid var(--primary-accent);
+      border-radius: var(--radius-card);
+      padding: 2.5rem;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+    }
+    h1 {
+      font-size: 2.25rem;
+      font-weight: 800;
+      color: #ffffff;
+      margin-bottom: 0.5rem;
+    }
+    .meta-date {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      margin-bottom: 2rem;
+      border-bottom: 1px solid rgba(82, 24, 128, 0.3);
+      padding-bottom: 1rem;
+    }
+    h2 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: var(--text-accent);
+      margin-top: 2rem;
+      margin-bottom: 0.75rem;
+    }
+    p {
+      color: var(--text-primary);
+      line-height: 1.7;
+      font-size: 0.95rem;
+      margin-bottom: 1.25rem;
+    }
+    .compliance-box {
+      background: rgba(109, 40, 217, 0.15);
+      border-left: 4px solid var(--text-accent);
+      padding: 1.5rem;
+      margin: 1.5rem 0;
+      border-radius: 0 0.75rem 0.75rem 0;
+    }
+    .compliance-box p {
+      color: #ffffff;
+      font-weight: 600;
+      margin-bottom: 0;
+    }
+
+    /* Footer */
+    footer {
+      background: var(--header-bg);
+      border-top: 1px solid var(--primary-accent);
+      padding: 3rem 2rem;
+      margin-top: auto;
+    }
+    .footer-inner {
+      max-width: 1152px;
+      margin: 0 auto;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1.5rem;
+      width: 100%;
+    }
+    .footer-tagline { color: var(--text-muted); font-size: 0.875rem; }
+    .footer-links { display: flex; gap: 1.5rem; }
+    .footer-links a { color: var(--text-accent); font-size: 0.875rem; text-decoration: none; transition: color 0.2s; }
+    .footer-links a:hover { color: var(--text-primary); }
+
+    @media (max-width: 640px) {
+      .footer-inner { flex-direction: column; align-items: center; text-align: center; }
+      .doc-card { padding: 1.5rem; }
+      h1 { font-size: 1.75rem; }
+      h2 { font-size: 1.2rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header / Navigation -->
+  <header>
+    <nav>
+      <a href="/" class="logo">
+        <div class="logo-mark">
+          <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z"/>
+          </svg>
+        </div>
+        <span class="logo-text">Lone Ranger Estimator</span>
+      </a>
+      <a href="/" class="nav-back">← Back to Home</a>
+    </nav>
+  </header>
+
+  <!-- Main Content -->
+  <main class="content-container">
+    <div class="doc-card">
+      <h1>Privacy Policy</h1>
+      <p class="meta-date"><strong>Effective Date:</strong> May 28, 2026</p>
+      
+      <p>Lone Ranger Contracting LLC ("we," "our," or "us") operates the Lone Ranger Estimator platform. This Privacy Policy explains how we collect, use, and protect your information when you use our services.</p>
+
+      <h2>1. Information We Collect</h2>
+      <p>We collect information you provide directly to us when creating a workspace, logging in, or updating your configuration parameters, including your name, company info, email address, and mobile phone number.</p>
+
+      <h2>2. SMS Consent and Phone Numbers</h2>
+      <div class="compliance-box">
+        <p>No mobile information will be shared with third parties or affiliates for marketing or promotional purposes. All other categories exclude text messaging originator opt-in data and consent; this information will not be shared with any third parties. Message frequency varies per user based on account logins and workspace notifications. Message and data rates may apply. Reply STOP to cancel at any time. Reply HELP for customer support.</p>
+      </div>
+
+      <h2>3. Data Protection</h2>
+      <p>We implement industry-standard technical security infrastructure, including encrypted datastore indexing and secure cloud environment isolation, to ensure your business data is secure from unauthorized access.</p>
+
+      <h2>4. Contact Us</h2>
+      <p>If you have any questions regarding this policy, contact us via your platform management portal.</p>
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer>
+    <div class="footer-inner">
+      <a href="/" class="logo">
+        <div class="logo-mark">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z"/>
+          </svg>
+        </div>
+        <span class="logo-text">Lone Ranger Estimator</span>
+      </a>
+      <p class="footer-tagline">Built by a contractor, for contractors in Northern Wisconsin</p>
+      <div class="footer-links">
+        <a href="/dashboard">Dashboard</a>
+        <a href="/privacy.html">Privacy Policy</a>
+        <a href="/terms.html">Terms of Service</a>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>

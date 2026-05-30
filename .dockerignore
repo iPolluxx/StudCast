@@ -1,0 +1,20 @@
+# Node dependencies — never ship these in the image
+node_modules/
+
+# Local environment secrets — injected via Secret Manager on Cloud Run
+.env
+
+# Transient local directories — Firestore replaces data/, Cloud Run has no temp persistence
+temp/
+data/
+
+# Local Google OAuth config files — injected via GOOGLE_OAUTH_CREDENTIALS / GOOGLE_OAUTH_TOKEN env vars
+src/config/
+
+# Git history
+.git/
+.gitignore
+
+# Editor / OS artifacts
+.DS_Store
+*.log

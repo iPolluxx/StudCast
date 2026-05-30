@@ -1,0 +1,24 @@
+{
+  "name": "voice-to-estimate-gemini",
+  "version": "1.0.0",
+  "description": "Voice to Estimate Web App using Gemini SDK",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "@google-cloud/firestore": "^8.6.0",
+    "@google/genai": "^2.5.0",
+    "csv-parser": "^3.2.1",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "fs": "^0.0.1-security",
+    "google-auth-library": "^10.6.2",
+    "googleapis": "^172.0.0",
+    "multer": "^1.4.5-lts.1",
+    "nodemailer": "^8.0.7",
+    "puppeteer": "^24.43.1",
+    "stripe": "^22.1.1",
+    "twilio": "^6.0.2"
+  }
+}
