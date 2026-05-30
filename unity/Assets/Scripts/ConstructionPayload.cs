@@ -21,7 +21,7 @@ using System;
 //  }
 // =============================================================================
 
-namespace LoneRanger.Construction
+namespace StudCast.Construction
 {
     /// <summary>
     /// Physical wall dimensions received from the AI Supervisor.

@@ -75,7 +75,7 @@ Auth: `requireAuth` middleware verifies Google OAuth Bearer token, resolves E.16
 ---
 
 ## Namespace
-All Unity data classes live in `LoneRanger.Construction`. `ConstructionManager` is in the global namespace with `using LoneRanger.Construction;` at the top.
+All Unity data classes live in `StudCast.Construction`. `ConstructionManager` is in the global namespace with `using StudCast.Construction;` at the top.
 
 ---
 
