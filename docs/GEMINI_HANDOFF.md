@@ -1,7 +1,7 @@
 # Lone Ranger Estimator — Live Project Context
 > **Purpose:** This document is the handoff bridge between Gemini brainstorming sessions and Claude Code
 > implementation sessions. Update it after every meaningful work session.
-> **Last updated:** 2026-05-31 — Mode 1 Deterministic Material Yard Visualizer complete (all 5 phases); deployed rev 00036
+> **Last updated:** 2026-05-31 — Stripe checkout fixed; email OTP fallback; viz polish; deployed rev 00037
 
 ---
 
@@ -245,6 +245,45 @@ From `public/`:
 ---
 
 ## Work Session Log
+
+### Session: 2026-05-31 (4) — Stripe Fix, Email OTP, Viz Polish
+**Gemini:** Strategic review — identified Stripe, Twilio, mobile UX, and material ID as critical risks.
+**Claude:** Fixed Stripe subscription loop, implemented email OTP fallback, polished visualizer.
+
+#### 1. Stripe checkout redirect loop (`src/server.js`, `public/dashboard.html`)
+**Root cause:** `STRIPE_PRICE_ID` was missing from `.env` → 500 on subscribe. After adding it, checkout worked but subscription never activated because: (a) `STRIPE_WEBHOOK_SECRET` unset causes webhook 400; (b) polling timed out and showed the Subscribe gate again; (c) confused user clicked Subscribe → sent back to Stripe.
+
+**Fix — `POST /api/billing/verify-session`:** New authenticated endpoint. On return from Stripe with `?session_id=cs_test_...`, the frontend immediately calls this endpoint, which calls `stripe.checkout.sessions.retrieve(session_id, { expand: ['subscription'] })`, confirms `payment_status === 'paid'` and `client_reference_id === userPhone`, then writes `active_subscription: true` directly to Firestore. Resolves in <1s without any webhook dependency. Polling fallback retained for edge cases.
+
+**Frontend:** Session verification fires before polling. On activation, cleans URL with `window.history.replaceState` and shows success toast. Fallback polling toast changed from hard error to "if not active in a moment, refresh."
+
+#### 2. Email OTP fallback (`src/server.js`, `public/dashboard.html`)
+**Why:** Twilio 10DLC campaign still in review — new users cannot receive SMS OTP, blocking all onboarding.
+
+**Transport priority:**
+1. Twilio SMS (existing, unchanged)
+2. Gmail via nodemailer (new) — sends to user's Google OAuth email, same `EMAIL_USER`/`EMAIL_PASS` creds as PDF delivery
+3. Console log (dev fallback when both transports unavailable)
+
+Response includes `{ channel: 'sms' | 'email' | 'log' }`. Frontend reads it and dynamically updates OTP modal title, subtitle, and button text:
+- SMS: "Verify Your Phone" / "sent to your phone number"
+- Email: "Verify Your Account" / "sent to your email address"
+
+#### 3. Visualizer polish (`public/dashboard.html`)
+- **Build Layer removed** — `renderBuild()`, `_animateBuildPieces()`, `switchTab()`, `fireVizIntent()`, all Build Layer state vars, tab buttons, `viz-build-info` div, and `viz-status` span all deleted (~240 lines)
+- **HUD + status text removed** — `_hudEl`, `_initHUD()`, `_updateHUD()`, `_setStatus()` removed; fleet spawning math untouched
+- **Discrete tooltips** — `userData` now `{ title, material, count, weight }` per physical mesh. Full Lift shows lift-specific data; Loose Stack shows remainder data
+- **Loose board separation** — 0.03 ft gap between pieces in X; `EdgesGeometry` at 18% opacity added to each loose board so individual 2x4s read clearly
+- **Material identifier improved** — any plate not explicitly "top plate" → PT by default (bottom/sole/sill plates are always PT per building code); SPF check guarded to skip plate-type items; OSB detects "plywood" in addition to "osb"/"sheathing"
+- **Spatial bug fixed** — vehicles moved to `offsetZ=-38` (trailer rear at z=−3); zones moved to z=10/28/46 (was 42/55/68 which clipped into trailer and exceeded 130ft ground boundary)
+
+#### Current deployment state
+- **Revision:** `lone-ranger-app-00037-xxx` (deployed this session)
+- **URL:** `https://lone-ranger-app-879716207624.us-central1.run.app`
+- **Stripe:** `STRIPE_PRICE_ID` set in Cloud Run env. `STRIPE_WEBHOOK_SECRET` still needed for cancel/payment_failed lifecycle events.
+- **Twilio:** 10DLC still in review. Email OTP fallback live.
+
+---
 
 ### Session: 2026-05-31 (3) — Mode 1 Deterministic Material Yard Visualizer (All 5 Phases)
 **Gemini:** Directed full replacement of abstract material yard with a physics-ready digital twin of a commercial lumber drop.
@@ -581,15 +620,17 @@ All Unity development happens on a dedicated GCP cloud workstation.
 - [x] ~~**Deterministic 3D Builder**~~ — Three.js Build Layer live; wall framing with doors + windows renders from voice input
 - [x] ~~**Phase 1 Schema**~~ — `windowOpenings`, `cornerCount`, `wallType`, `doorOpenings` all wired end-to-end
 - [x] ~~**Security audit**~~ — 6 vulnerabilities patched (XSS, PII exposure, weak randomness)
-- [x] ~~**Mode 1 material yard visualizer**~~ — All 5 phases shipped in commit `8be25b7`, live on rev `lone-ranger-app-00036-7lv`
-- [x] ~~**Deploy latest**~~ — All commits through `8be25b7` live on Cloud Run
-- [ ] **Mode 1 UX: test with real voice input** — speak "I need 350 2x4 studs and 86 sheets of OSB" and verify lifts, dunnage, HUD, and tooltip render correctly
-- [ ] **Mode 1 material ID tuning** — `_identifyMaterial()` uses keyword matching; test with varied item names from real Gemini extraction and tune patterns as needed
+- [x] ~~**Mode 1 material yard visualizer**~~ — All 5 phases shipped; viz polish complete (Build Layer removed, discrete tooltips, loose board separation)
+- [x] ~~**Deploy latest**~~ — All commits through current session live on Cloud Run rev 00037
+- [x] ~~**Email OTP fallback**~~ — Parallel transport: Twilio SMS → Gmail fallback → console log; frontend shows correct copy per channel
+- [x] ~~**Stripe checkout loop bug**~~ — Fixed: `POST /api/billing/verify-session` activates subscription directly via Stripe API; no webhook dependency
+- [x] ~~**Mode 1 material ID tuning**~~ — `_identifyMaterial()` improved: bottom/sole/sill plates → PT by default (code-required), top plates → SPF, OSB detects sheathing/plywood
+- [ ] **Stripe webhook secret** — Add `STRIPE_WEBHOOK_SECRET` to Cloud Run env vars for production subscription lifecycle (cancel, payment_failed events). Get from Stripe Dashboard → Webhooks.
+- [ ] **Remove OTP log line** — `console.warn('[register] OTP...')` in server.js once Twilio 10DLC campaign approved
 - [ ] **Mode 2: blueprint upload** — Gemini vision reads blueprint image → extracts all walls → multi-wall JSON → full floor plan render in Three.js
 - [ ] **Multi-wall schema** — Extend Phase 1 JSON to support `walls[]` array with position + rotation per wall
-- [ ] **Remove OTP log line** — `console.warn('[register] OTP...')` in server.js once Twilio campaign is approved
 - [ ] **Phase 2 schema** — Define `floor_frame`, `roof_truss` project types
-- [x] ~~**Unity WebGL pipeline**~~ — Abandoned 2026-05-31; Three.js is the builder; `unity/` folder retained in repo only
+- [x] ~~**Unity WebGL pipeline**~~ — Abandoned; Three.js is the builder; `unity/` folder retained in repo only
 
 ---
 

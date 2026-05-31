@@ -1241,36 +1241,49 @@
                         showToast('Subscription activated! Welcome to Lone Ranger Estimator.', 'success');
                     }
                 } else if (hasSessionId) {
-                    // Stripe Webhook Race Condition: Optimistic non-blocking loading state
                     hideSubscriptionGate();
-                    showToast('Activating workspace tokens... Please wait.', 'info');
-                    
-                    let attempts = 0;
-                    const maxAttempts = 10;
-                    const intervalId = setInterval(async () => {
-                        attempts++;
-                        console.log(`Polling subscription status... Attempt ${attempts}/${maxAttempts}`);
-                        try {
-                            await loadSettingsProfile();
-                            if (window.userSettings && window.userSettings.active_subscription === true) {
-                                clearInterval(intervalId);
-                                hideSubscriptionGate();
-                                const newUrl = '/dashboard' + window.location.hash;
-                                window.history.replaceState({}, document.title, newUrl);
-                                showToast('Subscription activated! Welcome to Lone Ranger Estimator.', 'success');
-                            } else if (attempts >= maxAttempts) {
-                                clearInterval(intervalId);
-                                showSubscriptionGate();
-                                showToast('✕ Subscription verification timed out. Please refresh or contact support.', 'error');
+                    const sessionId = params.get('session_id');
+                    showToast('Verifying your payment…', 'info');
+
+                    // Primary: verify directly via Stripe API (no webhook needed)
+                    let activated = false;
+                    try {
+                        const vResp = await fetch('/api/billing/verify-session', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authBearerToken}` },
+                            body: JSON.stringify({ session_id: sessionId }),
+                        });
+                        const vData = await vResp.json();
+                        activated = vData.activated === true;
+                    } catch (_) {}
+
+                    if (activated) {
+                        await loadSettingsProfile();
+                        hideSubscriptionGate();
+                        window.history.replaceState({}, document.title, '/dashboard' + window.location.hash);
+                        showToast('Subscription activated! Welcome to Lone Ranger Estimator.', 'success');
+                    } else {
+                        // Fallback: poll for webhook activation (up to 20s)
+                        let attempts = 0;
+                        const intervalId = setInterval(async () => {
+                            attempts++;
+                            try {
+                                await loadSettingsProfile();
+                                if (window.userSettings && window.userSettings.active_subscription === true) {
+                                    clearInterval(intervalId);
+                                    hideSubscriptionGate();
+                                    window.history.replaceState({}, document.title, '/dashboard' + window.location.hash);
+                                    showToast('Subscription activated! Welcome to Lone Ranger Estimator.', 'success');
+                                } else if (attempts >= 10) {
+                                    clearInterval(intervalId);
+                                    showSubscriptionGate();
+                                    showToast('Payment received — if your account isn\'t active in a moment, please refresh.', 'error');
+                                }
+                            } catch (_) {
+                                if (attempts >= 10) { clearInterval(intervalId); showSubscriptionGate(); }
                             }
-                        } catch (err) {
-                            console.error('Polling error:', err);
-                            if (attempts >= maxAttempts) {
-                                clearInterval(intervalId);
-                                showSubscriptionGate();
-                            }
-                        }
-                    }, 2000);
+                        }, 2000);
+                    }
                 } else {
                     showSubscriptionGate();
                 }

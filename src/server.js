@@ -1944,6 +1944,47 @@ app.post('/api/billing/create-checkout-session', requireAuth, async (req, res) =
 });
 
 // ══════════════════════════════════════════════════════════════════════
+//  ENDPOINT: POST /api/billing/verify-session
+//  Called immediately when the user returns from Stripe with a session_id.
+//  Verifies payment_status directly via Stripe API — no webhook required.
+//  Activates the subscription in Firestore on confirmation.
+// ══════════════════════════════════════════════════════════════════════
+app.post('/api/billing/verify-session', requireAuth, async (req, res) => {
+    const { session_id } = req.body;
+    if (!session_id || !session_id.startsWith('cs_')) {
+        return res.status(400).json({ error: 'Invalid session_id.' });
+    }
+    try {
+        const session = await stripe.checkout.sessions.retrieve(session_id, {
+            expand: ['subscription'],
+        });
+
+        // Guard: session must belong to this user
+        if (session.client_reference_id !== req.userPhone) {
+            return res.status(403).json({ error: 'Session does not belong to this account.' });
+        }
+
+        if (session.payment_status === 'paid') {
+            const configRef = db.collection('users').doc(req.userPhone).collection('settings').doc('config');
+            await configRef.set({
+                active_subscription: true,
+                subscription_status: 'active',
+                stripe_customer_id: session.customer,
+                stripe_subscription_id: typeof session.subscription === 'object'
+                    ? session.subscription.id
+                    : session.subscription,
+            }, { merge: true });
+            return res.json({ success: true, activated: true });
+        }
+
+        return res.json({ success: true, activated: false });
+    } catch (err) {
+        console.error('[verify-session]', err.message);
+        return res.status(500).json({ error: 'Verification failed.' });
+    }
+});
+
+// ══════════════════════════════════════════════════════════════════════
 //  ENDPOINT: GET /api/me
 //  Returns the authenticated user's normalized E.164 phone number.
 //  Used by the frontend header badge to confirm the active session.
