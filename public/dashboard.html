@@ -612,7 +612,7 @@
                         <h2 class="text-sm font-semibold" style="color:var(--text-primary)">3D Material Visualizer</h2>
                     </div>
                     <div></div>
-                    <span id="viz-status" class="text-[10px] px-2 py-0.5 rounded-full" style="background:rgba(82,24,128,.35);color:var(--text-muted)">Idle</span>
+                    <div></div>
                 </div>
                 <!-- Canvas + legend -->
                 <div class="flex" style="height:420px">
@@ -2827,7 +2827,6 @@
             let _raycaster    = null;
             let _tooltipMeshes = [];
             let _tooltipEl    = null;
-            let _hudEl        = null;
 
             // ── Intent cache keyed by estimateId ─────────────────────────
             function getCachedIntent(id) { return id ? _intentCache[id] : null; }
@@ -2949,7 +2948,7 @@
                     const lift    = new THREE.Mesh(liftGeo, liftMats);
                     lift.position.set(0, stackY + s.liftH / 2, 0);
                     lift.castShadow = true; lift.receiveShadow = true;
-                    lift.userData = { label: s.label, qty: s.liftQty, weight: Math.round(s.liftQty * s.weightEach) };
+                    lift.userData = { title: 'Full Lift', material: s.label, count: s.liftQty, weight: Math.round(s.liftQty * s.weightEach) };
                     _tooltipMeshes.push(lift);
                     grp.add(lift);
                     stackY += s.liftH;
@@ -2960,15 +2959,21 @@
                     const remWeight = Math.round(remainder * s.weightEach);
                     totalWeight += remWeight;
                     const rowMax  = Math.max(1, Math.round(s.liftW / s.pW));
+                    const PIECE_GAP = 0.03; // gap between pieces so lighting separates them
+                    const edgeMat = new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.18 });
                     let py = stackY, placed = 0;
                     while (placed < remainder) {
                         const n = Math.min(rowMax, remainder - placed);
                         for (let j = 0; j < n; j++) {
-                            const p = new THREE.Mesh(new THREE.BoxGeometry(s.pW, s.pH, s.pL), woodMat);
-                            p.position.set(-s.liftW / 2 + j * s.pW + s.pW / 2, py + s.pH / 2, 0);
+                            const geo = new THREE.BoxGeometry(s.pW, s.pH, s.pL);
+                            const p = new THREE.Mesh(geo, woodMat);
+                            p.position.set(-s.liftW / 2 + j * (s.pW + PIECE_GAP) + s.pW / 2, py + s.pH / 2, 0);
                             p.castShadow = true;
-                            p.userData = { label: s.label + ' (loose)', qty: remainder, weight: remWeight };
+                            p.userData = { title: 'Loose Stack', material: s.label, count: remainder, weight: remWeight };
                             _tooltipMeshes.push(p); grp.add(p);
+                            const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), edgeMat);
+                            edges.position.copy(p.position);
+                            grp.add(edges);
                         }
                         py += s.pH + 0.015; placed += n;
                     }
@@ -3055,22 +3060,6 @@
                 if (mount && mount.parentElement) { mount.parentElement.style.position='relative'; mount.parentElement.appendChild(_tooltipEl); }
             }
 
-            // ── HUD weight display ────────────────────────────────────────
-            function _initHUD() {
-                _hudEl = document.createElement('div');
-                _hudEl.style.cssText = 'position:absolute;top:10px;right:10px;background:rgba(10,5,20,0.84);color:#e9d5ff;padding:8px 14px;border-radius:8px;font-size:13px;font-weight:500;font-family:Inter,sans-serif;pointer-events:none;z-index:300;border:1px solid rgba(82,24,128,0.6);display:none;line-height:1.65;';
-                const mount = document.getElementById('viz-canvas-mount');
-                if (mount && mount.parentElement) mount.parentElement.appendChild(_hudEl);
-            }
-
-            function _updateHUD(lbs, trucks) {
-                if (!_hudEl) return;
-                const note = trucks > 1 ? `<br><span style="color:#fbbf24;font-size:11px">&#9888; ${trucks} trucks required</span>` : '';
-                _hudEl.innerHTML = `Total Est. Weight: <strong>${lbs.toLocaleString()} lbs</strong>${note}`;
-                _hudEl.style.display = 'block';
-                _hudEl.dataset.hasData = '1';
-            }
-
             // ── Raycasting → tooltip ──────────────────────────────────────
             function _onMouseMove(e) {
                 if (!_raycaster || !_tooltipEl || !_tooltipMeshes.length) return;
@@ -3083,8 +3072,8 @@
                 const hits = _raycaster.intersectObjects(_tooltipMeshes, false);
                 if (hits.length) {
                     const ud = hits[0].object.userData;
-                    if (ud && ud.label) {
-                        _tooltipEl.innerHTML = `<strong>${ud.label}</strong><br>Qty: ${ud.qty != null ? ud.qty.toLocaleString() : '&#8212;'}<br>Weight: ${ud.weight != null ? ud.weight.toLocaleString() + ' lbs' : '&#8212;'}`;
+                    if (ud && ud.title) {
+                        _tooltipEl.innerHTML = `<strong>${ud.title}</strong><br>${ud.material}<br>Count: ${ud.count != null ? ud.count.toLocaleString() + ' pcs' : '&#8212;'}<br>Weight: ${ud.weight != null ? ud.weight.toLocaleString() + ' lbs' : '&#8212;'}`;
                         _tooltipEl.style.left = (e.clientX - rect.left + 15) + 'px';
                         _tooltipEl.style.top  = (e.clientY - rect.top  - 10) + 'px';
                         _tooltipEl.style.display = 'block';
@@ -3168,7 +3157,6 @@
 
                 _raycaster = new THREE.Raycaster();
                 _initTooltip();
-                _initHUD();
 
                 mount.addEventListener('mousemove', _onMouseMove);
                 window.addEventListener('resize', _handleResize);
@@ -3381,7 +3369,7 @@
                     legendItems.push({ color, text: trade, qty: data.qty, weight: null, lifts: undefined, rem: undefined });
                 });
 
-                if (!legendItems.length) { _setStatus('No materials'); return; }
+                if (!legendItems.length) return;
 
                 // PHASE 5: Fleet spawning — vehicles park at negative Z (offsetZ=-38)
                 // so trailer rear (z=-3) is fully clear of Zone 1 materials (z≥10)
@@ -3389,9 +3377,6 @@
                 for (let ti = 0; ti < Math.min(trucksNeeded, 3); ti++) {
                     _spawnVehicle(-18 + ti * 20, -38);
                 }
-
-                // PHASE 5: HUD
-                _updateHUD(totalWeight, trucksNeeded);
 
                 // Legend
                 const legendEl = document.getElementById('viz-legend-items');
@@ -3412,7 +3397,6 @@
                 }
 
                 _controls.target.set(0, 5, 22);
-                _setStatus('Yard &middot; ' + totalWeight.toLocaleString() + ' lbs &middot; ' + trucksNeeded + ' truck' + (trucksNeeded > 1 ? 's' : ''));
                 _showVizPanel();
             }
 
@@ -3424,11 +3408,6 @@
                     panel.classList.add('viz-active', 'viz-slide-in');
                     setTimeout(_handleResize, 60);
                 }
-            }
-
-            function _setStatus(text) {
-                const el = document.getElementById('viz-status');
-                if (el) el.textContent = text;
             }
 
             return { init, renderStack };
