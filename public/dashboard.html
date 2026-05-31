@@ -3167,15 +3167,16 @@
                 _buildPieces = [];
                 _buildAnimIdx = 0;
 
-                const L   = intent.dimensions.lengthFt         || 20;
-                const H   = intent.dimensions.heightFt         || 9;
-                const spc = (intent.structural?.studSpacingInches || 16) / 12;
-                const PT  = intent.structural?.treatedSolePlate  || false;
-                const doors   = intent.features?.doorOpenings  || 0;
-                const wallTyp = intent.structural?.wallType     || 'exterior';
+                const L       = intent.dimensions.lengthFt          || 20;
+                const H       = intent.dimensions.heightFt          || 9;
+                const spc     = (intent.structural?.studSpacingInches || 16) / 12;
+                const PT      = intent.structural?.treatedSolePlate   || false;
+                const doors   = intent.features?.doorOpenings         || 0;
+                const windows = intent.features?.windowOpenings       || 0;
+                const wallTyp = intent.structural?.wallType           || 'exterior';
 
-                const thick   = 1.5  / 12;
-                const depth   = 3.5  / 12;
+                const thick   = 1.5 / 12;
+                const depth   = 3.5 / 12;
                 const studClr = wallTyp === 'interior' ? 0x94a3b8 : 0xe3c193;
                 const solClr  = PT ? 0x7a8f75 : studClr;
 
@@ -3193,54 +3194,102 @@
                     _buildPieces.push(m);
                 }
 
-                // Sole plate(s)
-                const openPos = doors >= 1 ? [L / 2] : [];
-                if (openPos.length === 0) {
+                // Distribute all openings evenly across the wall
+                const totalOpenings = doors + windows;
+                const openings = [];
+                if (totalOpenings > 0) {
+                    const spacing = L / (totalOpenings + 1);
+                    for (let i = 0; i < totalOpenings; i++) {
+                        openings.push({ x: spacing * (i + 1), type: i < doors ? 'door' : 'window' });
+                    }
+                }
+                const allOpenX = openings.map(o => o.x);
+
+                // Sole plate — continuous except at door openings
+                const doorX = openings.filter(o => o.type === 'door').map(o => o.x).sort((a, b) => a - b);
+                if (doorX.length === 0) {
                     addPiece(L, thick, depth, xOff + L / 2, thick / 2, soleMat);
                 } else {
-                    const c = openPos[0];
-                    const lSpan = c - 1.5, rSpan = L - (c + 1.5);
-                    if (lSpan > 0) addPiece(lSpan, thick, depth, xOff + lSpan / 2, thick / 2, soleMat);
-                    if (rSpan > 0) addPiece(rSpan, thick, depth, xOff + L - rSpan / 2, thick / 2, soleMat);
+                    let cur = 0;
+                    doorX.forEach(dp => {
+                        const seg = dp - 1.5 - cur;
+                        if (seg > 0.01) addPiece(seg, thick, depth, xOff + cur + seg / 2, thick / 2, soleMat);
+                        cur = dp + 1.5;
+                    });
+                    const last = L - cur;
+                    if (last > 0.01) addPiece(last, thick, depth, xOff + cur + last / 2, thick / 2, soleMat);
                 }
 
                 // Top plates (double)
                 addPiece(L, thick, depth, xOff + L / 2, H - thick * 1.5, studMat);
                 addPiece(L, thick, depth, xOff + L / 2, H - thick / 2,   studMat);
 
-                // Field studs
+                // Field studs — skip all opening zones
                 const studH = H - thick * 3;
                 const studY = thick + studH / 2;
                 for (let x = 0; x <= L + 0.01; x += spc) {
                     const absX = xOff + Math.min(x, L);
-                    const inOp = openPos.some(op => x >= op - 1.5 && x <= op + 1.5);
+                    const inOp = allOpenX.some(op => x >= op - 1.5 && x <= op + 1.5);
                     if (!inOp) addPiece(thick, studH, depth, absX, studY, studMat);
                     if (x >= L) break;
                 }
-                // Always place a bookend stud at the wall terminus
-                const endInOp = openPos.some(op => L >= op - 1.5 && L <= op + 1.5);
+                const endInOp = allOpenX.some(op => L >= op - 1.5 && L <= op + 1.5);
                 if (!endInOp) addPiece(thick, studH, depth, xOff + L, studY, studMat);
 
-                // Door framing
-                openPos.forEach(op => {
-                    const absOp   = xOff + op;
-                    const jackH   = 6.8 - thick;
-                    const jackY   = thick + jackH / 2;
-                    const headerH = 6 / 12;
-                    const headerY = 6.8 + headerH / 2;
-                    const cripB   = headerY + headerH / 2;
-                    const cripH   = (H - thick * 2) - cripB;
-                    const cripY   = cripB + cripH / 2;
+                // Opening framing — doors and windows
+                openings.forEach(({ x: op, type }) => {
+                    const absOp  = xOff + op;
+                    const roHalf = 1.5; // 3 ft rough opening half-width
 
-                    addPiece(thick, studH, depth, absOp - 1.5 - thick / 2, studY, studMat); // king L
-                    addPiece(thick, studH, depth, absOp + 1.5 + thick / 2, studY, studMat); // king R
-                    addPiece(thick, jackH, depth, absOp - 1.5 + thick / 2, jackY, studMat); // jack L
-                    addPiece(thick, jackH, depth, absOp + 1.5 - thick / 2, jackY, studMat); // jack R
-                    addPiece(3 - thick * 2, headerH, depth, absOp, headerY, studMat);       // header
-                    if (cripH > 0.1) {
-                        addPiece(thick, cripH, depth, absOp,       cripY, studMat);
-                        addPiece(thick, cripH, depth, absOp - 1.0, cripY, studMat);
-                        addPiece(thick, cripH, depth, absOp + 1.0, cripY, studMat);
+                    if (type === 'door') {
+                        const jackH   = 6.8 - thick;
+                        const jackY   = thick + jackH / 2;
+                        const headerH = 6 / 12;
+                        const headerY = 6.8 + headerH / 2;
+                        const cripB   = headerY + headerH / 2;
+                        const cripH   = (H - thick * 2) - cripB;
+                        const cripY   = cripB + cripH / 2;
+
+                        addPiece(thick, studH, depth, absOp - roHalf - thick / 2, studY, studMat); // king L
+                        addPiece(thick, studH, depth, absOp + roHalf + thick / 2, studY, studMat); // king R
+                        addPiece(thick, jackH, depth, absOp - roHalf + thick / 2, jackY, studMat); // jack L
+                        addPiece(thick, jackH, depth, absOp + roHalf - thick / 2, jackY, studMat); // jack R
+                        addPiece(3 - thick * 2, headerH, depth, absOp, headerY, studMat);          // header
+                        if (cripH > 0.1) {
+                            addPiece(thick, cripH, depth, absOp,       cripY, studMat);
+                            addPiece(thick, cripH, depth, absOp - 0.8, cripY, studMat);
+                            addPiece(thick, cripH, depth, absOp + 0.8, cripY, studMat);
+                        }
+                    } else {
+                        // Window: sill at 3 ft, header at 6.5 ft
+                        const sillY    = 3.0;
+                        const hdrTop   = 6.5;
+                        const jackH    = hdrTop - thick;
+                        const jackY    = thick + jackH / 2;
+                        const headerH  = 6 / 12;
+                        const headerY  = hdrTop + headerH / 2;
+                        const cbH      = sillY - thick * 2;   // cripples below sill
+                        const cbY      = thick + cbH / 2;
+                        const caB      = headerY + headerH / 2;
+                        const caH      = (H - thick * 2) - caB; // cripples above header
+                        const caY      = caB + caH / 2;
+
+                        addPiece(thick, studH, depth, absOp - roHalf - thick / 2, studY, studMat); // king L
+                        addPiece(thick, studH, depth, absOp + roHalf + thick / 2, studY, studMat); // king R
+                        addPiece(thick, jackH, depth, absOp - roHalf + thick / 2, jackY, studMat); // trimmer L
+                        addPiece(thick, jackH, depth, absOp + roHalf - thick / 2, jackY, studMat); // trimmer R
+                        addPiece(3 - thick * 2, headerH, depth, absOp, headerY, studMat);          // header
+                        addPiece(3 - thick * 2, thick,   depth, absOp, sillY,   studMat);          // rough sill
+                        if (cbH > 0.1) {
+                            addPiece(thick, cbH, depth, absOp,       cbY, studMat); // cripples below
+                            addPiece(thick, cbH, depth, absOp - 0.8, cbY, studMat);
+                            addPiece(thick, cbH, depth, absOp + 0.8, cbY, studMat);
+                        }
+                        if (caH > 0.1) {
+                            addPiece(thick, caH, depth, absOp,       caY, studMat); // cripples above
+                            addPiece(thick, caH, depth, absOp - 0.8, caY, studMat);
+                            addPiece(thick, caH, depth, absOp + 0.8, caY, studMat);
+                        }
                     }
                 });
 
@@ -3256,6 +3305,7 @@
                         <div>Spacing: <strong>${intent.structural?.studSpacingInches || 16}" OC</strong></div>
                         <div>Wall type: <strong>${wallTyp}</strong></div>
                         <div>Door openings: <strong>${doors}</strong></div>
+                        <div>Window openings: <strong>${windows}</strong></div>
                         <div>Pieces: <strong>${_buildPieces.length}</strong></div>`;
                 }
 

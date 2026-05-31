@@ -738,7 +738,7 @@ async function mergeIntoLedger(extracted, phone, zipCode, estimateId = null) {
             estimateId = matchedDoc.id;
         } else {
             // Generate a new ID if no match is found
-            estimateId = estimateId || 'est_' + Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
+            estimateId = estimateId || 'est_' + crypto.randomBytes(8).toString('hex') + Date.now().toString(36);
             docRef = db.collection('users').doc(phone).collection('estimates').doc(estimateId);
         }
     }
@@ -1165,7 +1165,7 @@ app.post('/api/generate-pdf', requireAuth, requireSubscription, async (req, res)
     const companyNameToShow = profile.company_name || user.companyName || 'Lone Ranger Contracting';
     let displayLogoHtml = '';
     if (profile.company_logo_url && (profile.company_logo_url.startsWith('https://') || profile.company_logo_url.startsWith('data:image/'))) {
-        displayLogoHtml = `<img src="${profile.company_logo_url}" style="max-height: 50px; max-width: 150px; object-fit: contain;" />`;
+        displayLogoHtml = `<img src="${escapeHtml(profile.company_logo_url)}" style="max-height: 50px; max-width: 150px; object-fit: contain;" />`;
     } else {
         const initials = companyNameToShow.substring(0, 2).toUpperCase();
         displayLogoHtml = `
@@ -2074,7 +2074,7 @@ app.post('/api/auth/register', requireGoogleAuth, async (req, res) => {
             contact_email: extractedEmail
         }, { merge: true });
 
-        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const otp = crypto.randomInt(100000, 1000000).toString();
         const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
         await db.collection('registrations').doc(formattedPhone).set({
             otp,
@@ -2374,7 +2374,7 @@ app.post('/api/change-orders/generate', requireAuth, requireSubscription, async 
         const approvalToken = crypto.randomBytes(16).toString('hex');
 
         // ── 7. Assemble change order document ─────────────────────────
-        const changeOrderId = `CO-${Date.now()}`;
+        const changeOrderId = `CO-${crypto.randomBytes(8).toString('hex')}`;
         const coDoc = {
             id: changeOrderId,
             parentEstimateId,
@@ -2402,7 +2402,7 @@ app.post('/api/change-orders/generate', requireAuth, requireSubscription, async 
         const companyName = profile.company_name || user.companyName || 'Lone Ranger Contracting';
         let logoHtml = '';
         if (profile.company_logo_url && (profile.company_logo_url.startsWith('https://') || profile.company_logo_url.startsWith('data:image/'))) {
-            logoHtml = `<img src="${profile.company_logo_url}" style="max-height:50px;max-width:150px;object-fit:contain;" />`;
+            logoHtml = `<img src="${escapeHtml(profile.company_logo_url)}" style="max-height:50px;max-width:150px;object-fit:contain;" />`;
         } else {
             const initials = companyName.substring(0, 2).toUpperCase();
             logoHtml = `<div style="width:50px;height:50px;border-radius:50%;background:#521880;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14pt;">${initials}</div>`;
@@ -2633,7 +2633,7 @@ async function approveChangeOrder() {
         const resp = await fetch('/api/change-orders/approve', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ p: ${JSON.stringify(userPhone)}, e: ${JSON.stringify(parentEstimateId)}, c: ${JSON.stringify(changeOrderId)}, t: ${JSON.stringify(token)} })
+            body: JSON.stringify({ r: ${JSON.stringify(changeOrderId)}, t: ${JSON.stringify(token)} })
         });
         const data = await resp.json();
         if (!resp.ok) throw new Error(data.error || 'Approval failed.');
@@ -2666,13 +2666,17 @@ async function approveChangeOrder() {
 // ══════════════════════════════════════════════════════════════════════
 
 app.post('/api/change-orders/approve', async (req, res) => {
-    const { p: userPhone, e: parentEstimateId, c: changeOrderId, t: token } = req.body;
+    const { r: changeOrderId, t: token } = req.body;
 
-    if (!userPhone || !parentEstimateId || !changeOrderId || !token) {
+    if (!changeOrderId || !token) {
         return res.status(400).json({ error: 'Missing required parameters.' });
     }
 
     try {
+        const lookupSnap = await db.collection('approvals').doc(changeOrderId).get();
+        if (!lookupSnap.exists) return res.status(404).json({ error: 'Change order not found.' });
+        const { userPhone, parentEstimateId } = lookupSnap.data();
+
         const coRef = db.collection('users').doc(userPhone)
             .collection('estimates').doc(parentEstimateId)
             .collection('change_orders').doc(changeOrderId);
