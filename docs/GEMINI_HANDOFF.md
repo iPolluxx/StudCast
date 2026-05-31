@@ -357,7 +357,7 @@ Claude Code sessions load project memory automatically and will reference this f
 9. **Claude Code running in VM** — Installed via npm at `C:\Projects\StudCast`. Claude Code in the VM generated `CLAUDE.md` and pushed it to StudCast. This gives both local and VM Claude sessions full project context automatically.
 
 **Current state right now:**
-- VM: **RUNNING** — `lone-ranger-unity-desktop`, IP changes on each start, user `builder`, run `dev-box-password` to reset creds
+- VM: **STOPPED** (~$0.05/hr) — start with `dev-box-launch`; IP changes on each start, user `builder`, run `dev-box-password` to reset creds
 - Unity 6: installed in VM, project loading (Unity project creation was in progress during this session)
 - StudCast repo: `github.com/iPolluxx/StudCast` — synced, local matches remote
 - Backend: deployed on Cloud Run at `https://lone-ranger-app-879716207624.us-central1.run.app` (revision `lone-ranger-app-00034-rj7`)
@@ -490,7 +490,7 @@ All Unity development happens on a dedicated GCP cloud workstation.
 - [x] ~~**Repo on VM**~~ — StudCast downloaded as ZIP to `C:\Projects\StudCast`
 - [x] ~~**Claude Code in VM**~~ — Running at `C:\Projects\StudCast`
 - [ ] **Open Unity project** — Open `C:\Projects\StudCast\unity` in Unity Hub with Unity 6; verify C# scripts compile
-- [ ] **Update C# namespace** — `ConstructionPayload.cs` uses `LoneRanger.Construction` namespace; rename to `StudCast.Construction` to match new project name
+- [x] ~~**Update C# namespace**~~ — renamed to `StudCast.Construction` (completed in VM session 2026-05-30)
 - [ ] **Assign prefabs** — Create framing prefabs in Unity Editor; assign to `ConstructionManager` Inspector fields
 - [ ] **Unity WebGL Build** — Compile WebGL export; drop build files into `public/`; smoke-test MIME type headers with a real `.wasm` file
 - [ ] **Request GCP GPU quota** — Go to console.cloud.google.com/iam-admin/quotas?project=mightdoit, request GPUS_ALL_REGIONS = 1
