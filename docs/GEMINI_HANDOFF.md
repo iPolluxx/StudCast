@@ -1,7 +1,7 @@
 # Lone Ranger Estimator — Live Project Context
 > **Purpose:** This document is the handoff bridge between Gemini brainstorming sessions and Claude Code
 > implementation sessions. Update it after every meaningful work session.
-> **Last updated:** 2026-05-31 — Unity WebGL dropped; Three.js is permanent Phase 2 builder; window framing added; security fixes
+> **Last updated:** 2026-05-31 — Mode 1 Deterministic Material Yard Visualizer complete (all 5 phases); deployed rev 00036
 
 ---
 
@@ -35,7 +35,7 @@ Two fully separate layers. Unity WebGL was abandoned 2026-05-31 in favor of nati
 ### Deterministic Builder (live — `public/dashboard.html` VizController)
 - Three.js running in the browser — no compilation, no VM needed
 - Two modes in the same visualizer panel:
-  - **Stack Layer** — material yard scene (lumber stacks, bags, buckets, pipes, pallets) driven by ledger items
+  - **Stack Layer** — deterministic digital twin of a commercial lumber drop; scaled bounding box lifts, dunnage, wrapped texture, loose remainders, truck+trailer fleet, raycasting tooltips, HUD weight display
   - **Build Layer** — deterministic wall framing (plates, studs, openings) driven by Supervisor JSON
 - Receives JSON packets from `POST /api/estimate/voice-to-json`
 - NO AI, NO inference — pure deterministic geometry from framing math
@@ -58,7 +58,7 @@ Two fully separate layers. Unity WebGL was abandoned 2026-05-31 in favor of nati
 | Billing | Stripe (subscriptions, webhooks) |
 | SMS | Twilio (OTP verification, client notifications) |
 | PDF | Puppeteer (headless Chromium) |
-| 3D Frontend | Unity WebGL (in progress — Phase 1 MVP) |
+| 3D Frontend | Three.js r128 (browser-native, live) |
 | Hosting | Google Cloud Run (Docker) |
 
 ---
@@ -245,6 +245,70 @@ From `public/`:
 ---
 
 ## Work Session Log
+
+### Session: 2026-05-31 (3) — Mode 1 Deterministic Material Yard Visualizer (All 5 Phases)
+**Gemini:** Directed full replacement of abstract material yard with a physics-ready digital twin of a commercial lumber drop.
+**Claude:** Implemented all 5 phases; deployed as revision `lone-ranger-app-00036-7lv`. Commit `8be25b7`.
+
+#### Architecture of the new Stack Layer (`public/dashboard.html` — `VizController`)
+
+The entire VizController was rewritten (~515 lines replaced). Build Layer (wall framing) is untouched.
+
+**Phase 1 — Environment**
+- `PlaneGeometry(150, 130)` asphalt ground with procedural canvas noise texture (repeat 12×12)
+- Parking lot striping: white bay lines at ±12/24/36/48 ft in X; amber hazard stripe flanking vehicle zone
+- `HemisphereLight(sky=0x7ec8e3, ground=0x5a3b20, 0.7)` — outdoor ambient fill
+- `DirectionalLight(0xfff8e7, 1.4)` at (35, 50, 30) with PCF soft shadows, 2048×2048 shadow map
+- Warehouse backdrop: 80×24 ft steel wall, 82×40 ft roof, 3 loading bay doors at x=±22, 0
+- Scene fog from 70–115 ft (matches sky color for depth)
+
+**Phase 2 — Hardcoded material constants (`MAT_CONST`)**
+
+| Key | Lift qty | Piece dims (ft) | Lift dims (ft) | lbs/piece | lbs/lift |
+|---|---|---|---|---|---|
+| `SPF` | 294 | 3.5/12 × 1.5/12 × 8 | 49/12 W × 31.5/12 H × 8 L | 9.0 | 2,646 |
+| `PT` | 294 | same | same | 15.0 | 4,410 |
+| `OSB` | 86 | 47.875/12 × 0.418/12 × 95.875/12 | 47.875/12 W × 3 H × 95.875/12 L | 45.0 | 3,870 |
+
+Dunnage: 3 blocks per lift, cross-section 3.5/12 × 3.5/12 ft, placed at 1 ft / 4 ft / 7 ft along lift length.
+`TRAILER_MAX_LBS = 11200` (16-ft tandem-axle flatbed).
+
+**Phase 3 — Delivery math & geometry (`_buildLiftGeo`)**
+- `fullLifts = Math.floor(qty / liftQty)` — each rendered as AABB bounding box with per-face material array:
+  - `BoxGeometry` face order: `[+X, -X, +Y(top), -Y(bottom), +Z, -Z]`
+  - Faces 0,1,2,4,5 = plastic wrap `CanvasTexture` (striped semi-transparent)
+  - Face 3 (-Y) = exposed wood grain `CanvasTexture` (horizontal grain lines, color-matched per species)
+- `remainder = qty % liftQty` — individual pieces rowed on top (each `BoxGeometry(pW, pH, pL)`)
+- Dunnage blocks rendered under each lift (before stackY increments)
+- All geometry built into a sub-group positioned at zone coordinates; labels are sprites on top
+
+**Phase 4 — Phased staging zones**
+- Zone 1 (z = 42 ft): PT + SPF — closest to truck (first out, last in)
+- Zone 2 (z = 55 ft): generic/unidentified trades (old abstract piles, still supported)
+- Zone 3 (z = 68 ft): OSB sheathing bunks
+- Each material gets its own `THREE.Group` sub-group; `zoneCurX` advances by `liftW + 2 ft` per material added to a zone
+
+**Phase 5 — Payload physics + UI**
+- **HUD overlay:** `position:absolute` div inside canvas parent, shows "Total Est. Weight: X,XXX lbs" + fleet warning
+- **Fleet spawning:** `trucksNeeded = ceil(totalLbs / 11200)` — up to 3 truck+trailer combos spawned at x offsets of 20 ft each
+- **Truck geometry:** cab (7.5 × 6.5 × 9), windshield glass (transparent), truck bed, 4 front/rear tires
+- **Trailer geometry:** 8 × 16 ft flatbed deck at z+27, side rails, tandem axle tires at z+23 and z+27
+- **Raycasting tooltips:** `mousemove` → `_raycaster.intersectObjects(_tooltipMeshes)` → HTML div with "Name | Qty | Weight lbs"
+- **Tab integration:** `switchTab('build')` hides `_vehicleGroup`, HUD, and tooltip; Build Layer unchanged
+
+#### Material identifier (`_identifyMaterial`)
+Keyword matching on `item.name + item.trade`:
+- `osb` or `sheathing` → `'OSB'`
+- `treat`/`\bpt\b` + `plate`/`sill`/`bottom` → `'PT'`
+- `2x4`/`stud`/`spf` or trade = `lumber`/`framing` → `'SPF'`
+- Everything else → generic trade pile (Zone 2)
+
+#### Current deployment state
+- **Revision:** `lone-ranger-app-00036-7lv`
+- **URL:** `https://lone-ranger-app-879716207624.us-central1.run.app`
+- **Commits live:** all commits through `8be25b7` (includes security fixes from session 2)
+
+---
 
 ### Session: 2026-05-31 (2) — Unity Pivot, Window Framing, Security Fixes
 **Gemini:** Directed abandoning Unity WebGL pipeline in favor of native Three.js for the deterministic builder.
@@ -514,11 +578,13 @@ All Unity development happens on a dedicated GCP cloud workstation.
 
 ## Open Items / Next Steps
 
-- [x] ~~**Deterministic 3D Builder**~~ — Three.js Build Layer live in dashboard; wall framing with doors + windows renders from voice input
+- [x] ~~**Deterministic 3D Builder**~~ — Three.js Build Layer live; wall framing with doors + windows renders from voice input
 - [x] ~~**Phase 1 Schema**~~ — `windowOpenings`, `cornerCount`, `wallType`, `doorOpenings` all wired end-to-end
 - [x] ~~**Security audit**~~ — 6 vulnerabilities patched (XSS, PII exposure, weak randomness)
-- [ ] **Deploy latest** — commit `9f62962` not yet on Cloud Run; run deploy command above
-- [ ] **Mode 1 polish: truck + trailer** — Add low-poly pickup + trailer to material yard; calculate whether load fits in one trip
+- [x] ~~**Mode 1 material yard visualizer**~~ — All 5 phases shipped in commit `8be25b7`, live on rev `lone-ranger-app-00036-7lv`
+- [x] ~~**Deploy latest**~~ — All commits through `8be25b7` live on Cloud Run
+- [ ] **Mode 1 UX: test with real voice input** — speak "I need 350 2x4 studs and 86 sheets of OSB" and verify lifts, dunnage, HUD, and tooltip render correctly
+- [ ] **Mode 1 material ID tuning** — `_identifyMaterial()` uses keyword matching; test with varied item names from real Gemini extraction and tune patterns as needed
 - [ ] **Mode 2: blueprint upload** — Gemini vision reads blueprint image → extracts all walls → multi-wall JSON → full floor plan render in Three.js
 - [ ] **Multi-wall schema** — Extend Phase 1 JSON to support `walls[]` array with position + rotation per wall
 - [ ] **Remove OTP log line** — `console.warn('[register] OTP...')` in server.js once Twilio campaign is approved
@@ -534,10 +600,11 @@ If you're reading this to catch up on what's been built:
 - The **estimating core** (voice → items → price → PDF) is complete and in production
 - The **billing/onboarding** (Stripe + Google OAuth + Twilio OTP) is complete
 - The **change order system** (generate → SMS approval → sign off) is complete
-- The **new work** is the Supervisor/Builder 3D architecture — backend is complete, Unity side is being set up
-- The **GCP workstation** (`lone-ranger-unity-desktop`, us-central1-a) is live with Unity 6 + Claude Code installed
-- The **repo is now StudCast** (`github.com/iPolluxx/StudCast`) — migrated from Voice-To-Estimate for a clean history
-- The **next milestone** is opening the Unity project, verifying the C# scripts compile, and getting a WebGL build out
+- The **new work** is the Supervisor/Builder 3D architecture — backend + Three.js builder are both live in production
+- The **3D visualizer** has two modes in the same panel: Stack Layer (material yard) and Build Layer (wall framing), both driven by voice input
+- The **GCP workstation** (`lone-ranger-unity-desktop`) is STOPPED; no longer needed — Three.js replaced Unity WebGL
+- The **repo is StudCast** (`github.com/iPolluxx/StudCast`) — all commits through `8be25b7` are on Cloud Run
+- The **next milestone** is Mode 2: contractor uploads a blueprint photo → Gemini vision extracts all walls → multi-wall JSON schema → Three.js renders the full floor plan
 - See `docs/app-features.md` for the full user-facing feature catalog
 - See `docs/user-journey.md` for the end-to-end contractor flow
 - See `src/server.js` for the complete backend (single file, ~2800 lines)
