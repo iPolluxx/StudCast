@@ -2835,19 +2835,278 @@
         // ══════════════════════════════════════════════════════════════════
         const VizController = (() => {
             let _scene, _camera, _renderer, _controls;
-            let _stackGroup, _buildGroup;
+            let _stackGroup, _buildGroup, _vehicleGroup;
             let _initialized = false;
             let _activeTab   = 'stack';
             let _buildPieces = [];
             let _buildAnimIdx = 0;
             let _buildAnimTimer = null;
             const _intentCache = {};
+            let _raycaster    = null;
+            let _tooltipMeshes = [];
+            let _tooltipEl    = null;
+            let _hudEl        = null;
 
             // ── Intent cache keyed by estimateId ─────────────────────────
             function getCachedIntent(id) { return id ? _intentCache[id] : null; }
             function setCachedIntent(id, intent) { if (id) _intentCache[id] = intent; }
 
-            // ── Init Three.js scene ───────────────────────────────────────
+            // ── PHASE 2: Deterministic constants (1 Three.js unit = 1 foot) ──
+            // Piece dims match actual lumber size; lifts match standard commercial delivery specs.
+            const MAT_CONST = {
+                SPF: {
+                    pW: 3.5/12, pH: 1.5/12, pL: 8.0,
+                    liftQty: 294, liftW: 49/12, liftH: 31.5/12, liftL: 8.0,
+                    weightEach: 9.0,
+                    woodColor: 0xe3c193, wrapColor: 0x7aafd4,
+                    label: '2x4x8 SPF Studs', zone: 1,
+                },
+                PT: {
+                    pW: 3.5/12, pH: 1.5/12, pL: 8.0,
+                    liftQty: 294, liftW: 49/12, liftH: 31.5/12, liftL: 8.0,
+                    weightEach: 15.0,
+                    woodColor: 0x6b8a5a, wrapColor: 0x7aad8a,
+                    label: '2x4x8 PT Plates', zone: 1,
+                },
+                OSB: {
+                    pW: 47.875/12, pH: 0.418/12, pL: 95.875/12,
+                    liftQty: 86, liftW: 47.875/12, liftH: 36/12, liftL: 95.875/12,
+                    weightEach: 45.0,
+                    woodColor: 0xc4a96b, wrapColor: 0xe0cfa0,
+                    label: '7/16" OSB Sheathing', zone: 3,
+                },
+            };
+            // Dunnage block positions along 8-ft lift length (feet from start)
+            const DUNNAGE_FT = [1.0, 4.0, 7.0];
+            const TRAILER_MAX_LBS = 11200;
+
+            // ── Identify material from ledger item name/trade ─────────────
+            function _identifyMaterial(item) {
+                const n = (item.name || '').toLowerCase();
+                const t = (item.trade || '').toLowerCase();
+                if (n.includes('osb') || n.includes('sheathing')) return 'OSB';
+                if ((n.includes('treat') || /\bpt\b/.test(n)) &&
+                    (n.includes('plate') || n.includes('sill') || n.includes('bottom'))) return 'PT';
+                if (n.includes('2x4') || n.includes('stud') || n.includes('spf') ||
+                    t.includes('lumber') || t.includes('framing')) return 'SPF';
+                return null;
+            }
+
+            // ── Canvas texture generators ─────────────────────────────────
+            function _makeWoodTex(hex) {
+                const c = document.createElement('canvas'); c.width = 128; c.height = 128;
+                const ctx = c.getContext('2d');
+                const r = (hex >> 16) & 0xff, g = (hex >> 8) & 0xff, b = hex & 0xff;
+                ctx.fillStyle = `rgb(${r},${g},${b})`; ctx.fillRect(0, 0, 128, 128);
+                ctx.strokeStyle = 'rgba(0,0,0,0.2)'; ctx.lineWidth = 1.5;
+                for (let i = 0; i < 9; i++) {
+                    const yy = i * 14 + Math.random() * 4;
+                    ctx.beginPath(); ctx.moveTo(0, yy); ctx.lineTo(128, yy + Math.random() * 5 - 2); ctx.stroke();
+                }
+                return new THREE.CanvasTexture(c);
+            }
+
+            function _makeWrapTex(hex) {
+                const c = document.createElement('canvas'); c.width = 64; c.height = 64;
+                const ctx = c.getContext('2d');
+                const r = (hex >> 16) & 0xff, g = (hex >> 8) & 0xff, b = hex & 0xff;
+                ctx.fillStyle = `rgba(${r},${g},${b},0.9)`; ctx.fillRect(0, 0, 64, 64);
+                ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.lineWidth = 1;
+                for (let i = 1; i < 7; i++) { ctx.beginPath(); ctx.moveTo(i*10, 0); ctx.lineTo(i*10, 64); ctx.stroke(); }
+                return new THREE.CanvasTexture(c);
+            }
+
+            function _makeAsphaltTex() {
+                const c = document.createElement('canvas'); c.width = 256; c.height = 256;
+                const ctx = c.getContext('2d');
+                ctx.fillStyle = '#252525'; ctx.fillRect(0, 0, 256, 256);
+                for (let i = 0; i < 600; i++) {
+                    const v = Math.floor(Math.random() * 25);
+                    ctx.fillStyle = `rgb(${v},${v},${v})`;
+                    ctx.fillRect(Math.random() * 256, Math.random() * 256, Math.random() * 3 + 1, Math.random() * 3 + 1);
+                }
+                return new THREE.CanvasTexture(c);
+            }
+
+            // ── PHASE 3: Lift + loose-remainder geometry ──────────────────
+            // Builds geometry into `grp` at local origin (bottom of stack = y 0).
+            // Returns { height, weight }.
+            function _buildLiftGeo(specKey, qty, grp) {
+                const s = MAT_CONST[specKey];
+                const fullLifts = Math.floor(qty / s.liftQty);
+                const remainder = qty % s.liftQty;
+                const woodTex   = _makeWoodTex(s.woodColor);
+                const wrapTex   = _makeWrapTex(s.wrapColor);
+                const woodMat   = new THREE.MeshStandardMaterial({ map: woodTex, roughness: 0.82, metalness: 0 });
+                // BoxGeometry face order: +X, -X, +Y(top), -Y(bottom), +Z, -Z
+                // Bottom face shows exposed wood grain; other 5 sides show plastic wrap.
+                const mkWrap    = () => new THREE.MeshStandardMaterial({ map: wrapTex, roughness: 0.42, metalness: 0.08 });
+                const liftMats  = [mkWrap(), mkWrap(), mkWrap(), woodMat, mkWrap(), mkWrap()];
+                const dunnageMat = new THREE.MeshStandardMaterial({ color: 0xa08040, roughness: 0.92, metalness: 0 });
+                let stackY = 0, totalWeight = 0;
+
+                for (let li = 0; li < fullLifts; li++) {
+                    totalWeight += s.liftQty * s.weightEach;
+                    const dH = 3.5 / 12;
+                    // 3 dunnage blocks per lift (at 12", 48", 84" = 1, 4, 7 ft from end)
+                    DUNNAGE_FT.forEach(dp => {
+                        const dz = dp - s.liftL / 2;
+                        const db = new THREE.Mesh(new THREE.BoxGeometry(s.liftW * 0.88, dH, dH), dunnageMat);
+                        db.position.set(0, stackY + dH / 2, dz);
+                        db.castShadow = true; grp.add(db);
+                    });
+                    stackY += dH;
+                    // Wrapped lift bounding box
+                    const liftGeo = new THREE.BoxGeometry(s.liftW, s.liftH, s.liftL);
+                    const lift    = new THREE.Mesh(liftGeo, liftMats);
+                    lift.position.set(0, stackY + s.liftH / 2, 0);
+                    lift.castShadow = true; lift.receiveShadow = true;
+                    lift.userData = { label: s.label, qty: s.liftQty, weight: Math.round(s.liftQty * s.weightEach) };
+                    _tooltipMeshes.push(lift);
+                    grp.add(lift);
+                    stackY += s.liftH;
+                }
+
+                // Loose remainder — individual pieces stacked on top of last lift
+                if (remainder > 0) {
+                    const remWeight = Math.round(remainder * s.weightEach);
+                    totalWeight += remWeight;
+                    const rowMax  = Math.max(1, Math.round(s.liftW / s.pW));
+                    let py = stackY, placed = 0;
+                    while (placed < remainder) {
+                        const n = Math.min(rowMax, remainder - placed);
+                        for (let j = 0; j < n; j++) {
+                            const p = new THREE.Mesh(new THREE.BoxGeometry(s.pW, s.pH, s.pL), woodMat);
+                            p.position.set(-s.liftW / 2 + j * s.pW + s.pW / 2, py + s.pH / 2, 0);
+                            p.castShadow = true;
+                            p.userData = { label: s.label + ' (loose)', qty: remainder, weight: remWeight };
+                            _tooltipMeshes.push(p); grp.add(p);
+                        }
+                        py += s.pH + 0.015; placed += n;
+                    }
+                    stackY = py;
+                }
+                return { height: stackY, weight: totalWeight };
+            }
+
+            // ── Vehicle geometry (3/4-ton truck + 16-ft flatbed trailer) ──
+            function _spawnVehicle(offsetX, offsetZ) {
+                const bodyMat  = new THREE.MeshStandardMaterial({ color: 0x2d3748, roughness: 0.4,  metalness: 0.7 });
+                const bedMat   = new THREE.MeshStandardMaterial({ color: 0x4a5568, roughness: 0.65, metalness: 0.3 });
+                const tireMat  = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.95, metalness: 0 });
+                const flatMat  = new THREE.MeshStandardMaterial({ color: 0x697080, roughness: 0.7,  metalness: 0.35 });
+                const glassMat = new THREE.MeshStandardMaterial({ color: 0x93c5fd, roughness: 0.05, metalness: 0.6, transparent: true, opacity: 0.55 });
+                // Cab
+                const cab = new THREE.Mesh(new THREE.BoxGeometry(7.5, 6.5, 9), bodyMat);
+                cab.position.set(offsetX, 4, offsetZ + 5.5); cab.castShadow = true; _vehicleGroup.add(cab);
+                // Windshield glass
+                const ws = new THREE.Mesh(new THREE.BoxGeometry(6.5, 2.8, 0.2), glassMat);
+                ws.position.set(offsetX, 5.8, offsetZ + 1.2); _vehicleGroup.add(ws);
+                // Truck bed
+                const bed = new THREE.Mesh(new THREE.BoxGeometry(7.5, 2.5, 9), bedMat);
+                bed.position.set(offsetX, 2.2, offsetZ + 15); bed.castShadow = true; _vehicleGroup.add(bed);
+                // Tires (front + rear axles)
+                [[offsetX-4.2,offsetZ+2],[offsetX+4.2,offsetZ+2],
+                 [offsetX-4.2,offsetZ+9],[offsetX+4.2,offsetZ+9]].forEach(([tx,tz]) => {
+                    const t = new THREE.Mesh(new THREE.CylinderGeometry(1.3,1.3,0.9,14),tireMat);
+                    t.rotation.z = Math.PI/2; t.position.set(tx,1.3,tz); _vehicleGroup.add(t);
+                });
+                // Flatbed trailer deck (16 ft)
+                const deck = new THREE.Mesh(new THREE.BoxGeometry(8,0.6,16), flatMat);
+                deck.position.set(offsetX, 3.3, offsetZ+27); deck.castShadow=true; deck.receiveShadow=true; _vehicleGroup.add(deck);
+                // Trailer side rails
+                [-3.5,3.5].forEach(rx => {
+                    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.4,2.8,16), bedMat);
+                    rail.position.set(offsetX+rx, 2.1, offsetZ+27); _vehicleGroup.add(rail);
+                });
+                // Tandem axle tires
+                [[offsetX-4.5,offsetZ+23],[offsetX+4.5,offsetZ+23],
+                 [offsetX-4.5,offsetZ+27],[offsetX+4.5,offsetZ+27]].forEach(([tx,tz]) => {
+                    const t = new THREE.Mesh(new THREE.CylinderGeometry(1.1,1.1,0.8,12),tireMat);
+                    t.rotation.z = Math.PI/2; t.position.set(tx,1.1,tz); _vehicleGroup.add(t);
+                });
+            }
+
+            // ── Warehouse backdrop ────────────────────────────────────────
+            function _buildWarehouse() {
+                const wallMat = new THREE.MeshStandardMaterial({ color: 0x546170, roughness: 0.85, metalness: 0.35 });
+                const roofMat = new THREE.MeshStandardMaterial({ color: 0x3d4b5c, roughness: 0.88, metalness: 0.5 });
+                const doorMat = new THREE.MeshStandardMaterial({ color: 0x7a3a0a, roughness: 0.75, metalness: 0 });
+                const bw = new THREE.Mesh(new THREE.BoxGeometry(80,24,1.5), wallMat);
+                bw.position.set(0,12,-35); bw.receiveShadow=true; _scene.add(bw);
+                const rf = new THREE.Mesh(new THREE.BoxGeometry(82,1.5,40), roofMat);
+                rf.position.set(0,24,-15); _scene.add(rf);
+                [-39,39].forEach(sx => {
+                    const sw = new THREE.Mesh(new THREE.BoxGeometry(1.5,24,40), wallMat);
+                    sw.position.set(sx,12,-15); sw.receiveShadow=true; _scene.add(sw);
+                });
+                [-22,0,22].forEach(dx => {
+                    const d = new THREE.Mesh(new THREE.BoxGeometry(12,16,0.2), doorMat);
+                    d.position.set(dx,8,-34); _scene.add(d);
+                });
+            }
+
+            // ── Parking lot striping ──────────────────────────────────────
+            function _addParkingStripes() {
+                const sm = new THREE.MeshStandardMaterial({ color: 0xdedede, roughness: 1.0, metalness: 0 });
+                const hm = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 1.0, metalness: 0 });
+                for (let i = -4; i <= 4; i++) {
+                    if (i === 0) continue;
+                    const s = new THREE.Mesh(new THREE.PlaneGeometry(0.35, 35), sm);
+                    s.rotation.x = -Math.PI/2; s.position.set(i*12, 0.004, 12); _scene.add(s);
+                }
+                const hz = new THREE.Mesh(new THREE.PlaneGeometry(0.35, 38), hm);
+                hz.rotation.x = -Math.PI/2; hz.position.set(-12, 0.005, 15); _scene.add(hz);
+            }
+
+            // ── Tooltip overlay ───────────────────────────────────────────
+            function _initTooltip() {
+                _tooltipEl = document.createElement('div');
+                _tooltipEl.style.cssText = 'position:absolute;display:none;background:rgba(10,5,20,0.92);color:#e9d5ff;padding:9px 14px;border-radius:8px;font-size:12px;font-family:Inter,sans-serif;pointer-events:none;z-index:300;border:1px solid rgba(192,132,252,0.45);line-height:1.75;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,0.5);';
+                const mount = document.getElementById('viz-canvas-mount');
+                if (mount && mount.parentElement) { mount.parentElement.style.position='relative'; mount.parentElement.appendChild(_tooltipEl); }
+            }
+
+            // ── HUD weight display ────────────────────────────────────────
+            function _initHUD() {
+                _hudEl = document.createElement('div');
+                _hudEl.style.cssText = 'position:absolute;top:10px;right:10px;background:rgba(10,5,20,0.84);color:#e9d5ff;padding:8px 14px;border-radius:8px;font-size:13px;font-weight:500;font-family:Inter,sans-serif;pointer-events:none;z-index:300;border:1px solid rgba(82,24,128,0.6);display:none;line-height:1.65;';
+                const mount = document.getElementById('viz-canvas-mount');
+                if (mount && mount.parentElement) mount.parentElement.appendChild(_hudEl);
+            }
+
+            function _updateHUD(lbs, trucks) {
+                if (!_hudEl) return;
+                const note = trucks > 1 ? `<br><span style="color:#fbbf24;font-size:11px">&#9888; ${trucks} trucks required</span>` : '';
+                _hudEl.innerHTML = `Total Est. Weight: <strong>${lbs.toLocaleString()} lbs</strong>${note}`;
+                _hudEl.style.display = 'block';
+                _hudEl.dataset.hasData = '1';
+            }
+
+            // ── Raycasting → tooltip ──────────────────────────────────────
+            function _onMouseMove(e) {
+                if (!_raycaster || !_tooltipEl || !_tooltipMeshes.length) return;
+                const mount = document.getElementById('viz-canvas-mount');
+                if (!mount) return;
+                const rect = mount.getBoundingClientRect();
+                const mx = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+                const my = -((e.clientY - rect.top)  / rect.height) * 2 + 1;
+                _raycaster.setFromCamera({ x: mx, y: my }, _camera);
+                const hits = _raycaster.intersectObjects(_tooltipMeshes, false);
+                if (hits.length) {
+                    const ud = hits[0].object.userData;
+                    if (ud && ud.label) {
+                        _tooltipEl.innerHTML = `<strong>${ud.label}</strong><br>Qty: ${ud.qty != null ? ud.qty.toLocaleString() : '&#8212;'}<br>Weight: ${ud.weight != null ? ud.weight.toLocaleString() + ' lbs' : '&#8212;'}`;
+                        _tooltipEl.style.left = (e.clientX - rect.left + 15) + 'px';
+                        _tooltipEl.style.top  = (e.clientY - rect.top  - 10) + 'px';
+                        _tooltipEl.style.display = 'block';
+                        return;
+                    }
+                }
+                _tooltipEl.style.display = 'none';
+            }
+
+            // ── PHASE 1: Init Three.js scene ──────────────────────────────
             function init() {
                 if (_initialized) return;
                 const mount = document.getElementById('viz-canvas-mount');
@@ -2857,49 +3116,75 @@
                 const h = mount.clientHeight || 420;
 
                 _scene = new THREE.Scene();
-                _scene.background = new THREE.Color(0x1a0729);
+                _scene.background = new THREE.Color(0x7ec8e3);
+                _scene.fog = new THREE.Fog(0x7ec8e3, 70, 115);
 
-                _camera = new THREE.PerspectiveCamera(40, w / h, 0.1, 200);
-                _camera.position.set(12, 10, 18);
+                _camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 200);
+                _camera.position.set(-20, 24, 60);
 
                 _renderer = new THREE.WebGLRenderer({ antialias: true });
                 _renderer.setSize(w, h);
                 _renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
                 _renderer.shadowMap.enabled = true;
+                _renderer.shadowMap.type = THREE.PCFSoftShadowMap;
                 mount.appendChild(_renderer.domElement);
 
                 _controls = new THREE.OrbitControls(_camera, _renderer.domElement);
                 _controls.enableDamping   = true;
                 _controls.dampingFactor   = 0.06;
-                _controls.maxPolarAngle   = Math.PI / 2 - 0.05;
-                _controls.minDistance     = 4;
-                _controls.maxDistance     = 60;
+                _controls.maxPolarAngle   = Math.PI / 2 - 0.02;
+                _controls.minDistance     = 10;
+                _controls.maxDistance     = 105;
                 _controls.autoRotate      = true;
-                _controls.autoRotateSpeed = 0.6;
-                _controls.target.set(0, 3, 0);
+                _controls.autoRotateSpeed = 0.4;
+                _controls.target.set(0, 4, 22);
 
-                _scene.add(new THREE.AmbientLight(0xffffff, 0.5));
-                const key = new THREE.DirectionalLight(0xfff6e6, 0.9);
-                key.position.set(15, 20, 15);
-                key.castShadow = true;
-                _scene.add(key);
-                const fill = new THREE.DirectionalLight(0xbfdbfe, 0.35);
-                fill.position.set(-15, 10, -10);
+                // HemisphereLight: sky-blue sky, warm-ground fill
+                _scene.add(new THREE.HemisphereLight(0x7ec8e3, 0x5a3b20, 0.7));
+                // Sun DirectionalLight with PCF soft shadows
+                const sun = new THREE.DirectionalLight(0xfff8e7, 1.4);
+                sun.position.set(35, 50, 30);
+                sun.castShadow = true;
+                sun.shadow.mapSize.width  = 2048;
+                sun.shadow.mapSize.height = 2048;
+                sun.shadow.camera.left   = -65;  sun.shadow.camera.right  = 65;
+                sun.shadow.camera.top    =  65;  sun.shadow.camera.bottom = -65;
+                sun.shadow.camera.far    = 160;
+                sun.shadow.bias = -0.0008;
+                _scene.add(sun);
+                // Soft fill light from opposite side
+                const fill = new THREE.DirectionalLight(0xc9d8ff, 0.4);
+                fill.position.set(-30, 20, -20);
                 _scene.add(fill);
 
-                const groundGeo = new THREE.PlaneGeometry(60, 60);
-                const groundMat = new THREE.MeshStandardMaterial({ color: 0x3b2a1a, roughness: 1.0, metalness: 0 });
-                const ground = new THREE.Mesh(groundGeo, groundMat);
+                // Asphalt ground (150 x 130 ft)
+                const asphaltTex = _makeAsphaltTex();
+                asphaltTex.wrapS = asphaltTex.wrapT = THREE.RepeatWrapping;
+                asphaltTex.repeat.set(12, 12);
+                const ground = new THREE.Mesh(
+                    new THREE.PlaneGeometry(150, 130),
+                    new THREE.MeshStandardMaterial({ map: asphaltTex, roughness: 0.96, metalness: 0 })
+                );
                 ground.rotation.x = -Math.PI / 2;
                 ground.receiveShadow = true;
                 _scene.add(ground);
-                _scene.add(new THREE.GridHelper(60, 30, 0x52381f, 0x3d2810));
+
+                _addParkingStripes();
+                _buildWarehouse();
+
+                _vehicleGroup = new THREE.Group();
+                _scene.add(_vehicleGroup);
 
                 _stackGroup = new THREE.Group();
                 _buildGroup = new THREE.Group();
                 _scene.add(_stackGroup);
                 _scene.add(_buildGroup);
 
+                _raycaster = new THREE.Raycaster();
+                _initTooltip();
+                _initHUD();
+
+                mount.addEventListener('mousemove', _onMouseMove);
                 window.addEventListener('resize', _handleResize);
                 _animate();
                 _initialized = true;
@@ -2925,232 +3210,225 @@
                 while (group.children.length > 0) {
                     const obj = group.children[0];
                     if (obj.geometry) obj.geometry.dispose();
-                    if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
-                    else if (obj.material) obj.material.dispose();
+                    if (Array.isArray(obj.material)) obj.material.forEach(m => { if (m.map) m.map.dispose(); m.dispose(); });
+                    else if (obj.material) { if (obj.material.map) obj.material.map.dispose(); obj.material.dispose(); }
                     group.remove(obj);
                 }
             }
 
             // ── Canvas-texture label sprite ───────────────────────────────
             function _makeLabel(text) {
-                const canvas  = document.createElement('canvas');
-                canvas.width  = 256; canvas.height = 64;
+                const canvas = document.createElement('canvas'); canvas.width = 300; canvas.height = 72;
                 const ctx = canvas.getContext('2d');
-                ctx.clearRect(0, 0, 256, 64);
+                ctx.clearRect(0, 0, 300, 72);
                 ctx.font = 'bold 18px Inter, sans-serif';
-                ctx.fillStyle = '#c084fc';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.fillText(text, 128, 32);
+                ctx.fillStyle = '#e9d5ff';
+                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText(text, 150, 36);
                 const tex = new THREE.CanvasTexture(canvas);
                 const mat = new THREE.SpriteMaterial({ map: tex, transparent: true });
-                const sprite = new THREE.Sprite(mat);
-                sprite.scale.set(2.4, 0.6, 1);
+                const sprite = new THREE.Sprite(mat); sprite.scale.set(4.2, 1.05, 1);
                 return sprite;
             }
 
-            // ── Stack Layer ───────────────────────────────────────────────
-            function renderStack(items) {
-                if (!_initialized) init();
-                if (!_initialized) return;
-
-                _clearGroup(_stackGroup);
-                _stackGroup.visible = (_activeTab === 'stack');
-                _buildGroup.visible = (_activeTab === 'build');
-
-                const tradeMap = {};
-                items.forEach(item => {
-                    if (item.type === 'labor') return;
-                    const trade = (item.trade || 'default').toLowerCase();
-                    if (!tradeMap[trade]) tradeMap[trade] = { total: 0, qty: 0 };
-                    tradeMap[trade].total += (item.total || 0);
-                    tradeMap[trade].qty   += (item.quantity || 1);
-                });
-
-                const trades = Object.entries(tradeMap)
-                    .filter(([, v]) => v.total > 0)
-                    .sort((a, b) => b[1].total - a[1].total);
-
-                if (trades.length === 0) return;
-
-                const legendEl = document.getElementById('viz-legend-items');
-                if (legendEl) legendEl.innerHTML = '';
-
-                const GROUP_SPACING = 4.5;
-                const startX = -((trades.length - 1) * GROUP_SPACING) / 2;
-
-                trades.forEach(([trade, data], i) => {
-                    const x     = startX + i * GROUP_SPACING;
-                    const color = TRADE_COLORS[trade] || TRADE_COLORS['default'];
-                    const pileH = _buildMaterialPile(trade, data, x, color);
-
-                    const label = _makeLabel(trade);
-                    label.position.set(x, pileH + 0.6, 0);
-                    _stackGroup.add(label);
-
-                    if (legendEl) {
-                        const hex = '#' + color.toString(16).padStart(6, '0');
-                        const li  = document.createElement('div');
-                        li.className = 'flex items-center gap-2';
-                        li.innerHTML = `<div style="width:10px;height:10px;border-radius:2px;flex-shrink:0;background:${hex}"></div>
-                            <div class="flex-1 truncate capitalize">${trade}</div>
-                            <div style="color:var(--text-accent)">${fmtCurrency(data.total)}</div>`;
-                        legendEl.appendChild(li);
-                    }
-                });
-
-                _controls.target.set(0, 2, 0);
-                _setStatus('Material yard · ' + trades.length + ' trade' + (trades.length !== 1 ? 's' : ''));
-                _showVizPanel();
+            // ── Abstract pile helpers (generic/unidentified trades) ───────
+            function _buildAbstractPile(trade, data, grp, color) {
+                const LUMBER   = ['lumber','framing','wood','carpentry','millwork','siding'];
+                const CONCRETE = ['concrete','masonry','block','mortar','cement'];
+                const PAINT    = ['paint','coating','finish','stain'];
+                const PIPE     = ['plumbing','pipe','drainage','hvac','mechanical'];
+                const ROOFING  = ['roofing','shingle','flashing','tile'];
+                _addPalletGrp(grp);
+                if (LUMBER.some(t => trade.includes(t)))   return _buildLumberGrp(data, grp, color);
+                if (CONCRETE.some(t => trade.includes(t))) return _buildBagGrp(data, grp, color);
+                if (PAINT.some(t => trade.includes(t)))    return _buildBucketGrp(data, grp, color);
+                if (PIPE.some(t => trade.includes(t)))     return _buildPipeGrp(data, grp, color);
+                if (ROOFING.some(t => trade.includes(t)))  return _buildRoofingGrp(data, grp, color);
+                return _buildCrateGrp(data, grp);
             }
 
-            function _buildMaterialPile(trade, data, x, color) {
-                const LUMBER_TRADES   = ['lumber','framing','wood','carpentry','millwork','siding'];
-                const CONCRETE_TRADES = ['concrete','masonry','block','mortar','cement'];
-                const PAINT_TRADES    = ['paint','coating','finish','stain'];
-                const PIPE_TRADES     = ['plumbing','pipe','drainage','hvac','mechanical'];
-                const ROOFING_TRADES  = ['roofing','shingle','flashing','tile'];
-
-                _addPallet(x);
-                if (LUMBER_TRADES.some(t => trade.includes(t)))   return _buildLumberStack(data, x, color);
-                if (CONCRETE_TRADES.some(t => trade.includes(t))) return _buildBagStack(data, x, color);
-                if (PAINT_TRADES.some(t => trade.includes(t)))    return _buildBucketStack(data, x, color);
-                if (PIPE_TRADES.some(t => trade.includes(t)))     return _buildPipeStack(data, x, color);
-                if (ROOFING_TRADES.some(t => trade.includes(t)))  return _buildRoofingStack(data, x, color);
-                return _buildCrateStack(data, x, color);
-            }
-
-            function _addPallet(x) {
+            function _addPalletGrp(grp) {
                 const mat = new THREE.MeshStandardMaterial({ color: 0x9c7a4a, roughness: 0.95, metalness: 0 });
-                for (let i = 0; i < 5; i++) {
-                    const b = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.04, 0.14), mat);
-                    b.position.set(x, 0.02, (i - 2) * 0.22);
-                    _stackGroup.add(b);
-                }
-                for (let j = 0; j < 3; j++) {
-                    const s = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.08, 0.08), mat);
-                    s.position.set(x, 0.06, (j - 1) * 0.44);
-                    _stackGroup.add(s);
-                }
+                for (let i = 0; i < 5; i++) { const b = new THREE.Mesh(new THREE.BoxGeometry(1.6,0.04,0.14),mat); b.position.set(0,0.02,(i-2)*0.22); grp.add(b); }
+                for (let j = 0; j < 3; j++) { const s = new THREE.Mesh(new THREE.BoxGeometry(1.6,0.08,0.08),mat); s.position.set(0,0.06,(j-1)*0.44); grp.add(s); }
             }
 
-            function _buildLumberStack(data, x, color) {
-                const mat     = new THREE.MeshStandardMaterial({ color, roughness: 0.8, metalness: 0 });
-                const stkMat  = new THREE.MeshStandardMaterial({ color: 0xf0ede8, roughness: 0.9 });
-                const count   = Math.min(Math.max(Math.round(data.qty), 3), 22);
-                const bL = 2.0, bW = 3.5 / 12, bH = 1.5 / 12;
-                let y = 0.12;
+            function _buildLumberGrp(data, grp, color) {
+                const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.8, metalness: 0 });
+                const stk = new THREE.MeshStandardMaterial({ color: 0xf0ede8, roughness: 0.9 });
+                const count = Math.min(Math.max(Math.round(data.qty), 3), 22);
+                const bL = 2.0, bW = 3.5/12, bH = 1.5/12; let y = 0.12;
                 for (let i = 0; i < count; i++) {
-                    const m = new THREE.Mesh(new THREE.BoxGeometry(bL, bH, bW), mat);
-                    m.position.set(x, y + bH / 2, 0);
-                    m.castShadow = true;
-                    _stackGroup.add(m);
-                    if (i % 4 === 3) {
-                        [-bL * 0.3, bL * 0.3].forEach(sx => {
-                            const stk = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.035, bW + 0.02), stkMat);
-                            stk.position.set(x + sx, y + bH + 0.018, 0);
-                            _stackGroup.add(stk);
-                        });
-                        y += 0.035;
-                    }
+                    const m = new THREE.Mesh(new THREE.BoxGeometry(bL,bH,bW),mat); m.position.set(0,y+bH/2,0); m.castShadow=true; grp.add(m);
+                    if (i%4===3) { [-bL*0.3,bL*0.3].forEach(sx => { const k=new THREE.Mesh(new THREE.BoxGeometry(0.07,0.035,bW+0.02),stk); k.position.set(sx,y+bH+0.018,0); grp.add(k); }); y+=0.035; }
                     y += bH + 0.004;
                 }
                 return y;
             }
 
-            function _buildBagStack(data, x, color) {
-                const mat   = new THREE.MeshStandardMaterial({ color, roughness: 0.9, metalness: 0 });
+            function _buildBagGrp(data, grp, color) {
+                const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.9, metalness: 0 });
                 const count = Math.min(Math.max(Math.round(data.qty), 2), 18);
-                const bW = 0.5, bH = 0.24, bD = 0.85;
-                let y = 0.12, rowY = y;
-                for (let i = 0; i < count; i++) {
-                    const col = i % 2;
-                    const row = Math.floor(i / 2);
-                    const m = new THREE.Mesh(new THREE.BoxGeometry(bW, bH, bD), mat);
-                    m.position.set(x + (col - 0.5) * (bW * 1.05), rowY + bH / 2, 0);
-                    if (row % 2 === 1) m.rotation.y = Math.PI / 2;
-                    m.castShadow = true;
-                    _stackGroup.add(m);
-                    if (col === 1) rowY += bH + 0.01;
+                const bW=0.5, bH=0.24, bD=0.85; let rowY=0.12;
+                for (let i=0; i<count; i++) {
+                    const col=i%2, row=Math.floor(i/2);
+                    const m=new THREE.Mesh(new THREE.BoxGeometry(bW,bH,bD),mat);
+                    m.position.set((col-0.5)*(bW*1.05),rowY+bH/2,0);
+                    if(row%2===1) m.rotation.y=Math.PI/2; m.castShadow=true; grp.add(m);
+                    if(col===1) rowY+=bH+0.01;
                 }
-                return rowY + bH;
+                return rowY+bH;
             }
 
-            function _buildBucketStack(data, x, color) {
-                const bodyMat = new THREE.MeshStandardMaterial({ color: 0xe0ddd8, roughness: 0.4, metalness: 0.35 });
-                const lidMat  = new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.2 });
-                const count   = Math.min(Math.max(Math.round(data.qty), 1), 9);
-                const cols    = Math.min(count, 3);
-                const rows    = Math.ceil(count / cols);
-                const r = 0.18, h = 0.32;
-                let maxH = 0;
-                for (let i = 0; i < count; i++) {
-                    const col = i % cols, row = Math.floor(i / cols);
-                    const bx  = x + (col - (cols - 1) / 2) * (r * 2.4);
-                    const bz  = (row - (rows - 1) / 2) * (r * 2.4);
-                    const body = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 0.88, h, 12), bodyMat);
-                    body.position.set(bx, 0.12 + h / 2, bz);
-                    body.castShadow = true;
-                    _stackGroup.add(body);
-                    const lid = new THREE.Mesh(new THREE.CylinderGeometry(r + 0.01, r + 0.01, 0.025, 12), lidMat);
-                    lid.position.set(bx, 0.12 + h + 0.012, bz);
-                    _stackGroup.add(lid);
-                    maxH = Math.max(maxH, 0.12 + h + 0.025);
+            function _buildBucketGrp(data, grp, color) {
+                const bMat=new THREE.MeshStandardMaterial({color:0xe0ddd8,roughness:0.4,metalness:0.35});
+                const lMat=new THREE.MeshStandardMaterial({color,roughness:0.5,metalness:0.2});
+                const count=Math.min(Math.max(Math.round(data.qty),1),9);
+                const cols=Math.min(count,3), rows=Math.ceil(count/cols), r=0.18, h=0.32; let maxH=0;
+                for(let i=0;i<count;i++){
+                    const col=i%cols,row=Math.floor(i/cols);
+                    const bx=(col-(cols-1)/2)*(r*2.4), bz=(row-(rows-1)/2)*(r*2.4);
+                    const body=new THREE.Mesh(new THREE.CylinderGeometry(r,r*0.88,h,12),bMat); body.position.set(bx,0.12+h/2,bz); body.castShadow=true; grp.add(body);
+                    const lid=new THREE.Mesh(new THREE.CylinderGeometry(r+0.01,r+0.01,0.025,12),lMat); lid.position.set(bx,0.12+h+0.012,bz); grp.add(lid);
+                    maxH=Math.max(maxH,0.12+h+0.025);
                 }
                 return maxH;
             }
 
-            function _buildPipeStack(data, x, color) {
-                const mat   = new THREE.MeshStandardMaterial({ color, roughness: 0.3, metalness: 0.65 });
-                const count = Math.min(Math.max(Math.round(data.qty), 2), 15);
-                const r = 0.07, pL = 1.8;
-                const rowCounts = [Math.min(count, 5), Math.min(Math.max(count - 5, 0), 4), Math.min(Math.max(count - 9, 0), 3), Math.min(Math.max(count - 12, 0), 2)];
-                let y = 0.12;
-                rowCounts.forEach(n => {
-                    if (n === 0) return;
-                    for (let j = 0; j < n; j++) {
-                        const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, pL, 10), mat);
-                        m.rotation.z = Math.PI / 2;
-                        m.position.set(x, y + r, (j - (n - 1) / 2) * (r * 2.15));
-                        m.castShadow = true;
-                        _stackGroup.add(m);
+            function _buildPipeGrp(data, grp, color) {
+                const mat=new THREE.MeshStandardMaterial({color,roughness:0.3,metalness:0.65});
+                const count=Math.min(Math.max(Math.round(data.qty),2),15); const r=0.07,pL=1.8;
+                const rows=[Math.min(count,5),Math.min(Math.max(count-5,0),4),Math.min(Math.max(count-9,0),3),Math.min(Math.max(count-12,0),2)];
+                let y=0.12;
+                rows.forEach(n=>{ if(!n) return; for(let j=0;j<n;j++){const m=new THREE.Mesh(new THREE.CylinderGeometry(r,r,pL,10),mat); m.rotation.z=Math.PI/2; m.position.set(0,y+r,(j-(n-1)/2)*(r*2.15)); m.castShadow=true; grp.add(m);} y+=r*2.1; });
+                return y+0.1;
+            }
+
+            function _buildRoofingGrp(data, grp, color) {
+                const mat=new THREE.MeshStandardMaterial({color,roughness:0.92,metalness:0});
+                const count=Math.min(Math.max(Math.round(data.qty),2),12); let y=0.12;
+                for(let i=0;i<count;i++){const m=new THREE.Mesh(new THREE.BoxGeometry(1.1,0.13,0.55),mat); m.position.set(0,y+0.065,0); m.castShadow=true; grp.add(m); y+=0.14;}
+                return y;
+            }
+
+            function _buildCrateGrp(data, grp) {
+                const mat=new THREE.MeshStandardMaterial({color:0xc4954a,roughness:0.92,metalness:0});
+                const edgeMat=new THREE.LineBasicMaterial({color:0x7a5c20});
+                const count=Math.min(Math.max(Math.round(data.qty/8),1),4); let y=0.12;
+                for(let i=0;i<count;i++){
+                    const geo=new THREE.BoxGeometry(0.9,0.65,0.85); const mesh=new THREE.Mesh(geo,mat); mesh.position.set(0,y+0.325,0); mesh.castShadow=true; grp.add(mesh);
+                    const edges=new THREE.LineSegments(new THREE.EdgesGeometry(geo),edgeMat); edges.position.copy(mesh.position); grp.add(edges); y+=0.7;
+                }
+                return y;
+            }
+
+            // ── Stack Layer (Phases 1 + 4 + 5) ───────────────────────────
+            function renderStack(items) {
+                if (!_initialized) init();
+                if (!_initialized) return;
+
+                _clearGroup(_stackGroup);
+                _clearGroup(_vehicleGroup);
+                _tooltipMeshes = [];
+                _stackGroup.visible   = (_activeTab === 'stack');
+                _vehicleGroup.visible = (_activeTab === 'stack');
+                _buildGroup.visible   = (_activeTab === 'build');
+
+                // Bucket items into identified materials vs generic trades
+                const matQtys = { SPF: 0, PT: 0, OSB: 0 };
+                const tradeMap = {};
+                items.forEach(item => {
+                    if (item.type === 'labor') return;
+                    const mk = _identifyMaterial(item);
+                    if (mk) {
+                        matQtys[mk] += (item.quantity || 1);
+                    } else {
+                        const tr = (item.trade || 'default').toLowerCase();
+                        if (!tradeMap[tr]) tradeMap[tr] = { total: 0, qty: 0 };
+                        tradeMap[tr].total += (item.total || 0);
+                        tradeMap[tr].qty   += (item.quantity || 1);
                     }
-                    y += r * 2.1;
                 });
-                return y + 0.1;
-            }
 
-            function _buildRoofingStack(data, x, color) {
-                const mat   = new THREE.MeshStandardMaterial({ color, roughness: 0.92, metalness: 0 });
-                const count = Math.min(Math.max(Math.round(data.qty), 2), 12);
-                let y = 0.12;
-                for (let i = 0; i < count; i++) {
-                    const m = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.13, 0.55), mat);
-                    m.position.set(x, y + 0.065, 0);
-                    m.castShadow = true;
-                    _stackGroup.add(m);
-                    y += 0.14;
-                }
-                return y;
-            }
+                // PHASE 4: Zone layout (radiates outward from foundation at origin)
+                // Zone 1 (PT+SPF): z=42  Zone 2 (generic): z=55  Zone 3 (OSB): z=68
+                const zoneZ    = { 1: 42, 2: 55, 3: 68 };
+                const zoneCurX = { 1: -15, 2: -12, 3: -12 };
+                let totalWeight = 0;
+                const legendItems = [];
 
-            function _buildCrateStack(data, x, color) {
-                const mat     = new THREE.MeshStandardMaterial({ color: 0xc4954a, roughness: 0.92, metalness: 0 });
-                const edgeMat = new THREE.LineBasicMaterial({ color: 0x7a5c20 });
-                const count   = Math.min(Math.max(Math.round(data.qty / 8), 1), 4);
-                let y = 0.12;
-                for (let i = 0; i < count; i++) {
-                    const geo  = new THREE.BoxGeometry(0.9, 0.65, 0.85);
-                    const mesh = new THREE.Mesh(geo, mat);
-                    mesh.position.set(x, y + 0.325, 0);
-                    mesh.castShadow = true;
-                    _stackGroup.add(mesh);
-                    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), edgeMat);
-                    edges.position.copy(mesh.position);
-                    _stackGroup.add(edges);
-                    y += 0.7;
+                // Identified materials placed in their assigned zones
+                Object.entries(matQtys).forEach(([key, qty]) => {
+                    if (qty <= 0) return;
+                    const spec = MAT_CONST[key];
+                    const zone = spec.zone;
+                    const grpX = zoneCurX[zone] + spec.liftW / 2;
+                    zoneCurX[zone] += spec.liftW + 2.0;
+
+                    const subGrp = new THREE.Group();
+                    subGrp.position.set(grpX, 0, zoneZ[zone]);
+                    _stackGroup.add(subGrp);
+
+                    const res = _buildLiftGeo(key, qty, subGrp);
+                    totalWeight += res.weight;
+
+                    const lbl = _makeLabel(spec.label);
+                    lbl.position.set(0, res.height + 1.4, 0);
+                    subGrp.add(lbl);
+
+                    legendItems.push({
+                        color: spec.woodColor, text: spec.label, qty,
+                        weight: Math.round(res.weight),
+                        lifts: Math.floor(qty / spec.liftQty),
+                        rem: qty % spec.liftQty,
+                    });
+                });
+
+                // Generic trades placed in Zone 2
+                Object.entries(tradeMap).filter(([,v]) => v.total > 0).forEach(([trade, data], i) => {
+                    const color = TRADE_COLORS[trade] || TRADE_COLORS['default'];
+                    const subGrp = new THREE.Group();
+                    subGrp.position.set(zoneCurX[2] + i * 4.5, 0, zoneZ[2]);
+                    _stackGroup.add(subGrp);
+                    const h = _buildAbstractPile(trade, data, subGrp, color);
+                    const lbl = _makeLabel(trade); lbl.position.set(0, h + 0.9, 0); subGrp.add(lbl);
+                    legendItems.push({ color, text: trade, qty: data.qty, weight: null, lifts: undefined, rem: undefined });
+                });
+
+                if (!legendItems.length) { _setStatus('No materials'); return; }
+
+                // PHASE 5: Fleet spawning — one truck+trailer per TRAILER_MAX_LBS
+                const trucksNeeded = Math.max(1, Math.ceil(totalWeight / TRAILER_MAX_LBS));
+                for (let ti = 0; ti < Math.min(trucksNeeded, 3); ti++) {
+                    _spawnVehicle(-18 + ti * 20, 5);
                 }
-                return y;
+
+                // PHASE 5: HUD
+                _updateHUD(totalWeight, trucksNeeded);
+
+                // Legend
+                const legendEl = document.getElementById('viz-legend-items');
+                if (legendEl) {
+                    legendEl.innerHTML = '';
+                    const buildInfoEl = document.getElementById('viz-build-info');
+                    if (buildInfoEl) buildInfoEl.classList.add('hidden');
+                    legendItems.forEach(li => {
+                        const hex = '#' + li.color.toString(16).padStart(6, '0');
+                        const qtyTxt = li.lifts !== undefined
+                            ? `${li.qty} pcs &middot; ${li.lifts} lift${li.lifts !== 1 ? 's' : ''}${li.rem > 0 ? ' + ' + li.rem + ' loose' : ''}`
+                            : li.qty;
+                        const wtTxt = li.weight ? li.weight.toLocaleString() + ' lbs' : '';
+                        const el = document.createElement('div'); el.className = 'flex items-center gap-2';
+                        el.innerHTML = `<div style="width:10px;height:10px;border-radius:2px;flex-shrink:0;background:${hex}"></div>
+                            <div class="flex-1 truncate">${li.text}: ${qtyTxt}</div>
+                            <div style="color:var(--text-accent)">${wtTxt}</div>`;
+                        legendEl.appendChild(el);
+                    });
+                }
+
+                _controls.target.set(0, 5, 48);
+                _setStatus('Yard &middot; ' + totalWeight.toLocaleString() + ' lbs &middot; ' + trucksNeeded + ' truck' + (trucksNeeded > 1 ? 's' : ''));
+                _showVizPanel();
             }
 
             // ── Build Layer ───────────────────────────────────────────────
@@ -3162,6 +3440,9 @@
                 _clearGroup(_buildGroup);
                 _buildGroup.visible = true;
                 _stackGroup.visible = false;
+                if (_vehicleGroup) _vehicleGroup.visible = false;
+                if (_hudEl) _hudEl.style.display = 'none';
+                if (_tooltipEl) _tooltipEl.style.display = 'none';
 
                 if (_buildAnimTimer) { clearTimeout(_buildAnimTimer); _buildAnimTimer = null; }
                 _buildPieces = [];
@@ -3239,7 +3520,7 @@
                 // Opening framing — doors and windows
                 openings.forEach(({ x: op, type }) => {
                     const absOp  = xOff + op;
-                    const roHalf = 1.5; // 3 ft rough opening half-width
+                    const roHalf = 1.5;
 
                     if (type === 'door') {
                         const jackH   = 6.8 - thick;
@@ -3249,51 +3530,48 @@
                         const cripB   = headerY + headerH / 2;
                         const cripH   = (H - thick * 2) - cripB;
                         const cripY   = cripB + cripH / 2;
-
-                        addPiece(thick, studH, depth, absOp - roHalf - thick / 2, studY, studMat); // king L
-                        addPiece(thick, studH, depth, absOp + roHalf + thick / 2, studY, studMat); // king R
-                        addPiece(thick, jackH, depth, absOp - roHalf + thick / 2, jackY, studMat); // jack L
-                        addPiece(thick, jackH, depth, absOp + roHalf - thick / 2, jackY, studMat); // jack R
-                        addPiece(3 - thick * 2, headerH, depth, absOp, headerY, studMat);          // header
+                        addPiece(thick, studH, depth, absOp - roHalf - thick / 2, studY, studMat);
+                        addPiece(thick, studH, depth, absOp + roHalf + thick / 2, studY, studMat);
+                        addPiece(thick, jackH, depth, absOp - roHalf + thick / 2, jackY, studMat);
+                        addPiece(thick, jackH, depth, absOp + roHalf - thick / 2, jackY, studMat);
+                        addPiece(3 - thick * 2, headerH, depth, absOp, headerY, studMat);
                         if (cripH > 0.1) {
                             addPiece(thick, cripH, depth, absOp,       cripY, studMat);
                             addPiece(thick, cripH, depth, absOp - 0.8, cripY, studMat);
                             addPiece(thick, cripH, depth, absOp + 0.8, cripY, studMat);
                         }
                     } else {
-                        // Window: sill at 3 ft, header at 6.5 ft
                         const sillY    = 3.0;
                         const hdrTop   = 6.5;
                         const jackH    = hdrTop - thick;
                         const jackY    = thick + jackH / 2;
                         const headerH  = 6 / 12;
                         const headerY  = hdrTop + headerH / 2;
-                        const cbH      = sillY - thick * 2;   // cripples below sill
+                        const cbH      = sillY - thick * 2;
                         const cbY      = thick + cbH / 2;
                         const caB      = headerY + headerH / 2;
-                        const caH      = (H - thick * 2) - caB; // cripples above header
+                        const caH      = (H - thick * 2) - caB;
                         const caY      = caB + caH / 2;
-
-                        addPiece(thick, studH, depth, absOp - roHalf - thick / 2, studY, studMat); // king L
-                        addPiece(thick, studH, depth, absOp + roHalf + thick / 2, studY, studMat); // king R
-                        addPiece(thick, jackH, depth, absOp - roHalf + thick / 2, jackY, studMat); // trimmer L
-                        addPiece(thick, jackH, depth, absOp + roHalf - thick / 2, jackY, studMat); // trimmer R
-                        addPiece(3 - thick * 2, headerH, depth, absOp, headerY, studMat);          // header
-                        addPiece(3 - thick * 2, thick,   depth, absOp, sillY,   studMat);          // rough sill
+                        addPiece(thick, studH, depth, absOp - roHalf - thick / 2, studY, studMat);
+                        addPiece(thick, studH, depth, absOp + roHalf + thick / 2, studY, studMat);
+                        addPiece(thick, jackH, depth, absOp - roHalf + thick / 2, jackY, studMat);
+                        addPiece(thick, jackH, depth, absOp + roHalf - thick / 2, jackY, studMat);
+                        addPiece(3 - thick * 2, headerH, depth, absOp, headerY, studMat);
+                        addPiece(3 - thick * 2, thick,   depth, absOp, sillY,   studMat);
                         if (cbH > 0.1) {
-                            addPiece(thick, cbH, depth, absOp,       cbY, studMat); // cripples below
+                            addPiece(thick, cbH, depth, absOp,       cbY, studMat);
                             addPiece(thick, cbH, depth, absOp - 0.8, cbY, studMat);
                             addPiece(thick, cbH, depth, absOp + 0.8, cbY, studMat);
                         }
                         if (caH > 0.1) {
-                            addPiece(thick, caH, depth, absOp,       caY, studMat); // cripples above
+                            addPiece(thick, caH, depth, absOp,       caY, studMat);
                             addPiece(thick, caH, depth, absOp - 0.8, caY, studMat);
                             addPiece(thick, caH, depth, absOp + 0.8, caY, studMat);
                         }
                     }
                 });
 
-                // Legend build info
+                // Build layer info panel
                 const buildInfoEl = document.getElementById('viz-build-info');
                 const legendEl    = document.getElementById('viz-legend-items');
                 if (legendEl) legendEl.innerHTML = '';
@@ -3334,13 +3612,14 @@
 
             function switchTab(tab) {
                 _activeTab = tab;
-                if (_buildAnimTimer && tab !== 'build') {
-                    clearTimeout(_buildAnimTimer); _buildAnimTimer = null;
-                }
+                if (_buildAnimTimer && tab !== 'build') { clearTimeout(_buildAnimTimer); _buildAnimTimer = null; }
                 document.getElementById('viz-tab-stack')?.classList.toggle('viz-tab-active', tab === 'stack');
                 document.getElementById('viz-tab-build')?.classList.toggle('viz-tab-active', tab === 'build');
-                if (_stackGroup) _stackGroup.visible = (tab === 'stack');
-                if (_buildGroup) _buildGroup.visible = (tab === 'build');
+                if (_stackGroup)   _stackGroup.visible   = (tab === 'stack');
+                if (_vehicleGroup) _vehicleGroup.visible = (tab === 'stack');
+                if (_buildGroup)   _buildGroup.visible   = (tab === 'build');
+                if (_hudEl) _hudEl.style.display = (tab === 'stack' && _hudEl.dataset.hasData === '1') ? 'block' : 'none';
+                if (_tooltipEl && tab !== 'stack') _tooltipEl.style.display = 'none';
             }
 
             function _setStatus(text) {
