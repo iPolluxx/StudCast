@@ -2081,6 +2081,8 @@ app.post('/api/auth/register', requireGoogleAuth, async (req, res) => {
             expiresAt
         });
 
+        // Transport 1: SMS via Twilio
+        let otpChannel = 'sms';
         try {
             await twilioClient.messages.create({
                 body: `Your Lone Ranger Estimator verification code is: ${otp}. Reply STOP to opt out. Msg&Data rates may apply.`,
@@ -2088,10 +2090,35 @@ app.post('/api/auth/register', requireGoogleAuth, async (req, res) => {
                 to: formattedPhone,
             });
         } catch (twilioErr) {
-            console.warn('[DEV MODE] Twilio blocked SMS. OTP for ' + formattedPhone + ' is: ' + otp);
+            // Transport 2: Email fallback (Twilio campaign pending or SMS unavailable)
+            try {
+                const otpTransporter = nodemailer.createTransport({
+                    service: 'gmail',
+                    auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+                });
+                await otpTransporter.sendMail({
+                    from: `"Lone Ranger Estimator" <${process.env.EMAIL_USER}>`,
+                    to: extractedEmail,
+                    subject: 'Your verification code',
+                    text: `Your Lone Ranger Estimator verification code is: ${otp}\n\nThis code expires in 10 minutes. If you did not request this, ignore this email.`,
+                    html: `
+                        <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px;">
+                            <h2 style="color:#521880;margin:0 0 8px;">Lone Ranger Estimator</h2>
+                            <p style="color:#444;margin:0 0 24px;">Your verification code:</p>
+                            <div style="font-size:40px;font-weight:700;letter-spacing:0.35em;color:#1a0729;background:#f3f0ff;padding:24px 16px;border-radius:12px;text-align:center;margin:0 0 24px;">${otp}</div>
+                            <p style="color:#888;font-size:12px;margin:0;">Expires in 10 minutes. Didn't request this? Ignore this email.</p>
+                        </div>
+                    `,
+                });
+                otpChannel = 'email';
+            } catch (emailErr) {
+                // Transport 3: Dev log (both transports unavailable)
+                console.warn('[DEV] SMS + email both failed. OTP for ' + formattedPhone + ': ' + otp);
+                otpChannel = 'log';
+            }
         }
 
-        return res.status(202).json({ success: true, message: 'OTP sent' });
+        return res.status(202).json({ success: true, message: 'OTP sent', channel: otpChannel });
     } catch (err) {
         console.error('Registration Error:', err);
         return res.status(500).json({ error: 'Internal server error during registration.' });

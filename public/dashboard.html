@@ -838,8 +838,8 @@
              style="background:var(--card-bg); border:1px solid var(--primary-accent); color:var(--text-primary);">
             
             <div class="space-y-2">
-                <h2 class="text-xl font-bold" style="color:var(--text-primary); font-family: 'Outfit', sans-serif;">Verify Your Phone</h2>
-                <p class="text-sm" style="color:var(--text-muted)">We sent a 6-digit code to your phone number.</p>
+                <h2 id="otpModalTitle" class="text-xl font-bold" style="color:var(--text-primary); font-family: 'Outfit', sans-serif;">Verify Your Phone</h2>
+                <p id="otpModalSubtitle" class="text-sm" style="color:var(--text-muted)">We sent a 6-digit code to your phone number.</p>
             </div>
 
             <form id="otpForm" class="space-y-4 text-left" onsubmit="verifyOTP(event)">
@@ -1126,7 +1126,13 @@
                     document.getElementById('onboardingModal').classList.remove('flex');
                     document.getElementById('otpModal').classList.remove('hidden');
                     document.getElementById('otpModal').classList.add('flex');
-                    showToast('OTP sent to your phone.', 'success');
+                    // Update modal copy based on which transport delivered the OTP
+                    const channel = data.channel || 'sms';
+                    const viaEmail = channel === 'email';
+                    document.getElementById('otpModalTitle').textContent     = viaEmail ? 'Verify Your Account'   : 'Verify Your Phone';
+                    document.getElementById('otpModalSubtitle').textContent  = viaEmail ? 'We sent a 6-digit code to your email address — check your inbox.' : 'We sent a 6-digit code to your phone number.';
+                    document.getElementById('otpSubmitBtnText').textContent  = viaEmail ? 'Verify Account'        : 'Verify Phone Number';
+                    showToast(viaEmail ? 'Code sent to your email — check your inbox.' : 'OTP sent to your phone.', 'success');
                 } else if (resp.ok) {
                     document.getElementById('onboardingModal').classList.add('hidden');
                     document.getElementById('onboardingModal').classList.remove('flex');
