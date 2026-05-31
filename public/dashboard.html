@@ -611,10 +611,7 @@
                         <div class="w-2 h-2 rounded-full bg-violet-400 animate-pulse"></div>
                         <h2 class="text-sm font-semibold" style="color:var(--text-primary)">3D Material Visualizer</h2>
                     </div>
-                    <div class="flex gap-1 text-xs font-semibold" style="color:var(--text-muted)">
-                        <button id="viz-tab-stack" class="px-3 py-1 rounded-t transition-colors viz-tab-active" onclick="VizController.switchTab('stack')">Stack View</button>
-                        <button id="viz-tab-build" class="px-3 py-1 rounded-t transition-colors" onclick="VizController.switchTab('build')">Build View</button>
-                    </div>
+                    <div></div>
                     <span id="viz-status" class="text-[10px] px-2 py-0.5 rounded-full" style="background:rgba(82,24,128,.35);color:var(--text-muted)">Idle</span>
                 </div>
                 <!-- Canvas + legend -->
@@ -623,7 +620,6 @@
                     <div id="viz-legend" style="width:220px;overflow-y:auto;padding:1rem;border-left:1px solid var(--primary-accent);flex-shrink:0">
                         <p class="text-[10px] uppercase tracking-widest mb-3" style="color:var(--text-muted)">Materials</p>
                         <div id="viz-legend-items" class="space-y-2 text-xs" style="color:var(--text-primary)"></div>
-                        <div id="viz-build-info" class="hidden mt-4 pt-4 space-y-1 text-xs" style="border-top:1px solid var(--primary-accent);color:var(--text-muted)"></div>
                     </div>
                 </div>
             </div>
@@ -1418,9 +1414,6 @@
                 renderLedgerTable();
                 renderInvoice();
 
-                // ── 3D Build Layer: regenerate intent on project load ─────
-                fireVizIntent(editableProject.scope_of_work, id);
-
                 projectSelector.value = id;
                 isDirty = false;
 
@@ -1827,9 +1820,6 @@
                 textInput.value = '';
                 showToast(`✓ Added ${data.itemCount} item(s) to "${data.projectName}"`, 'success');
 
-                // ── 3D Build Layer: fire intent from scope_of_work ────────
-                fireVizIntent(data.scope_of_work, data.estimateId, true);
-
                 if (data.estimateId) {
                     currentEstimateId = data.estimateId;
                     window.location.hash = 'est-' + data.estimateId;
@@ -1877,9 +1867,6 @@
                 if (!resp.ok) { const d = await resp.json(); throw new Error(d.error || resp.status); }
                 const data = await resp.json();
                 showToast(`✓ Added ${data.itemCount} item(s) to "${data.projectName}"`, 'success');
-
-                // ── 3D Build Layer: fire intent from scope_of_work ────────
-                fireVizIntent(data.scope_of_work, data.estimateId, true);
 
                 if (data.estimateId) {
                     currentEstimateId = data.estimateId;
@@ -2829,18 +2816,13 @@
 
 
         // ══════════════════════════════════════════════════════════════════
-        //  VIZ CONTROLLER — Embedded 3D Material Visualizer
-        //  Stack Layer: color-coded trade bars driven by renderLedgerTable().
-        //  Build Layer: animated wall framing driven by voice-to-json intent.
+        //  VIZ CONTROLLER — Embedded 3D Material Yard Visualizer
+        //  Stack Layer: deterministic digital twin of a commercial lumber drop.
         // ══════════════════════════════════════════════════════════════════
         const VizController = (() => {
             let _scene, _camera, _renderer, _controls;
-            let _stackGroup, _buildGroup, _vehicleGroup;
+            let _stackGroup, _vehicleGroup;
             let _initialized = false;
-            let _activeTab   = 'stack';
-            let _buildPieces = [];
-            let _buildAnimIdx = 0;
-            let _buildAnimTimer = null;
             const _intentCache = {};
             let _raycaster    = null;
             let _tooltipMeshes = [];
@@ -3182,9 +3164,7 @@
                 _scene.add(_vehicleGroup);
 
                 _stackGroup = new THREE.Group();
-                _buildGroup = new THREE.Group();
                 _scene.add(_stackGroup);
-                _scene.add(_buildGroup);
 
                 _raycaster = new THREE.Raycaster();
                 _initTooltip();
@@ -3336,9 +3316,8 @@
                 _clearGroup(_stackGroup);
                 _clearGroup(_vehicleGroup);
                 _tooltipMeshes = [];
-                _stackGroup.visible   = (_activeTab === 'stack');
-                _vehicleGroup.visible = (_activeTab === 'stack');
-                _buildGroup.visible   = (_activeTab === 'build');
+                _stackGroup.visible   = true;
+                _vehicleGroup.visible = true;
 
                 // Bucket items into identified materials vs generic trades
                 const matQtys = { SPF: 0, PT: 0, OSB: 0 };
@@ -3418,8 +3397,6 @@
                 const legendEl = document.getElementById('viz-legend-items');
                 if (legendEl) {
                     legendEl.innerHTML = '';
-                    const buildInfoEl = document.getElementById('viz-build-info');
-                    if (buildInfoEl) buildInfoEl.classList.add('hidden');
                     legendItems.forEach(li => {
                         const hex = '#' + li.color.toString(16).padStart(6, '0');
                         const qtyTxt = li.lifts !== undefined
@@ -3439,176 +3416,7 @@
                 _showVizPanel();
             }
 
-            // ── Build Layer ───────────────────────────────────────────────
-            function renderBuild(intent) {
-                if (!_initialized) init();
-                if (!_initialized) return;
-                if (!intent || !intent.dimensions) return;
-
-                _clearGroup(_buildGroup);
-                _buildGroup.visible = true;
-                _stackGroup.visible = false;
-                if (_vehicleGroup) _vehicleGroup.visible = false;
-                if (_hudEl) _hudEl.style.display = 'none';
-                if (_tooltipEl) _tooltipEl.style.display = 'none';
-
-                if (_buildAnimTimer) { clearTimeout(_buildAnimTimer); _buildAnimTimer = null; }
-                _buildPieces = [];
-                _buildAnimIdx = 0;
-
-                const L       = intent.dimensions.lengthFt          || 20;
-                const H       = intent.dimensions.heightFt          || 9;
-                const spc     = (intent.structural?.studSpacingInches || 16) / 12;
-                const PT      = intent.structural?.treatedSolePlate   || false;
-                const doors   = intent.features?.doorOpenings         || 0;
-                const windows = intent.features?.windowOpenings       || 0;
-                const wallTyp = intent.structural?.wallType           || 'exterior';
-
-                const thick   = 1.5 / 12;
-                const depth   = 3.5 / 12;
-                const studClr = wallTyp === 'interior' ? 0x94a3b8 : 0xe3c193;
-                const solClr  = PT ? 0x7a8f75 : studClr;
-
-                const studMat = new THREE.MeshStandardMaterial({ color: studClr, roughness: 0.6, metalness: 0.05 });
-                const soleMat = new THREE.MeshStandardMaterial({ color: solClr,  roughness: 0.7, metalness: 0.05 });
-
-                const xOff = -(L / 2);
-
-                function addPiece(w, h, d, x, y, mat) {
-                    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-                    m.position.set(x, y, 0);
-                    m.castShadow = true;
-                    m.visible = false;
-                    _buildGroup.add(m);
-                    _buildPieces.push(m);
-                }
-
-                // Distribute all openings evenly across the wall
-                const totalOpenings = doors + windows;
-                const openings = [];
-                if (totalOpenings > 0) {
-                    const spacing = L / (totalOpenings + 1);
-                    for (let i = 0; i < totalOpenings; i++) {
-                        openings.push({ x: spacing * (i + 1), type: i < doors ? 'door' : 'window' });
-                    }
-                }
-                const allOpenX = openings.map(o => o.x);
-
-                // Sole plate — continuous except at door openings
-                const doorX = openings.filter(o => o.type === 'door').map(o => o.x).sort((a, b) => a - b);
-                if (doorX.length === 0) {
-                    addPiece(L, thick, depth, xOff + L / 2, thick / 2, soleMat);
-                } else {
-                    let cur = 0;
-                    doorX.forEach(dp => {
-                        const seg = dp - 1.5 - cur;
-                        if (seg > 0.01) addPiece(seg, thick, depth, xOff + cur + seg / 2, thick / 2, soleMat);
-                        cur = dp + 1.5;
-                    });
-                    const last = L - cur;
-                    if (last > 0.01) addPiece(last, thick, depth, xOff + cur + last / 2, thick / 2, soleMat);
-                }
-
-                // Top plates (double)
-                addPiece(L, thick, depth, xOff + L / 2, H - thick * 1.5, studMat);
-                addPiece(L, thick, depth, xOff + L / 2, H - thick / 2,   studMat);
-
-                // Field studs — skip all opening zones
-                const studH = H - thick * 3;
-                const studY = thick + studH / 2;
-                for (let x = 0; x <= L + 0.01; x += spc) {
-                    const absX = xOff + Math.min(x, L);
-                    const inOp = allOpenX.some(op => x >= op - 1.5 && x <= op + 1.5);
-                    if (!inOp) addPiece(thick, studH, depth, absX, studY, studMat);
-                    if (x >= L) break;
-                }
-                const endInOp = allOpenX.some(op => L >= op - 1.5 && L <= op + 1.5);
-                if (!endInOp) addPiece(thick, studH, depth, xOff + L, studY, studMat);
-
-                // Opening framing — doors and windows
-                openings.forEach(({ x: op, type }) => {
-                    const absOp  = xOff + op;
-                    const roHalf = 1.5;
-
-                    if (type === 'door') {
-                        const jackH   = 6.8 - thick;
-                        const jackY   = thick + jackH / 2;
-                        const headerH = 6 / 12;
-                        const headerY = 6.8 + headerH / 2;
-                        const cripB   = headerY + headerH / 2;
-                        const cripH   = (H - thick * 2) - cripB;
-                        const cripY   = cripB + cripH / 2;
-                        addPiece(thick, studH, depth, absOp - roHalf - thick / 2, studY, studMat);
-                        addPiece(thick, studH, depth, absOp + roHalf + thick / 2, studY, studMat);
-                        addPiece(thick, jackH, depth, absOp - roHalf + thick / 2, jackY, studMat);
-                        addPiece(thick, jackH, depth, absOp + roHalf - thick / 2, jackY, studMat);
-                        addPiece(3 - thick * 2, headerH, depth, absOp, headerY, studMat);
-                        if (cripH > 0.1) {
-                            addPiece(thick, cripH, depth, absOp,       cripY, studMat);
-                            addPiece(thick, cripH, depth, absOp - 0.8, cripY, studMat);
-                            addPiece(thick, cripH, depth, absOp + 0.8, cripY, studMat);
-                        }
-                    } else {
-                        const sillY    = 3.0;
-                        const hdrTop   = 6.5;
-                        const jackH    = hdrTop - thick;
-                        const jackY    = thick + jackH / 2;
-                        const headerH  = 6 / 12;
-                        const headerY  = hdrTop + headerH / 2;
-                        const cbH      = sillY - thick * 2;
-                        const cbY      = thick + cbH / 2;
-                        const caB      = headerY + headerH / 2;
-                        const caH      = (H - thick * 2) - caB;
-                        const caY      = caB + caH / 2;
-                        addPiece(thick, studH, depth, absOp - roHalf - thick / 2, studY, studMat);
-                        addPiece(thick, studH, depth, absOp + roHalf + thick / 2, studY, studMat);
-                        addPiece(thick, jackH, depth, absOp - roHalf + thick / 2, jackY, studMat);
-                        addPiece(thick, jackH, depth, absOp + roHalf - thick / 2, jackY, studMat);
-                        addPiece(3 - thick * 2, headerH, depth, absOp, headerY, studMat);
-                        addPiece(3 - thick * 2, thick,   depth, absOp, sillY,   studMat);
-                        if (cbH > 0.1) {
-                            addPiece(thick, cbH, depth, absOp,       cbY, studMat);
-                            addPiece(thick, cbH, depth, absOp - 0.8, cbY, studMat);
-                            addPiece(thick, cbH, depth, absOp + 0.8, cbY, studMat);
-                        }
-                        if (caH > 0.1) {
-                            addPiece(thick, caH, depth, absOp,       caY, studMat);
-                            addPiece(thick, caH, depth, absOp - 0.8, caY, studMat);
-                            addPiece(thick, caH, depth, absOp + 0.8, caY, studMat);
-                        }
-                    }
-                });
-
-                // Build layer info panel
-                const buildInfoEl = document.getElementById('viz-build-info');
-                const legendEl    = document.getElementById('viz-legend-items');
-                if (legendEl) legendEl.innerHTML = '';
-                if (buildInfoEl) {
-                    buildInfoEl.classList.remove('hidden');
-                    buildInfoEl.innerHTML = `
-                        <div>Length: <strong>${L} ft</strong></div>
-                        <div>Height: <strong>${H} ft</strong></div>
-                        <div>Spacing: <strong>${intent.structural?.studSpacingInches || 16}" OC</strong></div>
-                        <div>Wall type: <strong>${wallTyp}</strong></div>
-                        <div>Door openings: <strong>${doors}</strong></div>
-                        <div>Window openings: <strong>${windows}</strong></div>
-                        <div>Pieces: <strong>${_buildPieces.length}</strong></div>`;
-                }
-
-                _controls.target.set(0, H / 2, 0);
-                _setStatus('Build · ' + _buildPieces.length + ' pieces');
-                _showVizPanel();
-                _animateBuildPieces();
-            }
-
-            function _animateBuildPieces() {
-                if (_buildAnimIdx >= _buildPieces.length) return;
-                _buildPieces[_buildAnimIdx].visible = true;
-                _buildAnimIdx++;
-                _buildAnimTimer = setTimeout(_animateBuildPieces, 55);
-            }
-
-            // ── Panel show / tab switch ───────────────────────────────────
+            // ── Panel show ────────────────────────────────────────────────
             function _showVizPanel() {
                 const panel = document.getElementById('viz-panel');
                 if (!panel) return;
@@ -3618,57 +3426,13 @@
                 }
             }
 
-            function switchTab(tab) {
-                _activeTab = tab;
-                if (_buildAnimTimer && tab !== 'build') { clearTimeout(_buildAnimTimer); _buildAnimTimer = null; }
-                document.getElementById('viz-tab-stack')?.classList.toggle('viz-tab-active', tab === 'stack');
-                document.getElementById('viz-tab-build')?.classList.toggle('viz-tab-active', tab === 'build');
-                if (_stackGroup)   _stackGroup.visible   = (tab === 'stack');
-                if (_vehicleGroup) _vehicleGroup.visible = (tab === 'stack');
-                if (_buildGroup)   _buildGroup.visible   = (tab === 'build');
-                if (_hudEl) _hudEl.style.display = (tab === 'stack' && _hudEl.dataset.hasData === '1') ? 'block' : 'none';
-                if (_tooltipEl && tab !== 'stack') _tooltipEl.style.display = 'none';
-            }
-
             function _setStatus(text) {
                 const el = document.getElementById('viz-status');
                 if (el) el.textContent = text;
             }
 
-            return { init, renderStack, renderBuild, switchTab, getCachedIntent, setCachedIntent };
+            return { init, renderStack };
         })();
-
-        // ── Fire voice-to-json for build layer (shared helper) ────────────
-        // Accepts scope_of_work string; uses intent cache by estimateId.
-        // Pass bypassCache=true when triggered by new voice/text input so the
-        // scene re-renders instead of returning the stale cached wall.
-        function fireVizIntent(scopeText, estimateId, bypassCache = false) {
-            const FRAMING_KEYWORDS = /\b(wall|frame|framing|stud|plate|header|footer|shear)\b/i;
-            if (!scopeText || scopeText.trim().length < 20 || !FRAMING_KEYWORDS.test(scopeText)) return;
-            if (!authBearerToken) return;
-
-            const cached = VizController.getCachedIntent(estimateId);
-            if (cached && !bypassCache) {
-                VizController.renderBuild(cached);
-                VizController.switchTab('build');
-                return;
-            }
-
-            fetch('/api/estimate/voice-to-json', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authBearerToken}` },
-                body: JSON.stringify({ transcript: scopeText }),
-            })
-            .then(r => r.json())
-            .then(d => {
-                if (d.success && d.intent) {
-                    VizController.setCachedIntent(estimateId, d.intent);
-                    VizController.renderBuild(d.intent);
-                    VizController.switchTab('build');
-                }
-            })
-            .catch(() => {});
-        }
 
     </script>
 </body>
