@@ -1828,7 +1828,7 @@
                 showToast(`✓ Added ${data.itemCount} item(s) to "${data.projectName}"`, 'success');
 
                 // ── 3D Build Layer: fire intent from scope_of_work ────────
-                fireVizIntent(data.scope_of_work, data.estimateId);
+                fireVizIntent(data.scope_of_work, data.estimateId, true);
 
                 if (data.estimateId) {
                     currentEstimateId = data.estimateId;
@@ -1879,7 +1879,7 @@
                 showToast(`✓ Added ${data.itemCount} item(s) to "${data.projectName}"`, 'success');
 
                 // ── 3D Build Layer: fire intent from scope_of_work ────────
-                fireVizIntent(data.scope_of_work, data.estimateId);
+                fireVizIntent(data.scope_of_work, data.estimateId, true);
 
                 if (data.estimateId) {
                     currentEstimateId = data.estimateId;
@@ -2887,7 +2887,13 @@
                 fill.position.set(-15, 10, -10);
                 _scene.add(fill);
 
-                _scene.add(new THREE.GridHelper(40, 40, 0x521880, 0x2d0f47));
+                const groundGeo = new THREE.PlaneGeometry(60, 60);
+                const groundMat = new THREE.MeshStandardMaterial({ color: 0x3b2a1a, roughness: 1.0, metalness: 0 });
+                const ground = new THREE.Mesh(groundGeo, groundMat);
+                ground.rotation.x = -Math.PI / 2;
+                ground.receiveShadow = true;
+                _scene.add(ground);
+                _scene.add(new THREE.GridHelper(60, 30, 0x52381f, 0x3d2810));
 
                 _stackGroup = new THREE.Group();
                 _buildGroup = new THREE.Group();
@@ -2952,39 +2958,34 @@
                 _stackGroup.visible = (_activeTab === 'stack');
                 _buildGroup.visible = (_activeTab === 'build');
 
-                const tradeTotals = {};
+                const tradeMap = {};
                 items.forEach(item => {
+                    if (item.type === 'labor') return;
                     const trade = (item.trade || 'default').toLowerCase();
-                    tradeTotals[trade] = (tradeTotals[trade] || 0) + (item.total || 0);
+                    if (!tradeMap[trade]) tradeMap[trade] = { total: 0, qty: 0 };
+                    tradeMap[trade].total += (item.total || 0);
+                    tradeMap[trade].qty   += (item.quantity || 1);
                 });
 
-                const trades = Object.entries(tradeTotals)
-                    .filter(([, v]) => v > 0)
-                    .sort((a, b) => b[1] - a[1]);
+                const trades = Object.entries(tradeMap)
+                    .filter(([, v]) => v.total > 0)
+                    .sort((a, b) => b[1].total - a[1].total);
 
                 if (trades.length === 0) return;
-
-                const maxVal  = trades[0][1];
-                const barGap  = 1.4;
-                const maxH    = 8;
-                const offsetX = -(trades.length * barGap) / 2 + barGap / 2;
 
                 const legendEl = document.getElementById('viz-legend-items');
                 if (legendEl) legendEl.innerHTML = '';
 
-                trades.forEach(([trade, val], i) => {
-                    const barH  = Math.max(0.15, (val / maxVal) * maxH);
-                    const color = TRADE_COLORS[trade] || TRADE_COLORS['default'];
+                const GROUP_SPACING = 4.5;
+                const startX = -((trades.length - 1) * GROUP_SPACING) / 2;
 
-                    const geo  = new THREE.BoxGeometry(0.8, barH, 0.8);
-                    const mat  = new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.1 });
-                    const mesh = new THREE.Mesh(geo, mat);
-                    mesh.position.set(offsetX + i * barGap, barH / 2, 0);
-                    mesh.castShadow = true;
-                    _stackGroup.add(mesh);
+                trades.forEach(([trade, data], i) => {
+                    const x     = startX + i * GROUP_SPACING;
+                    const color = TRADE_COLORS[trade] || TRADE_COLORS['default'];
+                    const pileH = _buildMaterialPile(trade, data, x, color);
 
                     const label = _makeLabel(trade);
-                    label.position.set(offsetX + i * barGap, barH + 0.7, 0);
+                    label.position.set(x, pileH + 0.6, 0);
                     _stackGroup.add(label);
 
                     if (legendEl) {
@@ -2993,14 +2994,163 @@
                         li.className = 'flex items-center gap-2';
                         li.innerHTML = `<div style="width:10px;height:10px;border-radius:2px;flex-shrink:0;background:${hex}"></div>
                             <div class="flex-1 truncate capitalize">${trade}</div>
-                            <div style="color:var(--text-accent)">${fmtCurrency(val)}</div>`;
+                            <div style="color:var(--text-accent)">${fmtCurrency(data.total)}</div>`;
                         legendEl.appendChild(li);
                     }
                 });
 
-                _controls.target.set(0, maxH / 2, 0);
-                _setStatus('Stack · ' + trades.length + ' trade' + (trades.length !== 1 ? 's' : ''));
+                _controls.target.set(0, 2, 0);
+                _setStatus('Material yard · ' + trades.length + ' trade' + (trades.length !== 1 ? 's' : ''));
                 _showVizPanel();
+            }
+
+            function _buildMaterialPile(trade, data, x, color) {
+                const LUMBER_TRADES   = ['lumber','framing','wood','carpentry','millwork','siding'];
+                const CONCRETE_TRADES = ['concrete','masonry','block','mortar','cement'];
+                const PAINT_TRADES    = ['paint','coating','finish','stain'];
+                const PIPE_TRADES     = ['plumbing','pipe','drainage','hvac','mechanical'];
+                const ROOFING_TRADES  = ['roofing','shingle','flashing','tile'];
+
+                _addPallet(x);
+                if (LUMBER_TRADES.some(t => trade.includes(t)))   return _buildLumberStack(data, x, color);
+                if (CONCRETE_TRADES.some(t => trade.includes(t))) return _buildBagStack(data, x, color);
+                if (PAINT_TRADES.some(t => trade.includes(t)))    return _buildBucketStack(data, x, color);
+                if (PIPE_TRADES.some(t => trade.includes(t)))     return _buildPipeStack(data, x, color);
+                if (ROOFING_TRADES.some(t => trade.includes(t)))  return _buildRoofingStack(data, x, color);
+                return _buildCrateStack(data, x, color);
+            }
+
+            function _addPallet(x) {
+                const mat = new THREE.MeshStandardMaterial({ color: 0x9c7a4a, roughness: 0.95, metalness: 0 });
+                for (let i = 0; i < 5; i++) {
+                    const b = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.04, 0.14), mat);
+                    b.position.set(x, 0.02, (i - 2) * 0.22);
+                    _stackGroup.add(b);
+                }
+                for (let j = 0; j < 3; j++) {
+                    const s = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.08, 0.08), mat);
+                    s.position.set(x, 0.06, (j - 1) * 0.44);
+                    _stackGroup.add(s);
+                }
+            }
+
+            function _buildLumberStack(data, x, color) {
+                const mat     = new THREE.MeshStandardMaterial({ color, roughness: 0.8, metalness: 0 });
+                const stkMat  = new THREE.MeshStandardMaterial({ color: 0xf0ede8, roughness: 0.9 });
+                const count   = Math.min(Math.max(Math.round(data.qty), 3), 22);
+                const bL = 2.0, bW = 3.5 / 12, bH = 1.5 / 12;
+                let y = 0.12;
+                for (let i = 0; i < count; i++) {
+                    const m = new THREE.Mesh(new THREE.BoxGeometry(bL, bH, bW), mat);
+                    m.position.set(x, y + bH / 2, 0);
+                    m.castShadow = true;
+                    _stackGroup.add(m);
+                    if (i % 4 === 3) {
+                        [-bL * 0.3, bL * 0.3].forEach(sx => {
+                            const stk = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.035, bW + 0.02), stkMat);
+                            stk.position.set(x + sx, y + bH + 0.018, 0);
+                            _stackGroup.add(stk);
+                        });
+                        y += 0.035;
+                    }
+                    y += bH + 0.004;
+                }
+                return y;
+            }
+
+            function _buildBagStack(data, x, color) {
+                const mat   = new THREE.MeshStandardMaterial({ color, roughness: 0.9, metalness: 0 });
+                const count = Math.min(Math.max(Math.round(data.qty), 2), 18);
+                const bW = 0.5, bH = 0.24, bD = 0.85;
+                let y = 0.12, rowY = y;
+                for (let i = 0; i < count; i++) {
+                    const col = i % 2;
+                    const row = Math.floor(i / 2);
+                    const m = new THREE.Mesh(new THREE.BoxGeometry(bW, bH, bD), mat);
+                    m.position.set(x + (col - 0.5) * (bW * 1.05), rowY + bH / 2, 0);
+                    if (row % 2 === 1) m.rotation.y = Math.PI / 2;
+                    m.castShadow = true;
+                    _stackGroup.add(m);
+                    if (col === 1) rowY += bH + 0.01;
+                }
+                return rowY + bH;
+            }
+
+            function _buildBucketStack(data, x, color) {
+                const bodyMat = new THREE.MeshStandardMaterial({ color: 0xe0ddd8, roughness: 0.4, metalness: 0.35 });
+                const lidMat  = new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.2 });
+                const count   = Math.min(Math.max(Math.round(data.qty), 1), 9);
+                const cols    = Math.min(count, 3);
+                const rows    = Math.ceil(count / cols);
+                const r = 0.18, h = 0.32;
+                let maxH = 0;
+                for (let i = 0; i < count; i++) {
+                    const col = i % cols, row = Math.floor(i / cols);
+                    const bx  = x + (col - (cols - 1) / 2) * (r * 2.4);
+                    const bz  = (row - (rows - 1) / 2) * (r * 2.4);
+                    const body = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 0.88, h, 12), bodyMat);
+                    body.position.set(bx, 0.12 + h / 2, bz);
+                    body.castShadow = true;
+                    _stackGroup.add(body);
+                    const lid = new THREE.Mesh(new THREE.CylinderGeometry(r + 0.01, r + 0.01, 0.025, 12), lidMat);
+                    lid.position.set(bx, 0.12 + h + 0.012, bz);
+                    _stackGroup.add(lid);
+                    maxH = Math.max(maxH, 0.12 + h + 0.025);
+                }
+                return maxH;
+            }
+
+            function _buildPipeStack(data, x, color) {
+                const mat   = new THREE.MeshStandardMaterial({ color, roughness: 0.3, metalness: 0.65 });
+                const count = Math.min(Math.max(Math.round(data.qty), 2), 15);
+                const r = 0.07, pL = 1.8;
+                const rowCounts = [Math.min(count, 5), Math.min(Math.max(count - 5, 0), 4), Math.min(Math.max(count - 9, 0), 3), Math.min(Math.max(count - 12, 0), 2)];
+                let y = 0.12;
+                rowCounts.forEach(n => {
+                    if (n === 0) return;
+                    for (let j = 0; j < n; j++) {
+                        const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, pL, 10), mat);
+                        m.rotation.z = Math.PI / 2;
+                        m.position.set(x, y + r, (j - (n - 1) / 2) * (r * 2.15));
+                        m.castShadow = true;
+                        _stackGroup.add(m);
+                    }
+                    y += r * 2.1;
+                });
+                return y + 0.1;
+            }
+
+            function _buildRoofingStack(data, x, color) {
+                const mat   = new THREE.MeshStandardMaterial({ color, roughness: 0.92, metalness: 0 });
+                const count = Math.min(Math.max(Math.round(data.qty), 2), 12);
+                let y = 0.12;
+                for (let i = 0; i < count; i++) {
+                    const m = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.13, 0.55), mat);
+                    m.position.set(x, y + 0.065, 0);
+                    m.castShadow = true;
+                    _stackGroup.add(m);
+                    y += 0.14;
+                }
+                return y;
+            }
+
+            function _buildCrateStack(data, x, color) {
+                const mat     = new THREE.MeshStandardMaterial({ color: 0xc4954a, roughness: 0.92, metalness: 0 });
+                const edgeMat = new THREE.LineBasicMaterial({ color: 0x7a5c20 });
+                const count   = Math.min(Math.max(Math.round(data.qty / 8), 1), 4);
+                let y = 0.12;
+                for (let i = 0; i < count; i++) {
+                    const geo  = new THREE.BoxGeometry(0.9, 0.65, 0.85);
+                    const mesh = new THREE.Mesh(geo, mat);
+                    mesh.position.set(x, y + 0.325, 0);
+                    mesh.castShadow = true;
+                    _stackGroup.add(mesh);
+                    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), edgeMat);
+                    edges.position.copy(mesh.position);
+                    _stackGroup.add(edges);
+                    y += 0.7;
+                }
+                return y;
             }
 
             // ── Build Layer ───────────────────────────────────────────────
@@ -3067,6 +3217,9 @@
                     if (!inOp) addPiece(thick, studH, depth, absX, studY, studMat);
                     if (x >= L) break;
                 }
+                // Always place a bookend stud at the wall terminus
+                const endInOp = openPos.some(op => L >= op - 1.5 && L <= op + 1.5);
+                if (!endInOp) addPiece(thick, studH, depth, xOff + L, studY, studMat);
 
                 // Door framing
                 openPos.forEach(op => {
@@ -3150,13 +3303,15 @@
 
         // ── Fire voice-to-json for build layer (shared helper) ────────────
         // Accepts scope_of_work string; uses intent cache by estimateId.
-        function fireVizIntent(scopeText, estimateId) {
+        // Pass bypassCache=true when triggered by new voice/text input so the
+        // scene re-renders instead of returning the stale cached wall.
+        function fireVizIntent(scopeText, estimateId, bypassCache = false) {
             const FRAMING_KEYWORDS = /\b(wall|frame|framing|stud|plate|header|footer|shear)\b/i;
             if (!scopeText || scopeText.trim().length < 20 || !FRAMING_KEYWORDS.test(scopeText)) return;
             if (!authBearerToken) return;
 
             const cached = VizController.getCachedIntent(estimateId);
-            if (cached) {
+            if (cached && !bypassCache) {
                 VizController.renderBuild(cached);
                 VizController.switchTab('build');
                 return;

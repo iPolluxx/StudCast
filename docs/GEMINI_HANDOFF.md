@@ -1,7 +1,7 @@
 # Lone Ranger Estimator — Live Project Context
 > **Purpose:** This document is the handoff bridge between Gemini brainstorming sessions and Claude Code
 > implementation sessions. Update it after every meaningful work session.
-> **Last updated:** 2026-05-30 (end of day — VM stopped, Unity 6 installed, C# scripts verified, ready for Phase 2)
+> **Last updated:** 2026-05-31 — Mode 1 visualizer polished, end-stud bug fixed, cache bug fixed, material yard scene live
 
 ---
 
@@ -242,6 +242,39 @@ From `public/`:
 
 ## Work Session Log
 
+### Session: 2026-05-31 — Mode 1 Visualizer Polish + Bug Fixes
+**Gemini:** n/a (implementation session)
+**Claude:** Fixed two visualizer bugs; replaced bar chart with material yard scene.
+
+#### 1. End-stud missing bug (`public/dashboard.html`)
+The field stud loop used `x <= L + 0.01` as a tolerance to force a terminal stud, but floating-point
+spacing steps could overshoot past `L + 0.01` without triggering. For a 10 ft wall at 16" OC, the last
+field stud lands at 9.33 ft and the next step (10.67 ft) skips the loop entirely.
+**Fix:** Always explicitly place a bookend stud at `xOff + L` after the loop, with an `inOp` guard.
+
+#### 2. Visualizer only rendering one wall per estimate (`public/dashboard.html`)
+`fireVizIntent()` cached intent by `estimateId`. On the same estimate, speaking a second wall returned
+the cached (old) intent instead of re-fetching. New voice/text input calls now pass `bypassCache = true`
+so the scene re-renders fresh on every submission. Cache still applies when loading an existing estimate
+from the list (avoids redundant Gemini calls on repeated project opens).
+
+#### 3. Material yard scene — replaces bar chart (`public/dashboard.html`)
+Stack Layer now renders a job-site material yard instead of abstract colored bars:
+- **Ground plane** — dark dirt/earth plane with subtle warm grid (replaces purple grid)
+- **Lumber/framing** → stacked boards with wood-sticker strips between layers
+- **Concrete/masonry** → stacked 80lb bags in alternating row orientation
+- **Paint/coating** → metal buckets with colored trade-color lids arranged in grid
+- **Plumbing/HVAC** → pipes bundled in triangle stack pattern
+- **Roofing** → flat shingle bundles stacked
+- **Default** → wooden crates with edge lines
+- Each pile sits on a wooden pallet
+- Quantity-driven: pile height/count scales with item quantities, not dollar values
+
+**Roadmap context (decided this session):**
+- **Mode 1** (voice-driven): material yard with quantities + future truck/trailer load visualizer
+- **Mode 2** (blueprint upload): Gemini vision extracts all walls → multi-wall JSON schema → full floor plan render
+- Mode 2 is the subscription-justifying flagship; Mode 1 is the daily-use habit builder
+
 ### Session: 2026-05-30 — Supervisor/Builder Phase 1 Scaffolding
 **Gemini:** Brainstormed the Supervisor/Builder architecture direction and defined Phase 1 scope.
 **Claude:** Implemented backend infrastructure. All changes confined to `src/server.js` + new docs.
@@ -324,20 +357,19 @@ Claude Code sessions load project memory automatically and will reference this f
 9. **Claude Code running in VM** — Installed via npm at `C:\Projects\StudCast`. Claude Code in the VM generated `CLAUDE.md` and pushed it to StudCast. This gives both local and VM Claude sessions full project context automatically.
 
 **Current state right now:**
-- VM: **STOPPED** (~$0.05/hr) — start with `dev-box-launch` when ready
-- Unity 6: installed in VM, project not yet opened
-- StudCast repo: `github.com/iPolluxx/StudCast` — CLAUDE.md committed by VM session
-- Backend: deployed on Cloud Run at `https://lone-ranger-app-wzyjs4vwsq-uc.a.run.app`
+- VM: **RUNNING** — `lone-ranger-unity-desktop`, IP changes on each start, user `builder`, run `dev-box-password` to reset creds
+- Unity 6: installed in VM, project loading (Unity project creation was in progress during this session)
+- StudCast repo: `github.com/iPolluxx/StudCast` — synced, local matches remote
+- Backend: deployed on Cloud Run at `https://lone-ranger-app-879716207624.us-central1.run.app` (revision `lone-ranger-app-00034-rj7`)
+- Dashboard 3D visualizer: **Mode 1 material yard live** — not yet deployed (pending deploy after more testing)
 - Local aliases: `dev-box-launch`, `dev-box-stop`, `dev-box-status` active in `~/.bashrc`
 
 **Immediate next session tasks:**
-1. Boot VM with `dev-box-launch`
-2. Open Unity Hub → Open `C:\Projects\StudCast\unity` with Unity 6
-3. Verify C# scripts compile (expect clean)
-4. Create basic wall framing prefabs and assign to ConstructionManager Inspector fields
-5. Uncomment the Phase 2 instantiation calls in `BuildWallFromJSON()`
-6. Test `BuildWallFromJSON()` with a sample payload in Play mode
-7. Export WebGL build → copy to `public/` → deploy → test in browser
+1. Deploy dashboard changes: `gcloud builds submit --tag gcr.io/mightdoit/lone-ranger-app && gcloud run deploy lone-ranger-app --image gcr.io/mightdoit/lone-ranger-app --region us-central1 --platform managed`
+2. Test material yard visualizer live — voice input several trades, verify piles render correctly
+3. Continue Mode 1 polish (truck + trailer scene is the next big UX feature)
+4. When VM Unity project finishes loading: open `C:\Projects\StudCast\unity`, verify C# scripts compile, assign prefabs
+5. Future: Mode 2 blueprint upload — Gemini vision → multi-wall JSON schema → full floor plan render
 
 ### Session: 2026-05-30 (session 5) — VM Setup, Repo Migration, Unity 6
 **Gemini:** n/a (ops session)
