@@ -1,7 +1,7 @@
 # Lone Ranger Estimator — Live Project Context
 > **Purpose:** This document is the handoff bridge between Gemini brainstorming sessions and Claude Code
 > implementation sessions. Update it after every meaningful work session.
-> **Last updated:** 2026-05-31 — Mode 1 visualizer polished, end-stud bug fixed, cache bug fixed, material yard scene live
+> **Last updated:** 2026-05-31 — Unity WebGL dropped; Three.js is permanent Phase 2 builder; window framing added; security fixes
 
 ---
 
@@ -23,7 +23,7 @@ do estimates by hand or in spreadsheets. The killer feature is voice → bid in 
 
 ## Architecture: Supervisor / Builder
 
-This is the big architectural direction being built out now. Two fully separate layers:
+Two fully separate layers. Unity WebGL was abandoned 2026-05-31 in favor of native Three.js for iteration speed and zero compilation cost.
 
 ### AI Supervisor (existing — `src/server.js`)
 - Node.js / Express backend
@@ -32,14 +32,18 @@ This is the big architectural direction being built out now. Two fully separate 
 - Emits deterministic JSON command packets
 - Handles all business logic, auth, Stripe, PDF, Firestore
 
-### Deterministic Builder (future — Unity WebGL)
-- Unity WebGL export served from `public/`
-- Receives JSON packets from the Supervisor
-- Renders 3D framing scenes (walls, studs, openings)
-- NO AI, NO inference — pure deterministic geometry
-- Strict contract: if the JSON packet is malformed, the C# side crashes
+### Deterministic Builder (live — `public/dashboard.html` VizController)
+- Three.js running in the browser — no compilation, no VM needed
+- Two modes in the same visualizer panel:
+  - **Stack Layer** — material yard scene (lumber stacks, bags, buckets, pipes, pallets) driven by ledger items
+  - **Build Layer** — deterministic wall framing (plates, studs, openings) driven by Supervisor JSON
+- Receives JSON packets from `POST /api/estimate/voice-to-json`
+- NO AI, NO inference — pure deterministic geometry from framing math
+- Strict contract: malformed JSON defaults to safe values via `sanitizePhase1Intent()`
 
 **The key rule:** The Supervisor thinks. The Builder builds. They never swap roles.
+
+**Unity status:** The `unity/` folder and C# scripts remain in the repo but are not part of the web product. GCP VM (`lone-ranger-unity-desktop`) is stopped and only needed if Unity standalone work resumes.
 
 ---
 
@@ -242,6 +246,33 @@ From `public/`:
 
 ## Work Session Log
 
+### Session: 2026-05-31 (2) — Unity Pivot, Window Framing, Security Fixes
+**Gemini:** Directed abandoning Unity WebGL pipeline in favor of native Three.js for the deterministic builder.
+**Claude:** Implemented window framing in Build Layer, fixed 6 security vulnerabilities, confirmed architecture pivot.
+
+#### Architecture pivot: Unity WebGL → Three.js
+The Three.js Build Layer in `dashboard.html` already delivered the core proof of concept (wall rendered from voice input). Dropping Unity removes the compile pipeline, GCP VM dependency, and C# build tooling. Three.js is now the permanent Phase 2 deterministic builder.
+
+#### Window framing added (`public/dashboard.html`)
+`windowOpenings` from the Supervisor JSON was parsed but ignored by the renderer. Now fully implemented:
+- King studs + trimmers on each side of rough opening
+- Header at 6.5 ft, rough sill at 3 ft
+- Cripple studs below sill and above header
+- Multiple openings of any mix (doors + windows) now distribute evenly across the wall
+- Sole plate gaps only at door openings (continuous under windows)
+- Field studs correctly skip all opening zones
+
+#### Security fixes (`src/server.js`)
+Six vulnerabilities found and patched (4 HIGH, 2 MEDIUM):
+1. **XSS in PDF HTML** — `escapeHtml()` now applied to `company_logo_url` before `<img src>` attribute
+2. **XSS in change order page** — same fix applied to the unauthenticated `/approve` page
+3. **Contractor PII exposed to clients** — `/api/change-orders/approve` no longer accepts `userPhone`/`parentEstimateId` from client body; looks them up server-side from `approvals` collection
+4. **Weak OTP randomness** — `Math.random()` replaced with `crypto.randomInt()`
+5. **Weak estimate ID randomness** — `Math.random()` replaced with `crypto.randomBytes()`
+6. **Predictable change order IDs** — `CO-{timestamp}` replaced with `CO-{hex}`
+
+Note: OTP plaintext log line intentionally left in place — Twilio campaign pending approval, log is the current onboarding path. Remove when Twilio campaign is approved.
+
 ### Session: 2026-05-31 — Mode 1 Visualizer Polish + Bug Fixes
 **Gemini:** n/a (implementation session)
 **Claude:** Fixed two visualizer bugs; replaced bar chart with material yard scene.
@@ -357,19 +388,17 @@ Claude Code sessions load project memory automatically and will reference this f
 9. **Claude Code running in VM** — Installed via npm at `C:\Projects\StudCast`. Claude Code in the VM generated `CLAUDE.md` and pushed it to StudCast. This gives both local and VM Claude sessions full project context automatically.
 
 **Current state right now:**
-- VM: **STOPPED** (~$0.05/hr) — start with `dev-box-launch`; IP changes on each start, user `builder`, run `dev-box-password` to reset creds
-- Unity 6: installed in VM, project loading (Unity project creation was in progress during this session)
-- StudCast repo: `github.com/iPolluxx/StudCast` — synced, local matches remote
-- Backend: deployed on Cloud Run at `https://lone-ranger-app-879716207624.us-central1.run.app` (revision `lone-ranger-app-00034-rj7`)
-- Dashboard 3D visualizer: **Mode 1 material yard live** — not yet deployed (pending deploy after more testing)
-- Local aliases: `dev-box-launch`, `dev-box-stop`, `dev-box-status` active in `~/.bashrc`
+- VM: **STOPPED** (~$0.05/hr) — no longer needed for 3D pipeline; only start if doing standalone Unity work
+- StudCast repo: `github.com/iPolluxx/StudCast` — commit `9f62962`, local matches remote
+- Backend: deployed on Cloud Run at `https://lone-ranger-app-879716207624.us-central1.run.app` (revision `lone-ranger-app-00035-jth`)
+- Dashboard Build Layer: window framing added, security fixes applied — **committed but not yet deployed**
+- Local dev server: runs with `npm start` on port 8080
 
 **Immediate next session tasks:**
-1. Deploy dashboard changes: `gcloud builds submit --tag gcr.io/mightdoit/lone-ranger-app && gcloud run deploy lone-ranger-app --image gcr.io/mightdoit/lone-ranger-app --region us-central1 --platform managed`
-2. Test material yard visualizer live — voice input several trades, verify piles render correctly
-3. Continue Mode 1 polish (truck + trailer scene is the next big UX feature)
-4. When VM Unity project finishes loading: open `C:\Projects\StudCast\unity`, verify C# scripts compile, assign prefabs
-5. Future: Mode 2 blueprint upload — Gemini vision → multi-wall JSON schema → full floor plan render
+1. Deploy: `gcloud builds submit --tag gcr.io/mightdoit/lone-ranger-app && gcloud run deploy lone-ranger-app --image gcr.io/mightdoit/lone-ranger-app --region us-central1 --platform managed`
+2. Test Build Layer with voice: try "frame a 20 foot wall with 2 windows and 1 door" — verify all openings render
+3. Mode 1 polish: truck + trailer load visualizer (next big UX differentiator)
+4. Mode 2 planning: blueprint upload → Gemini vision → multi-wall JSON schema → full floor plan render
 
 ### Session: 2026-05-30 (session 5) — VM Setup, Repo Migration, Unity 6
 **Gemini:** n/a (ops session)
@@ -485,20 +514,16 @@ All Unity development happens on a dedicated GCP cloud workstation.
 
 ## Open Items / Next Steps
 
-- [x] ~~**Provision workstation**~~ — `lone-ranger-unity-desktop` live in `us-central1-a` (no GPU, ~$0.32/hr)
-- [x] ~~**Unity installed**~~ — Unity 6 installed via Unity Hub GUI (upgraded from planned 2021.3.44f1 — Unity 6 has better WebGL support, C# scripts compatible)
-- [x] ~~**Repo on VM**~~ — StudCast downloaded as ZIP to `C:\Projects\StudCast`
-- [x] ~~**Claude Code in VM**~~ — Running at `C:\Projects\StudCast`
-- [ ] **Open Unity project** — Open `C:\Projects\StudCast\unity` in Unity Hub with Unity 6; verify C# scripts compile
-- [x] ~~**Update C# namespace**~~ — renamed to `StudCast.Construction` (completed in VM session 2026-05-30)
-- [ ] **Assign prefabs** — Create framing prefabs in Unity Editor; assign to `ConstructionManager` Inspector fields
-- [ ] **Unity WebGL Build** — Compile WebGL export; drop build files into `public/`; smoke-test MIME type headers with a real `.wasm` file
-- [ ] **Request GCP GPU quota** — Go to console.cloud.google.com/iam-admin/quotas?project=mightdoit, request GPUS_ALL_REGIONS = 1
-- [x] ~~**Phase 1 Schema expansion**~~ — `windowOpenings`, `cornerCount`, `wallType` added; C# contract classes generated
-- [ ] **Implement prefab instantiation** — Fill in the 4 stub methods in `ConstructionManager.cs` with actual `Instantiate()` calls
-- [ ] **Builder → Supervisor callback** — Define how Unity sends back computed stud count / material takeoffs to the Supervisor for estimate merging
-- [ ] **Phase 2 schema** — Define `floor_frame`, `roof_truss` project types for future Builder phases
-- [ ] **BOM generation from Unity** — Unity Builder auto-calculates stud count from dimensions + spacing; this BOM should flow back into the existing estimate/pricing engine
+- [x] ~~**Deterministic 3D Builder**~~ — Three.js Build Layer live in dashboard; wall framing with doors + windows renders from voice input
+- [x] ~~**Phase 1 Schema**~~ — `windowOpenings`, `cornerCount`, `wallType`, `doorOpenings` all wired end-to-end
+- [x] ~~**Security audit**~~ — 6 vulnerabilities patched (XSS, PII exposure, weak randomness)
+- [ ] **Deploy latest** — commit `9f62962` not yet on Cloud Run; run deploy command above
+- [ ] **Mode 1 polish: truck + trailer** — Add low-poly pickup + trailer to material yard; calculate whether load fits in one trip
+- [ ] **Mode 2: blueprint upload** — Gemini vision reads blueprint image → extracts all walls → multi-wall JSON → full floor plan render in Three.js
+- [ ] **Multi-wall schema** — Extend Phase 1 JSON to support `walls[]` array with position + rotation per wall
+- [ ] **Remove OTP log line** — `console.warn('[register] OTP...')` in server.js once Twilio campaign is approved
+- [ ] **Phase 2 schema** — Define `floor_frame`, `roof_truss` project types
+- [x] ~~**Unity WebGL pipeline**~~ — Abandoned 2026-05-31; Three.js is the builder; `unity/` folder retained in repo only
 
 ---
 
