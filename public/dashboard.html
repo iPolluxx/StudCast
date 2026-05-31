@@ -2884,11 +2884,17 @@
             function _identifyMaterial(item) {
                 const n = (item.name || '').toLowerCase();
                 const t = (item.trade || '').toLowerCase();
-                if (n.includes('osb') || n.includes('sheathing')) return 'OSB';
-                if ((n.includes('treat') || /\bpt\b/.test(n)) &&
-                    (n.includes('plate') || n.includes('sill') || n.includes('bottom'))) return 'PT';
-                if (n.includes('2x4') || n.includes('stud') || n.includes('spf') ||
-                    t.includes('lumber') || t.includes('framing')) return 'SPF';
+                // Sheet goods first
+                if (n.includes('osb') || n.includes('sheathing') || n.includes('plywood')) return 'OSB';
+                // PT: any bottom/sole/sill plate by convention (code-required PT for ground contact),
+                // even when "PT"/"treated" is absent from the name. Exclude top plates.
+                const isBottomPlate = n.includes('bottom plate') || n.includes('sole plate') ||
+                    n.includes('sill plate') || n.includes('sill') ||
+                    (n.includes('plate') && !n.includes('top plate') && !n.includes('double top'));
+                if (isBottomPlate || n.includes('treat') || /\bpt\b/.test(n)) return 'PT';
+                // SPF studs — only if not a plate type (prevents framing-trade plates from matching here)
+                if (!isBottomPlate && (n.includes('stud') || n.includes('2x4') || n.includes('spf') ||
+                    t.includes('lumber') || t.includes('framing'))) return 'SPF';
                 return null;
             }
 
@@ -3137,7 +3143,7 @@
                 _controls.maxDistance     = 105;
                 _controls.autoRotate      = true;
                 _controls.autoRotateSpeed = 0.4;
-                _controls.target.set(0, 4, 22);
+                _controls.target.set(0, 4, 5);
 
                 // HemisphereLight: sky-blue sky, warm-ground fill
                 _scene.add(new THREE.HemisphereLight(0x7ec8e3, 0x5a3b20, 0.7));
@@ -3351,8 +3357,9 @@
                 });
 
                 // PHASE 4: Zone layout (radiates outward from foundation at origin)
-                // Zone 1 (PT+SPF): z=42  Zone 2 (generic): z=55  Zone 3 (OSB): z=68
-                const zoneZ    = { 1: 42, 2: 55, 3: 68 };
+                // Trucks park at z=-38 to z=-3. Zones start at z=10+ for strict separation.
+                // Zone 1 (PT+SPF): z=10  Zone 2 (generic): z=28  Zone 3 (OSB): z=46
+                const zoneZ    = { 1: 10, 2: 28, 3: 46 };
                 const zoneCurX = { 1: -15, 2: -12, 3: -12 };
                 let totalWeight = 0;
                 const legendItems = [];
@@ -3397,10 +3404,11 @@
 
                 if (!legendItems.length) { _setStatus('No materials'); return; }
 
-                // PHASE 5: Fleet spawning — one truck+trailer per TRAILER_MAX_LBS
+                // PHASE 5: Fleet spawning — vehicles park at negative Z (offsetZ=-38)
+                // so trailer rear (z=-3) is fully clear of Zone 1 materials (z≥10)
                 const trucksNeeded = Math.max(1, Math.ceil(totalWeight / TRAILER_MAX_LBS));
                 for (let ti = 0; ti < Math.min(trucksNeeded, 3); ti++) {
-                    _spawnVehicle(-18 + ti * 20, 5);
+                    _spawnVehicle(-18 + ti * 20, -38);
                 }
 
                 // PHASE 5: HUD
@@ -3426,7 +3434,7 @@
                     });
                 }
 
-                _controls.target.set(0, 5, 48);
+                _controls.target.set(0, 5, 22);
                 _setStatus('Yard &middot; ' + totalWeight.toLocaleString() + ' lbs &middot; ' + trucksNeeded + ' truck' + (trucksNeeded > 1 ? 's' : ''));
                 _showVizPanel();
             }
