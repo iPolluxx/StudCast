@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<!--
+  ============================================================================
+  SMS OPT-IN PREVIEW PAGE  (public, no authentication)
+  ----------------------------------------------------------------------------
+  Purpose: Lets A2P 10DLC campaign reviewers see the exact SMS consent UI and
+  language that users encounter during account registration, WITHOUT needing
+  to log in through Google OAuth.
+
+  This is a static, NON-FUNCTIONAL preview that mirrors the live consent form
+  at /dashboard-legacy. It collects nothing and submits nowhere.
+
+  >>> TO REVERT AFTER CAMPAIGN APPROVAL: simply delete this file.
+      It is served automatically by express.static — no route or other code
+      references it, so deletion fully removes it with zero side effects.
+  ============================================================================
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SMS Opt-In — Lone Ranger Estimator</title>
+  <style>
+    :root {
+      --bg: #1a0729;
+      --card-bg: #24103a;
+      --primary-accent: #a855f7;
+      --accent-hover: #7c3aed;
+      --text-primary: #f5f0ff;
+      --text-muted: #b8a8cc;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: radial-gradient(ellipse at top, #2a1145 0%, var(--bg) 60%);
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .wrap { width: 100%; max-width: 480px; }
+    .badge {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--primary-accent);
+      background: rgba(168, 85, 247, 0.12);
+      border: 1px solid rgba(168, 85, 247, 0.35);
+      border-radius: 999px;
+      padding: 5px 12px;
+      margin-bottom: 16px;
+    }
+    h1 { font-size: 22px; font-weight: 800; margin-bottom: 6px; }
+    .sub { color: var(--text-muted); font-size: 14px; margin-bottom: 24px; line-height: 1.5; }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid rgba(168, 85, 247, 0.4);
+      border-radius: 18px;
+      padding: 28px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+    }
+    .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px; }
+    label { font-size: 12px; font-weight: 600; color: var(--text-muted); }
+    input[type="text"], input[type="tel"] {
+      background: #1a0729;
+      border: 1px solid var(--primary-accent);
+      border-radius: 12px;
+      padding: 11px 14px;
+      font-size: 14px;
+      color: var(--text-primary);
+    }
+    input[disabled] { opacity: 0.85; cursor: not-allowed; }
+    .consent-row { display: flex; align-items: flex-start; gap: 10px; margin: 18px 0; }
+    .consent-row input { margin-top: 3px; flex-shrink: 0; width: 16px; height: 16px; accent-color: var(--primary-accent); }
+    .consent-text { font-size: 11px; line-height: 1.6; color: var(--text-muted); }
+    .consent-text strong { color: var(--text-primary); }
+    .consent-text a { color: var(--primary-accent); text-decoration: underline; }
+    .btn {
+      width: 100%;
+      padding: 13px;
+      border: none;
+      border-radius: 12px;
+      font-size: 14px;
+      font-weight: 700;
+      color: #fff;
+      background: linear-gradient(135deg, var(--primary-accent), var(--accent-hover));
+      cursor: not-allowed;
+      opacity: 0.9;
+    }
+    .preview-note {
+      margin-top: 18px;
+      font-size: 11px;
+      color: var(--text-muted);
+      text-align: center;
+      line-height: 1.5;
+    }
+    .sample-msg {
+      margin-top: 28px;
+      background: #1a0729;
+      border: 1px dashed rgba(168, 85, 247, 0.4);
+      border-radius: 12px;
+      padding: 16px;
+    }
+    .sample-msg .h { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--primary-accent); margin-bottom: 8px; }
+    .sample-msg .body { font-size: 13px; color: var(--text-primary); line-height: 1.5; font-family: ui-monospace, monospace; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <span class="badge">SMS Opt-In Preview</span>
+    <h1>How users consent to receive SMS</h1>
+    <p class="sub">
+      The form below is shown to every user during account registration at
+      <strong style="color:var(--text-primary)">Lone Ranger Estimator</strong>.
+      Users must manually enter their mobile number and actively check the consent box
+      to opt in. This is a read-only preview for verification purposes.
+    </p>
+
+    <div class="card">
+      <div class="field">
+        <label>Company Name</label>
+        <input type="text" value="Acme Framing LLC" disabled />
+      </div>
+
+      <div class="field">
+        <label>Mobile Phone Number</label>
+        <input type="tel" value="(555) 123-4567" disabled />
+      </div>
+
+      <div class="consent-row">
+        <input type="checkbox" disabled />
+        <span class="consent-text">
+          <strong>SMS Consent:</strong> By entering your mobile number and checking this box, you expressly
+          consent to receive text messages (SMS) from <strong>Lone Ranger Estimator</strong> at the number
+          provided, including one-time verification codes and account-related notifications. This consent is
+          not a condition of purchase. Message frequency varies. Standard message and data rates may apply.
+          Reply <strong>STOP</strong> to cancel at any time. Reply <strong>HELP</strong> for assistance.
+          <br><br>
+          <a href="/privacy.html" target="_blank">Privacy Policy</a> &middot;
+          <a href="/terms.html" target="_blank">Terms of Service</a>
+        </span>
+      </div>
+
+      <button class="btn" disabled>Create Workspace</button>
+
+      <p class="preview-note">
+        Preview only — this form does not submit. The live form requires Google
+        sign-in and an actively checked consent box before any SMS is sent.
+      </p>
+    </div>
+
+    <div class="sample-msg">
+      <div class="h">Sample message users receive</div>
+      <div class="body">Your Lone Ranger Estimator verification code is: 123456. Reply STOP to opt out. Msg&amp;Data rates may apply.</div>
+    </div>
+  </div>
+</body>
+</html>
