@@ -2135,8 +2135,17 @@ app.post('/api/auth/register', requireGoogleAuth, async (req, res) => {
         });
 
         // Transport 1: SMS via Twilio
+        // NOTE: messages.create() resolves to "queued" even when the carrier will
+        // later reject with 30034 (unregistered 10DLC number) — that failure is
+        // async and never throws here. So until the A2P campaign is APPROVED, an
+        // accepted-but-undelivered SMS would falsely report success and skip the
+        // email fallback. Gate behind SMS_LIVE: flip to 'true' once the campaign
+        // passes and SMS takes over with no other code changes.
         let otpChannel = 'sms';
         try {
+            if (process.env.SMS_LIVE !== 'true') {
+                throw new Error('SMS_LIVE is not enabled — routing OTP through email fallback until 10DLC campaign is approved.');
+            }
             await twilioClient.messages.create({
                 body: `Your Lone Ranger Estimator verification code is: ${otp}. Reply STOP to opt out. Msg&Data rates may apply.`,
                 [process.env.TWILIO_MESSAGING_SERVICE_SID ? 'messagingServiceSid' : 'from']: process.env.TWILIO_MESSAGING_SERVICE_SID || process.env.TWILIO_PHONE_NUMBER,
