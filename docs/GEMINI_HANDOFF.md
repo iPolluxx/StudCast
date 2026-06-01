@@ -1,7 +1,7 @@
 # Lone Ranger Estimator — Live Project Context
 > **Purpose:** This document is the handoff bridge between Gemini brainstorming sessions and Claude Code
 > implementation sessions. Update it after every meaningful work session.
-> **Last updated:** 2026-05-31 — Stripe checkout fixed; email OTP fallback; viz polish; deployed rev 00037
+> **Last updated:** 2026-06-01 — React dashboard built + integrated; mobile layout overhaul; deployed
 
 ---
 
@@ -236,8 +236,12 @@ material costs from their own approved estimates.
 ## What Static Files Are Served
 
 From `public/`:
-- `index.html` — public marketing storefront at `/`
-- `dashboard.html` — contractor app at `/dashboard`
+- `index.html` — public marketing storefront at `/` (all sign-in links now → `/dashboard-legacy`)
+- `dashboard.html` — **legacy onboarding only** at `/dashboard-legacy`. Handles Google OAuth → phone OTP → profile setup. After auth completes, `activateDashboard()` does `window.location.replace('/dashboard')` to hand off to the React app.
+- `privacy.html`, `terms.html` — legal pages
+
+From `ui/dist/` (built by Dockerfile):
+- React 18 + Vite + TypeScript app served at `/dashboard` and `/dashboard/*`
 - `privacy.html`, `terms.html` — legal pages
 - `3d_estimator.html`, `3d_framing_visualizer.html` — early 3D UI prototypes
 - *(future)* Unity WebGL build files — `.wasm`, `.data`, `.framework.js`, `.loader.js`
@@ -245,6 +249,76 @@ From `public/`:
 ---
 
 ## Work Session Log
+
+### Session: 2026-06-01 — React Dashboard, Mobile Layout, UI Polish
+
+#### 1. React 18 + Vite + TypeScript dashboard (`ui/`)
+Built from scratch as a new frontend layer served by the existing Express server.
+
+**Architecture:**
+```
+ui/src/
+├── App.tsx                  ← orchestrator, auth, API wiring
+├── types.ts                 ← shared TypeScript interfaces
+└── components/
+    ├── ThreeVisualizer.tsx  ← Three.js scene (Stack + Build modes)
+    ├── SettingsModal.tsx    ← contractor profile modal
+    ← EstimateList.tsx      ← project switcher dropdown
+    └── LedgerTable.tsx      ← materials + labor tables with mobile cards
+```
+
+**Cosmic glass aesthetic:** procedural canvas starfield with parallax inertia (mouse-driven aurora gradient pools), glassmorphism panels, voice orb with pulsing ring animations.
+
+**Express routing changes (`src/server.js`):**
+- `/dashboard` → serves `ui/dist/` (React build)
+- `/dashboard/*` → SPA fallback to `ui/dist/index.html`
+- `/dashboard-legacy` → old `dashboard.html` (onboarding only)
+
+**Dockerfile:** `RUN cd ui && npm ci && npm run build && rm -rf node_modules` — React app is built inside Docker, not committed.
+
+#### 2. Auth + API integration
+- Reads `authBearerToken` from `localStorage` on mount (same origin as legacy dashboard — token is shared)
+- 401 → clears token, redirects to `/`
+- Loads real estimates from `GET /api/estimates` (fixed: server returns plain array, not `{ estimates: [] }`)
+- Fetches full estimate details (with `items[]`) from `GET /api/estimates/:id` on mount and lazily on project switch
+- Loads settings from `GET /api/settings`
+- Checks `active_subscription` → shows subscription gate if false
+- Stripe `?session_id=` return: calls `POST /api/billing/verify-session` then cleans URL
+
+#### 3. Onboarding handoff (zero-regression)
+`activateDashboard()` in `dashboard.html` now does `window.location.replace('/dashboard' + search + hash)` immediately after confirming user is onboarded — no longer reveals the old dashboard HTML. New users go through the full OTP + profile flow untouched, then land in the React app.
+
+Landing page (`index.html`) sign-in links updated from `/dashboard` → `/dashboard-legacy`.
+
+#### 4. Puppeteer binary fix
+Local dev machine has `/usr/bin/google-chrome`, not `/usr/bin/chromium`. Both Puppeteer launch calls in `server.js` updated to `google-chrome`. Production Dockerfile installs `chromium` via apt so Cloud Run is unaffected.
+
+#### 5. PDF generation wired (`LedgerTable.tsx`)
+"Publish & Send PDF" button was a browser `alert()`. Now calls `POST /api/generate-pdf` with auth header and full estimate payload. Shows spinner during generation, then a status flash above the voice orb: "PDF sent to {email}" on success, error message on failure.
+
+#### 6. Three-state visualizer
+Mini PIP card (top-right) → Medium banner (full-width, ledger scrolls below) → Full screen. State controlled by `vizSize: 'mini' | 'medium' | 'full'`. Three.js scene stays mounted across all states (no re-init on resize). Controls: `⤢` expand, `⤡` shrink, `⛶` fullscreen, `✕` close.
+
+#### 7. Mobile layout overhaul
+- Full-bleed canvas removed as background layer — Three.js is now in the three-state PIP frame
+- Content is a scrollable column: workflow bar → voice orb → ledger
+- Materials/labor render as **tap-friendly cards on mobile** (labeled fields, 48px touch targets), full table on desktop (`md:`)
+- Instrument sidebar hidden on mobile; replaced with a bottom-left Wrench FAB that opens panels as bottom modal
+- Instrument panels: full-screen bottom modal on mobile, side-float on desktop
+
+#### 8. UI copy + cleanup
+- "TAP ORB TO DICTATE" → **"DESCRIBE YOUR JOB"**
+- Placeholder: "Type wall command & press Enter" → **"e.g. 24 ft garage wall, treated plates, 2 windows..."**
+- Workflow bar stages: CAPTURE/PROCESS/VISUALIZE/FINALIZE → **DESCRIBE → TAKEOFF → REVIEW → DELIVER** (each button has a real action: focus input / scroll to ledger / trigger publish)
+- Navigation Help overlay removed from Three.js canvas
+
+#### Current deployment state
+- **URL:** `https://lone-ranger-app-879716207624.us-central1.run.app`
+- React dashboard live at `/dashboard`
+- Legacy onboarding at `/dashboard-legacy`
+- Puppeteer uses `/usr/bin/chromium` in production (Docker installs it via apt)
+
+---
 
 ### Session: 2026-05-31 (4) — Stripe Fix, Email OTP, Viz Polish
 **Gemini:** Strategic review — identified Stripe, Twilio, mobile UX, and material ID as critical risks.

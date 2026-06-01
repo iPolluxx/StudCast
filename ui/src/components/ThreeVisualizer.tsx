@@ -892,13 +892,6 @@ export default function ThreeVisualizer({
         </div>
       )}
 
-      <div className="absolute top-4 right-4 bg-slate-900/90 border border-slate-800/80 px-2.5 py-1.5 rounded text-[10px] text-slate-300 backdrop-blur-sm pointer-events-none leading-relaxed">
-        <div className="text-amber-500 font-bold uppercase tracking-wide text-[9px] mb-0.5">Navigation Help</div>
-        • Left-click + drag: Rotate camera<br/>
-        • Right-click + drag: Pan camera<br/>
-        • Scroll wheel: Zoom zoom
-      </div>
-
       {/* Tooltip Popup */}
       {tooltipText && (
         <div

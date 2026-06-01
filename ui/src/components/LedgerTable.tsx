@@ -29,9 +29,9 @@ export default function LedgerTable({
 }: Props) {
   const [publishing, setPublishing] = useState(false);
   return (
-    <div className="flex-1 overflow-hidden flex flex-col p-5 bg-void-black/35">
+    <div className="flex flex-col p-3 sm:p-5 bg-void-black/35 gap-4">
 
-      <div className="flex-1 overflow-y-auto pr-2 space-y-4">
+      <div className="space-y-4">
 
         {/* ── Materials ── */}
         <div>
@@ -47,7 +47,62 @@ export default function LedgerTable({
             </button>
           </div>
 
-          <div className="overflow-x-auto">
+          {/* Mobile cards */}
+          <div className="md:hidden space-y-2">
+            {materials.map((item, idx) => {
+              const origIdx = allItems.findIndex(i => i === item);
+              return (
+                <div key={idx} className="rounded-xl border border-white/10 bg-void-black/40 p-3 space-y-2">
+                  <input
+                    type="text" value={item.name}
+                    onChange={(e) => onCellEdit(origIdx, "name", e.target.value)}
+                    className="w-full bg-transparent text-sm font-bold text-starlight border-b border-white/10 focus:border-cool-blue/50 pb-1 outline-none"
+                  />
+                  <div className="grid grid-cols-3 gap-2 text-[11px] font-mono">
+                    <label className="space-y-0.5">
+                      <span className="block text-[9px] text-starlight/45 uppercase tracking-wider">Qty</span>
+                      <input type="number" value={item.quantity}
+                        onChange={(e) => onCellEdit(origIdx, "quantity", parseInt(e.target.value) || 0)}
+                        className="w-full bg-void-black/60 border border-white/10 rounded px-2 py-1.5 text-starlight outline-none focus:border-cool-blue/40"
+                      />
+                    </label>
+                    <label className="space-y-0.5">
+                      <span className="block text-[9px] text-starlight/45 uppercase tracking-wider">Unit</span>
+                      <input type="text" value={item.unit}
+                        onChange={(e) => onCellEdit(origIdx, "unit", e.target.value)}
+                        className="w-full bg-void-black/60 border border-white/10 rounded px-2 py-1.5 text-starlight uppercase outline-none focus:border-cool-blue/40"
+                      />
+                    </label>
+                    <label className="space-y-0.5">
+                      <span className="block text-[9px] text-starlight/45 uppercase tracking-wider">Unit $</span>
+                      <input type="number" step="0.01" value={item.unit_price}
+                        onChange={(e) => onCellEdit(origIdx, "unit_price", parseFloat(e.target.value) || 0)}
+                        className="w-full bg-void-black/60 border border-white/10 rounded px-2 py-1.5 text-cool-blue text-right outline-none focus:border-cool-blue/40"
+                      />
+                    </label>
+                  </div>
+                  <div className="flex justify-between items-center pt-1 border-t border-white/5">
+                    <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded uppercase font-mono ${
+                      item.price_source === "ai" ? "bg-soft-violet/20 text-soft-violet"
+                      : item.price_source === "override" ? "bg-cool-blue/20 text-cool-blue"
+                      : "bg-emerald-500/20 text-emerald-400"
+                    }`}>
+                      {item.price_source}
+                    </span>
+                    <div className="flex items-center gap-3">
+                      <span className="font-mono font-extrabold text-base text-starlight">${fmt(item.total)}</span>
+                      <button onClick={() => onDeleteItem(origIdx)} className="text-starlight/40 hover:text-rose-400 p-1.5">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Desktop table */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left font-mono text-[11px] text-starlight border-collapse">
               <thead>
                 <tr className="border-b border-white/5 text-starlight/45 text-[9px] uppercase tracking-widest bg-white/5 select-none">
@@ -128,7 +183,46 @@ export default function LedgerTable({
             </button>
           </div>
 
-          <div className="overflow-x-auto">
+          {/* Mobile cards */}
+          <div className="md:hidden space-y-2">
+            {labor.map((item, idx) => {
+              const origIdx = allItems.findIndex(i => i === item);
+              return (
+                <div key={idx} className="rounded-xl border border-white/10 bg-void-black/40 p-3 space-y-2">
+                  <input
+                    type="text" value={item.role}
+                    onChange={(e) => onCellEdit(origIdx, "role", e.target.value)}
+                    className="w-full bg-transparent text-sm font-bold text-starlight border-b border-white/10 focus:border-cool-blue/50 pb-1 outline-none"
+                  />
+                  <div className="grid grid-cols-2 gap-2 text-[11px] font-mono">
+                    <label className="space-y-0.5">
+                      <span className="block text-[9px] text-starlight/45 uppercase tracking-wider">Hours</span>
+                      <input type="number" value={item.hours}
+                        onChange={(e) => onCellEdit(origIdx, "hours", parseInt(e.target.value) || 0)}
+                        className="w-full bg-void-black/60 border border-white/10 rounded px-2 py-1.5 text-starlight outline-none focus:border-cool-blue/40"
+                      />
+                    </label>
+                    <label className="space-y-0.5">
+                      <span className="block text-[9px] text-starlight/45 uppercase tracking-wider">Rate $/hr</span>
+                      <input type="number" step="0.01" value={item.rate}
+                        onChange={(e) => onCellEdit(origIdx, "rate", parseFloat(e.target.value) || 0)}
+                        className="w-full bg-void-black/60 border border-white/10 rounded px-2 py-1.5 text-cool-blue text-right outline-none focus:border-cool-blue/40"
+                      />
+                    </label>
+                  </div>
+                  <div className="flex justify-end items-center pt-1 border-t border-white/5 gap-3">
+                    <span className="font-mono font-extrabold text-base text-starlight">${fmt(item.total)}</span>
+                    <button onClick={() => onDeleteItem(origIdx)} className="text-starlight/40 hover:text-rose-400 p-1.5">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Desktop table */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left font-mono text-[11px] text-starlight border-collapse">
               <thead>
                 <tr className="border-b border-white/5 text-starlight/45 text-[9px] uppercase tracking-widest bg-white/5 select-none">
@@ -193,6 +287,7 @@ export default function LedgerTable({
             <span className="text-xl font-extrabold text-cool-blue">${fmt(grandTotal)}</span>
           </div>
           <button
+            id="publish-btn"
             onClick={async () => {
               setPublishing(true);
               try { await onPublish(); } finally { setPublishing(false); }

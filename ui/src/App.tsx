@@ -12,6 +12,10 @@ import {
   ArrowUpRight,
   Send,
   Sparkles,
+  Maximize2,
+  Minimize2,
+  Maximize,
+  Wrench,
 } from "lucide-react";
 import type { Estimate, FramingIntent, MaterialItem, LaborItem, ChangeOrder, ContractorUserSettings } from "./types";
 import ThreeVisualizer from "./components/ThreeVisualizer";
@@ -223,13 +227,14 @@ export default function App() {
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [aiProcessing, setAiProcessing] = useState<boolean>(false);
   const [statusFlash, setStatusFlash] = useState<string | null>(null);
-  const [activeStage, setActiveStage] = useState<number>(3);
+  const setActiveStage = (_: number) => {};
+  const [vizSize, setVizSize] = useState<'mini' | 'medium' | 'full'>('mini');
 
   // Floating instruments panels
   const [activeInstrument, setActiveInstrument] = useState<"sliders" | "pricing" | "change" | "layers" | null>(null);
   
-  // Ledger expanded or collapsed drawer state
-  const [ledgerExpanded, setLedgerExpanded] = useState<boolean>(false);
+  // (Ledger no longer a drawer — inline in main flow)
+  const setLedgerExpanded = (_: boolean) => {};
   
   // Dropdown states
   const [projectDropdownOpen, setProjectDropdownOpen] = useState<boolean>(false);
@@ -843,81 +848,72 @@ export default function App() {
 
       </header>
 
-      {/* ── 2. HERO ZONE: 3D THREE.JS CANVAS BACKGROUND (always full bleed) ── */}
-      <div className="absolute inset-0 w-full h-full z-0 top-0 left-0 pointer-events-auto">
+      {/* ── 2. VISUALIZER FRAME — three-state: mini PIP, medium banner, full ── */}
+      <div
+        className={
+          vizSize === 'mini'
+            ? 'fixed top-14 right-2 w-[150px] h-[100px] sm:top-16 sm:right-4 sm:w-[240px] sm:h-[160px] rounded-2xl overflow-hidden z-30 shadow-2xl border border-white/15 bg-[#050810]'
+            : vizSize === 'medium'
+            ? 'fixed top-12 left-0 right-0 h-[40vh] sm:h-[45vh] z-30 border-b border-white/10 shadow-2xl bg-[#050810]'
+            : /* full */ 'fixed inset-0 z-50 bg-[#050810]'
+        }
+      >
         <ThreeVisualizer
           mode={visualizerMode}
           framingIntent={framingIntent}
           materials={materials}
           drywallOpacity={drywallOpacity}
         />
-      </div>
-
-      {/* ── HUD INSTRUMENTS: WORKFLOW STAGE INDICATOR READOUT ── */}
-      <div className="absolute top-16 left-1/2 -translate-x-1/2 z-30 pointer-events-none w-max select-none">
-        <div className="glass-panel border-white/5 rounded-full px-5 py-1.5 flex items-center gap-6 shadow-2xl glass-panel-glow">
-          <div className="text-[9px] font-bold text-starlight/50 tracking-widest font-mono uppercase pr-2 border-r border-white/5 self-stretch flex items-center">
-            workflow system
-          </div>
-          
-          <div className="flex items-center gap-5">
-            {[
-              { num: 1, label: "CAPTURE" },
-              { num: 2, label: "PROCESS" },
-              { num: 3, label: "VISUALIZE" },
-              { num: 4, label: "FINALIZE" }
-            ].map((stage) => {
-              const active = activeStage === stage.num;
-              const completed = activeStage > stage.num;
-              return (
-                <div
-                  key={stage.num}
-                  onClick={() => {
-                    if (stage.num === 1) {
-                      setActiveStage(1);
-                      setLedgerExpanded(false);
-                      setActiveInstrument(null);
-                    } else if (stage.num === 2) {
-                      setActiveStage(2);
-                      setLedgerExpanded(false);
-                      setActiveInstrument(null);
-                    } else if (stage.num === 3) {
-                      setActiveStage(3);
-                      setLedgerExpanded(false);
-                      setActiveInstrument("sliders");
-                    } else if (stage.num === 4) {
-                      setActiveStage(4);
-                      setLedgerExpanded(true);
-                      setActiveInstrument(null);
-                    }
-                  }}
-                  className={`pointer-events-auto cursor-pointer flex items-center gap-1.5 transition-all py-1 px-1.5 rounded-md ${
-                    active 
-                      ? "text-cool-blue font-bold scale-105" 
-                      : completed 
-                        ? "text-soft-violet opacity-80" 
-                        : "text-starlight/30 hover:text-starlight/50"
-                  }`}
-                >
-                  <span className={`w-4 h-4 rounded-full font-mono text-[9px] font-black flex items-center justify-center border ${
-                    active
-                      ? "bg-cool-blue text-void-black border-cool-blue shadow-lg shadow-cool-blue/30"
-                      : completed
-                        ? "bg-soft-violet/10 text-soft-violet border-soft-violet/30"
-                        : "border-white/10 text-starlight/30"
-                  }`}>
-                    {completed ? "✓" : stage.num}
-                  </span>
-                  <span className="text-[10px] font-mono tracking-widest uppercase">{stage.label}</span>
-                </div>
-              );
-            })}
-          </div>
+        {/* Viz state controls */}
+        <div className="absolute top-1.5 right-1.5 flex gap-1 z-40">
+          {vizSize === 'mini' && (
+            <button
+              onClick={() => setVizSize('medium')}
+              className="h-7 w-7 rounded-full bg-void-black/80 hover:bg-cool-blue/30 text-cool-blue flex items-center justify-center backdrop-blur border border-white/20 cursor-pointer"
+              title="Expand"
+            >
+              <Maximize2 className="w-3.5 h-3.5" />
+            </button>
+          )}
+          {vizSize === 'medium' && (
+            <>
+              <button
+                onClick={() => setVizSize('mini')}
+                className="h-9 w-9 rounded-full bg-void-black/80 hover:bg-cool-blue/30 text-cool-blue flex items-center justify-center backdrop-blur border border-white/20 cursor-pointer"
+                title="Shrink to mini"
+              >
+                <Minimize2 className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setVizSize('full')}
+                className="h-9 w-9 rounded-full bg-void-black/80 hover:bg-cool-blue/30 text-cool-blue flex items-center justify-center backdrop-blur border border-white/20 cursor-pointer"
+                title="Fullscreen"
+              >
+                <Maximize className="w-4 h-4" />
+              </button>
+            </>
+          )}
+          {vizSize === 'full' && (
+            <button
+              onClick={() => setVizSize('mini')}
+              className="h-11 w-11 rounded-full bg-void-black/80 hover:bg-rose-500/30 text-cool-blue flex items-center justify-center backdrop-blur border border-white/20 cursor-pointer"
+              title="Close fullscreen"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
         </div>
       </div>
 
-      {/* ── 5. INSTRUMENT SIDEBAR: NARROW (48px) LEFT ICON RAIL ── */}
-      <nav className="absolute left-4 top-36 z-30 flex flex-col gap-3 h-auto select-none pointer-events-auto">
+      {/* ── MAIN SCROLLABLE CONTENT ── */}
+      <main className={`flex-1 overflow-y-auto ${vizSize === 'full' ? 'opacity-0 pointer-events-none' : ''}`}>
+        <div className={`mx-auto max-w-3xl px-3 sm:px-6 pb-24 sm:pb-12 ${
+          vizSize === 'medium' ? 'pt-[42vh] sm:pt-[47vh]' : 'pt-4 sm:pt-6'
+        }`}>
+
+
+      {/* ── 5. INSTRUMENT SIDEBAR: desktop only ── */}
+      <nav className={`hidden md:flex fixed left-4 top-20 z-30 flex-col gap-3 h-auto select-none pointer-events-auto ${vizSize === 'full' ? 'invisible' : ''}`}>
         <div className="glass-panel border-white/10 rounded-2xl p-1.5 flex flex-col gap-2.5 shadow-2xl">
           {[
             { id: "sliders" as const, icon: SlidersHorizontal, tooltip: "Framing Controls" },
@@ -965,9 +961,15 @@ export default function App() {
         </div>
       </nav>
 
-      {/* ── FLOATING GLASS INSTRUMENT PANELS (Open on left) ── */}
+      {/* ── FLOATING GLASS INSTRUMENT PANELS — modal on mobile, side-float on desktop ── */}
       {activeInstrument && (
-        <div className="absolute left-20 top-36 z-30 w-80 max-h-[60vh] overflow-y-auto glass-panel border-white/15 rounded-2xl p-5 shadow-2xl pointer-events-auto select-none animate-fade-in animate-slide-in">
+        <>
+          {/* Mobile backdrop */}
+          <div
+            onClick={() => setActiveInstrument(null)}
+            className="md:hidden fixed inset-0 z-40 bg-void-black/60 backdrop-blur-sm"
+          />
+          <div className="fixed z-50 inset-x-3 bottom-3 max-h-[70vh] md:absolute md:inset-auto md:left-20 md:top-20 md:bottom-auto md:w-80 md:max-h-[70vh] overflow-y-auto glass-panel border-white/15 rounded-2xl p-5 shadow-2xl pointer-events-auto select-none animate-fade-in animate-slide-in">
           
           <div className="flex items-center justify-between border-b border-white/8 pb-3 mb-4">
             <h3 className="text-[10px] font-black uppercase tracking-widest text-[#ffffff] flex items-center gap-1.5">
@@ -1288,10 +1290,42 @@ export default function App() {
           )}
 
         </div>
+        </>
       )}
 
-      {/* ── 3. FLOATING VOICE ORB (Always Centered and Accessible) ── */}
-      <div className={`fixed left-1/2 -translate-x-1/2 z-40 flex flex-col items-center gap-3 w-80 text-center select-none pointer-events-none transition-all duration-300 ${ledgerExpanded ? "bottom-[calc(50vh+1.5rem)]" : "bottom-24"}`}>
+      {/* ── WORKFLOW BAR ── */}
+      <div className="w-full mb-4 sm:mb-6 select-none flex justify-center">
+        <div className="glass-panel border-white/5 rounded-full px-2 sm:px-5 py-1.5 flex items-center gap-1.5 sm:gap-5 shadow-2xl glass-panel-glow">
+          {[
+            { label: "DESCRIBE",  sublabel: "Voice or type",   action: () => document.querySelector<HTMLInputElement>('input[placeholder*="e.g"]')?.focus() },
+            { label: "TAKEOFF",   sublabel: "AI extraction",   action: () => {} },
+            { label: "REVIEW",    sublabel: "Ledger & 3D",     action: () => document.getElementById('estimate-ledger-section')?.scrollIntoView({ behavior: 'smooth' }) },
+            { label: "DELIVER",   sublabel: "Send PDF",        action: () => document.getElementById('publish-btn')?.click() },
+          ].map((step, i) => {
+            const isLast = i === 3;
+            return (
+              <div key={step.label} className="flex items-center gap-1.5 sm:gap-5">
+                <button
+                  onClick={step.action}
+                  className="flex items-center gap-1.5 py-1 px-1.5 rounded-md hover:bg-white/5 transition-all cursor-pointer group"
+                >
+                  <span className="w-4 h-4 rounded-full font-mono text-[9px] font-black flex items-center justify-center border border-white/20 text-starlight/50 group-hover:border-cool-blue group-hover:text-cool-blue transition-colors">
+                    {i + 1}
+                  </span>
+                  <span className="hidden sm:flex flex-col items-start leading-none">
+                    <span className="text-[9px] font-mono font-black tracking-widest uppercase text-starlight/70 group-hover:text-cool-blue transition-colors">{step.label}</span>
+                    <span className="text-[8px] text-starlight/30 font-sans mt-0.5">{step.sublabel}</span>
+                  </span>
+                </button>
+                {!isLast && <span className="text-white/10 text-[10px] font-mono">→</span>}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── 3. VOICE ORB SECTION — inline ── */}
+      <section className="flex flex-col items-center gap-3 w-full max-w-sm mx-auto text-center select-none mb-6 sm:mb-8">
         
         {/* Status Flash notification popup above orb */}
         {statusFlash && (
@@ -1352,10 +1386,10 @@ export default function App() {
         {/* State Label description text */}
         <div className="bg-[#050810]/75 border border-white/5 px-4 py-1.5 rounded-full shadow-lg backdrop-blur-md">
           <span className="text-[8px] font-black tracking-widest text-[#ffffff] uppercase font-mono block">
-            {isRecording ? "LISTENING TO SPEECH..." : aiProcessing ? "AI STRUCTURALS CALC..." : "TAP ORB TO DICTATE"}
+            {isRecording ? "LISTENING..." : aiProcessing ? "BUILDING ESTIMATE..." : "DESCRIBE YOUR JOB"}
           </span>
           <span className="text-[9px] text-[#e2e8f0]/60 italic font-sans max-w-xs line-clamp-1">
-            {isRecording ? "Simulating voice analysis telemetry..." : aiProcessing ? "Reconstructing stud twins & matrices..." : (activeEstimate?.scope_of_work ?? '')}
+            {isRecording ? "Speak naturally — materials, dimensions, openings..." : aiProcessing ? "Extracting materials and pricing..." : (activeEstimate?.scope_of_work ?? 'Tap orb or type below to start your estimate')}
           </span>
         </div>
 
@@ -1370,7 +1404,7 @@ export default function App() {
                 handleProcessNLP(textPrompt);
               }
             }}
-            placeholder="Type wall command & press Enter..."
+            placeholder="e.g. 24 ft garage wall, treated plates, 2 windows..."
             className="w-full bg-[#050810]/80 frosted-input border-white/10 rounded-full py-1.5 px-4 text-xs tracking-wide text-starlight placeholder-starlight/40 focus:ring-1 focus:ring-cool-blue focus:outline-none backdrop-blur-md font-mono"
             style={{ paddingRight: "3rem" }}
           />
@@ -1385,49 +1419,31 @@ export default function App() {
           )}
         </div>
 
-      </div>
+      </section>
 
-      {/* ── 4. LEDGER DRAWER: BOTTOM COLLAPSIBLE SHEET ── */}
-      <footer className={`fixed bottom-0 left-0 w-full z-30 transition-all duration-300 pointer-events-auto ${
-        ledgerExpanded ? "h-[50vh]" : "h-14"
-      }`}>
-        
-        {/* Double-layered frosted glass background with a gap/cutout concept at central bottom for the voice orb */}
-        <div className="h-full w-full bg-[#0a0f1e]/85 backdrop-blur-md border-t border-white/10 flex flex-col relative">
-          
-          {/* Collapse/Expand Toggle overlay bar */}
-          <div
-            onClick={() => {
-              const next = !ledgerExpanded;
-              setLedgerExpanded(next);
-              setActiveStage(next ? 4 : 3);
-            }}
-            className="h-14 flex items-center justify-between px-8 bg-void-black/40 hover:bg-white/5 border-b border-white/5 cursor-pointer shrink-0 transition-colors select-none"
-            id="ledger-drawer-toggle-bar"
-          >
-            <div className="flex items-center gap-2">
-              <span className={`h-1.5 w-1.5 rounded-full ${ledgerExpanded ? "bg-soft-violet" : "bg-cool-blue"}`}></span>
-              <span className="text-[10px] font-black tracking-widest text-starlight/60 uppercase font-mono">
-                {ledgerExpanded ? "COLLAPSE LEDGER DRAWER" : "EXPAND COMPREHENSIVE LEDGER"}
-              </span>
-            </div>
+      {/* ── 4. LEDGER — inline below voice section ── */}
+      <section id="estimate-ledger-section" className="rounded-2xl border border-white/10 bg-[#0a0f1e]/60 backdrop-blur-md overflow-hidden">
 
-            {/* GRAND TOTAL COLLAPSED PREVIEW */}
-            <div className="flex items-center gap-4">
-              <div className="text-right">
-                <span className="text-[8px] text-starlight/40 font-bold tracking-widest uppercase block leading-none mb-0.5">
-                  valuation estimate
-                </span>
-                <span className="text-lg font-black text-cool-blue font-mono leading-none">
-                  ${grandTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
-              </div>
-              <span className="text-xs text-starlight/50 font-mono">
-                {ledgerExpanded ? "▲" : "▼"}
-              </span>
-            </div>
+        {/* Total summary header bar */}
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3 bg-void-black/40 border-b border-white/5 select-none">
+          <div className="flex items-center gap-2">
+            <span className="h-1.5 w-1.5 rounded-full bg-cool-blue"></span>
+            <span className="text-[10px] sm:text-[11px] font-black tracking-widest text-starlight/70 uppercase font-mono">
+              Estimate Ledger
+            </span>
           </div>
+          <div className="text-right">
+            <span className="text-[8px] text-starlight/40 font-bold tracking-widest uppercase block leading-none mb-0.5">
+              valuation
+            </span>
+            <span className="text-base sm:text-lg font-black text-cool-blue font-mono leading-none">
+              ${grandTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+          </div>
+        </div>
 
+        <div className="h-full w-full flex flex-col relative">
+          
           <LedgerTable
             materials={materials}
             labor={labor}
@@ -1471,7 +1487,21 @@ export default function App() {
 
         </div>
 
-      </footer>
+      </section>
+
+        </div>
+      </main>
+
+      {/* ── MOBILE INSTRUMENT FAB ── */}
+      {vizSize !== 'full' && (
+        <button
+          onClick={() => setActiveInstrument(activeInstrument ? null : 'sliders')}
+          className="md:hidden fixed bottom-4 left-4 z-30 h-12 w-12 rounded-full bg-gradient-to-tr from-cool-blue to-soft-violet text-void-black flex items-center justify-center shadow-2xl shadow-cool-blue/30 cursor-pointer"
+          title="Open tools"
+        >
+          <Wrench className="w-5 h-5" />
+        </button>
+      )}
 
       {/* ── CLIENT PORTAL AMENDMENT REVIEW modal ── */}
       {clientPortalCo && (
