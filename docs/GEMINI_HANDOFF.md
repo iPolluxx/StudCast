@@ -1,7 +1,7 @@
 # Lone Ranger Estimator — Live Project Context
 > **Purpose:** This document is the handoff bridge between Gemini brainstorming sessions and Claude Code
 > implementation sessions. Update it after every meaningful work session.
-> **Last updated:** 2026-06-01 — React dashboard built + integrated; mobile layout overhaul; deployed
+> **Last updated:** 2026-06-01 — Barrel roll orb animation, real starfield photo background, mobile polish, deployed rev 00039
 
 ---
 
@@ -249,6 +249,54 @@ From `ui/dist/` (built by Dockerfile):
 ---
 
 ## Work Session Log
+
+### Session: 2026-06-01 (2) — Orb Animation, Starfield Photo, UI Polish
+
+#### 1. Barrel roll orb animation (theater mode)
+When the visualizer expands to theater (medium) mode, the voice orb plays a 3-phase CSS animation:
+- **Phase 1 — Anticipation (0–19%):** Orb nudges right, tilts back, flares bright (`brightness: 2.2`)
+- **Phase 2 — Flight (19–78%):** Two full barrel rolls (~720°) sweeping left to `-44vw`
+- **Phase 3 — Warp exit (78–100%):** Flash to `scale(1.4) brightness(5)` then rockets off screen and implodes to nothing
+
+After 1.58s the center orb disappears and a compact version materialises on the left rail with a "here I am" bounce animation (`orb-land` keyframe: flash in → oversize pop → three settling oscillations). A right-side "Estimate Snapshot" panel fades in 0.3s later.
+
+Both side panels use `pointer-events: none` on their containers so the center ledger column remains scrollable.
+
+#### 2. Real starfield photo background
+Replaced the procedural canvas star animation with the contractor's own night sky photo (`ui/src/assets/starfield.jpg`). CSS treatment:
+- `brightness(0.52) contrast(1.25) saturate(1.8) hue-rotate(8deg)` — darkens, boosts star contrast, pushes toward cool-blue/violet
+- `backgroundSize: 115% 115%` — oversized so parallax has room to drift
+- Mouse parallax: `backgroundPosition` animated via RAF (48–52% range, inertia factor 0.04)
+- Three CSS gradient overlays: violet aurora (upper-left), blue aurora (lower-right), edge vignette
+
+Fix: root div had `bg-void-black` which covered the fixed `z-0` Starfield. Removed `bg-void-black` from root; body CSS (`background-color: #050810`) provides the fallback.
+
+#### 3. Sidebar + instrument panel cleanup
+- Framing Controls removed from left sidebar entirely
+- Pricing panel split into two sections: CSV supplier sheet upload (`POST /api/upload-csv`) and manual rate overrides
+- Visualization Settings panel simplified — just describes the material yard and orbit controls
+
+#### 4. Scope of Work field
+Editable textarea at top of ledger. Autosaves to Firestore via `POST /api/estimates/:id/save` with 1.2s debounce. Flows into PDF generation via `project.scope_of_work` in the `onPublish` payload.
+
+#### 5. Project delete
+Trash icon in the EstimateList dropdown. Confirms before calling `DELETE /api/estimates/:id`, removes from local state, switches to next available project.
+
+#### 6. Extraction fix
+`POST /api/process-text` returns `{ estimateId, itemCount }` — not `{ materials, labor }`. React app was parsing the wrong shape (always got 0 extracted). Fixed: after API success, reload the full estimate from `GET /api/estimates/:id` to get updated items. Also fixed filter that deleted all `price_source: "ai"` items (now only removes `(AI)`-tagged items from previous runs).
+
+#### 7. Other fixes
+- `PCFSoftShadowMap → PCFShadowMap` (Three.js deprecation)
+- Navigation Help overlay removed from visualizer
+- Visualizer overlay hidden in mini mode
+- Side panel `pointer-events: none` so ledger scrolls in theater mode
+- Placeholder text shortened to fit input box
+
+#### Current deployment state
+- **Revision:** `lone-ranger-app-00039-trp`
+- **URL:** `https://lone-ranger-app-879716207624.us-central1.run.app`
+
+---
 
 ### Session: 2026-06-01 — React Dashboard, Mobile Layout, UI Polish
 

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import starfieldSrc from "./assets/starfield.jpg";
 import {
   DollarSign,
   Receipt,
@@ -24,134 +25,62 @@ import LedgerTable from "./components/LedgerTable";
 
 // ── CUSTOM PROCEDURAL STARFIELD BACKGROUND COMPONENT ──
 export function Starfield() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const bgRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    let curX = 50, curY = 50, tgtX = 50, tgtY = 50;
+    let raf: number;
 
-    let animationFrameId: number;
-    let width = (canvas.width = window.innerWidth);
-    let height = (canvas.height = window.innerHeight);
-
-    const numStars = 110;
-    const stars: Array<{
-      x: number;
-      y: number;
-      size: number;
-      speed: number;
-      opacity: number;
-      baseOpacity: number;
-    }> = [];
-
-    for (let i = 0; i < numStars; i++) {
-      const baseOpacity = 0.25 + Math.random() * 0.65;
-      stars.push({
-        x: Math.random() * width,
-        y: Math.random() * height,
-        size: 0.5 + Math.random() * 1.5,
-        speed: 0.02 + Math.random() * 0.04,
-        opacity: baseOpacity,
-        baseOpacity,
-      });
-    }
-
-    let targetOffsetX = 0;
-    let targetOffsetY = 0;
-    let currentOffsetX = 0;
-    let currentOffsetY = 0;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      const rx = (e.clientX - window.innerWidth / 2) / (window.innerWidth / 2);
-      const ry = (e.clientY - window.innerHeight / 2) / (window.innerHeight / 2);
-      targetOffsetX = rx * 18;
-      targetOffsetY = ry * 18;
+    const onMove = (e: MouseEvent) => {
+      // Subtle drift: 48–52% range so the photo never hard-pans
+      tgtX = 48 + (e.clientX / window.innerWidth)  * 4;
+      tgtY = 48 + (e.clientY / window.innerHeight) * 4;
     };
+    window.addEventListener("mousemove", onMove);
 
-    window.addEventListener("mousemove", handleMouseMove);
-
-    const handleResize = () => {
-      if (!canvas) return;
-      width = canvas.width = window.innerWidth;
-      height = canvas.height = window.innerHeight;
+    const tick = () => {
+      curX += (tgtX - curX) * 0.04;
+      curY += (tgtY - curY) * 0.04;
+      if (bgRef.current) {
+        bgRef.current.style.backgroundPosition = `${curX}% ${curY}%`;
+      }
+      raf = requestAnimationFrame(tick);
     };
-    window.addEventListener("resize", handleResize);
-
-    const render = () => {
-      if (!ctx || !canvas) return;
-      
-      // Cosmic black canvas base
-      ctx.fillStyle = "#050810";
-      ctx.fillRect(0, 0, width, height);
-
-      currentOffsetX += (targetOffsetX - currentOffsetX) * 0.05;
-      currentOffsetY += (targetOffsetY - currentOffsetY) * 0.05;
-
-      // Deep space nebula glow pools
-      const grad1 = ctx.createRadialGradient(
-        width * 0.3 + currentOffsetX,
-        height * 0.3 + currentOffsetY,
-        0,
-        width * 0.3 + currentOffsetX,
-        height * 0.3 + currentOffsetY,
-        width * 0.5
-      );
-      grad1.addColorStop(0, "rgba(22, 17, 49, 0.22)"); 
-      grad1.addColorStop(1, "rgba(5, 8, 16, 0)");
-      ctx.fillStyle = grad1;
-      ctx.fillRect(0, 0, width, height);
-
-      const grad2 = ctx.createRadialGradient(
-        width * 0.75 + currentOffsetX * 1.1,
-        height * 0.7 + currentOffsetY * 1.1,
-        0,
-        width * 0.75 + currentOffsetX * 1.1,
-        height * 0.7 + currentOffsetY * 1.1,
-        width * 0.55
-      );
-      grad2.addColorStop(0, "rgba(14, 29, 62, 0.28)"); 
-      grad2.addColorStop(1, "rgba(5, 8, 16, 0)");
-      ctx.fillStyle = grad2;
-      ctx.fillRect(0, 0, width, height);
-
-      stars.forEach((star) => {
-        star.y -= star.speed;
-        if (star.y < 0) {
-          star.y = height;
-          star.x = Math.random() * width;
-        }
-
-        star.opacity = star.baseOpacity + Math.sin(Date.now() * 0.0012 + star.x) * 0.15;
-        if (star.opacity < 0.1) star.opacity = 0.1;
-
-        const drawX = star.x + currentOffsetX * (star.size * 0.3);
-        const drawY = star.y + currentOffsetY * (star.size * 0.3);
-
-        ctx.fillStyle = `rgba(226, 232, 240, ${star.opacity})`;
-        ctx.beginPath();
-        ctx.arc(drawX, drawY, star.size, 0, Math.PI * 2);
-        ctx.fill();
-      });
-
-      animationFrameId = requestAnimationFrame(render);
-    };
-
-    render();
+    raf = requestAnimationFrame(tick);
 
     return () => {
-      cancelAnimationFrame(animationFrameId);
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("resize", handleResize);
+      cancelAnimationFrame(raf);
+      window.removeEventListener("mousemove", onMove);
     };
   }, []);
 
   return (
-    <canvas
-      ref={canvasRef}
-      className="fixed inset-0 w-full h-full pointer-events-none -z-10"
-    />
+    <>
+      {/* Real starfield photo — slightly oversized so parallax has room to drift */}
+      <div
+        ref={bgRef}
+        className="fixed inset-0 z-0 pointer-events-none"
+        style={{
+          backgroundImage: `url(${starfieldSrc})`,
+          backgroundSize: '115% 115%',
+          backgroundPosition: '50% 50%',
+          // Darken + boost contrast + push blue-violet tones
+          filter: 'brightness(0.52) contrast(1.25) saturate(1.8) hue-rotate(8deg)',
+        }}
+      />
+      {/* Violet aurora pool — upper left */}
+      <div className="fixed inset-0 z-0 pointer-events-none" style={{
+        background: 'radial-gradient(ellipse 55% 45% at 22% 28%, rgba(30,14,60,0.55) 0%, transparent 100%)',
+      }} />
+      {/* Blue aurora pool — lower right */}
+      <div className="fixed inset-0 z-0 pointer-events-none" style={{
+        background: 'radial-gradient(ellipse 65% 50% at 78% 72%, rgba(8,22,55,0.5) 0%, transparent 100%)',
+      }} />
+      {/* Very thin void-black vignette around edges */}
+      <div className="fixed inset-0 z-0 pointer-events-none" style={{
+        background: 'radial-gradient(ellipse 80% 80% at 50% 50%, transparent 50%, rgba(5,8,16,0.7) 100%)',
+      }} />
+    </>
   );
 }
 
@@ -717,7 +646,7 @@ export default function App() {
   const grandTotal        = Math.round((taxedMaterials + laborSubtotal + taxAmount) * 100) / 100;
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-void-black text-starlight relative font-sans">
+    <div className="flex flex-col h-screen overflow-hidden text-starlight relative font-sans">
 
       {/* Background canvas starry elements */}
       <Starfield />
