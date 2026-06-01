@@ -1208,22 +1208,10 @@
                 return;
             }
 
-            dashboard.classList.remove('hidden');
-            initAudio();
-            VizController.init();
-            
-            // Header badge fetch
-            try {
-                const r = await fetch(`/api/me`, { headers: { 'Authorization': `Bearer ${authBearerToken}` } });
-                if (r.ok) {
-                    const d = await r.json();
-                    phoneBadgeText.textContent = d.phone;
-                    phoneBadge.classList.remove('hidden');
-                }
-            } catch (_) {}
-
-            // Populate switcher & decide initial load based on URL hash
-            await fetchAndRenderEstimates();
+            // Onboarding complete — hand off to the new React dashboard.
+            // Auth token is already in localStorage; same origin so React app reads it directly.
+            window.location.replace('/dashboard' + window.location.search + window.location.hash);
+            return;
 
             const params = new URLSearchParams(window.location.search);
             const hasSessionId = params.has('session_id');

@@ -1,4 +1,6 @@
 node_modules/
+ui/node_modules/
+ui/dist/
 .env
 src/config/*.json
 temp/

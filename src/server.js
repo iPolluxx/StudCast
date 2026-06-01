@@ -146,7 +146,19 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
 
+// Serve the React UI build (new dashboard)
+const uiDistPath = path.join(__dirname, '..', 'ui', 'dist');
+app.use('/dashboard', express.static(uiDistPath));
 app.get('/dashboard', (req, res) => {
+    res.sendFile(path.join(uiDistPath, 'index.html'));
+});
+// SPA fallback: any /dashboard/* sub-route serves the React app
+app.get('/dashboard/*splat', (req, res) => {
+    res.sendFile(path.join(uiDistPath, 'index.html'));
+});
+
+// Old dashboard preserved at /dashboard-legacy for reference
+app.get('/dashboard-legacy', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'dashboard.html'));
 });
 
@@ -1461,7 +1473,7 @@ app.post('/api/generate-pdf', requireAuth, requireSubscription, async (req, res)
         console.log(`[${phone}] Launching Puppeteer...`);
         browser = await puppeteer.launch({
           headless: true,
-          executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
+          executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/google-chrome',
           args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
@@ -2494,7 +2506,7 @@ app.post('/api/change-orders/generate', requireAuth, requireSubscription, async 
         try {
             browser = await puppeteer.launch({
                 headless: true,
-                executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
+                executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/google-chrome',
                 args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
             });
             const page = await browser.newPage();
