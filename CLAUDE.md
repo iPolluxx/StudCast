@@ -1,86 +1,70 @@
-# StudCast — Claude Handoff
+# StudCast (Lone Ranger Estimator) — Project Instructions
 
-## Project Overview
+## What This Is
 
-**StudCast** is an AI-powered construction estimator for contractors. It has two distinct layers:
+**StudCast / Lone Ranger Estimator** — an AI-powered construction estimator for independent contractors. Core loop: a contractor speaks or types a job description → Gemini extracts materials + labor → a 3-tier pricing waterfall prices it → the contractor reviews an editable ledger → a Puppeteer-rendered PDF estimate is emailed out.
 
-- **Backend (Express/Node.js):** `src/server.js` — AI Supervisor using Gemini. Handles voice transcripts, material extraction, PDF estimates, Stripe subscriptions, Twilio SMS, Firestore persistence.
-- **Unity 6 3D Builder:** `unity/Assets/Scripts/` — Consumes JSON packets from the Supervisor to render deterministic 3D wall framing scenes.
-
-The project is hosted on Google Cloud Run. Auth is Google OAuth ID tokens. Multi-tenant by E.164 phone number.
+Multi-tenant SaaS, one tenant per E.164 phone number. Hosted on Google Cloud Run.
 
 ---
 
-## Unity C# Layer — Status as of commit `e68a0bd`
+## Architecture
 
-### Files
-- `unity/Assets/Scripts/ConstructionManager.cs` — MonoBehaviour entry point
-- `unity/Assets/Scripts/ConstructionPayload.cs` — Serializable data contract classes
+### Backend — `src/server.js` (single Express file)
+- **AI extraction:** Gemini via `@google/genai` SDK — `EXTRACTION_PROMPT` turns transcripts into structured material/labor JSON (`mergeIntoLedger`).
+- **Pricing waterfall:** `assignUnitPrice()` / `assignLaborRate()` — explicit user price → per-tenant `price_book` → AI estimate fallback.
+- **Persistence:** Cloud Firestore, scoped under `users/{E.164phone}/…` (`estimates`, `settings/config`, `price_book`).
+- **Auth:** Google OAuth ID tokens — `requireAuth` middleware verifies `Authorization: Bearer <token>`, resolves email → phone.
+- **Billing:** Stripe — `requireSubscription` gate; `POST /api/billing/verify-session` activates subscriptions directly via the Stripe API (webhook-independent).
+- **SMS:** Twilio OTP, **gated behind the `SMS_LIVE` env flag**. While `SMS_LIVE !== 'true'`, OTP routes through the Gmail email fallback (Twilio accepts unregistered 10DLC sends as "queued" but carriers reject async with error 30034). Flip `SMS_LIVE=true` once the A2P campaign is approved.
+- **PDF:** Puppeteer (headless Chrome) renders the estimate and emails it via Nodemailer. The estimate PDF flow is `POST /api/generate-pdf` — fully self-contained, builds its HTML inline.
 
-### What was audited (GCP VM session, 2026-05-30)
-A full compilation audit was performed against Unity 6 and cross-referenced against the live backend schema. **Both scripts compile clean — no changes were required.** The previous version had likely failed due to missing `[Serializable]` attributes, absent `SupervisorResponse` wrapper, or missing `using System;`.
+### Frontend — `ui/` (React 18 + Vite + TypeScript)
+Served at `/dashboard` (built inside the Dockerfile, output to `ui/dist/`). "Cosmic glass" aesthetic: real starfield photo background, glassmorphism panels, a voice orb (with a barrel-roll animation into theater mode), a three-state Three.js material-yard visualizer (mini PIP → theater → fullscreen), an inline editable ledger, an editable scope-of-work field, and CSV supplier-price upload.
 
-### Architecture
-The Supervisor endpoint `POST /api/estimate/voice-to-json` returns:
-```json
-{
-  "success": true,
-  "intent": {
-    "schemaVersion": "1.0",
-    "projectType": "wall_frame",
-    "dimensions":  { "lengthFt": 20.0, "heightFt": 9.0 },
-    "structural":  { "studSpacingInches": 16, "treatedSolePlate": false, "wallType": "exterior" },
-    "features":    { "doorOpenings": 1, "windowOpenings": 2, "cornerCount": 4 }
-  }
-}
-```
+Components:
+- `ui/src/App.tsx` — orchestrator: auth bootstrap (reads `authBearerToken` from localStorage, redirects to `/` on 401), API wiring, state.
+- `ui/src/components/ThreeVisualizer.tsx` — WebGL material yard (**Stack mode only**).
+- `ui/src/components/LedgerTable.tsx` — materials/labor tables (mobile cards + desktop table), scope-of-work, publish button.
+- `ui/src/components/SettingsModal.tsx`, `EstimateList.tsx` — profile modal, project switcher (with delete).
+- `ui/src/types.ts` — shared interfaces.
 
-The C# classes mirror this 1:1:
-- `SupervisorResponse` → envelope (`success` + `intent`)
-- `ConstructionPayload` → root intent object
-- `Dimensions`, `Structural`, `Features` → nested sub-objects
+### Legacy onboarding — `public/dashboard.html` at `/dashboard-legacy`
+The hardened registration flow (Google OAuth → phone OTP → profile wizard) still lives here. After auth completes, `activateDashboard()` redirects into the React app at `/dashboard`. Landing page is `public/index.html` at `/`.
 
-All classes carry `[System.Serializable]` for `JsonUtility.FromJson<T>()`.
-
-### Framing logic (ConstructionManager.cs)
-- **Stud height** = `(wallHeightFt × 12) − (1.5" × 2)` — subtracts sole + top plate
-- **Opening deduct** = `(doorOpenings × 38") + (windowOpenings × 38")`
-- **Field studs** = `floor(netFramingLength / studSpacingInches) + 1`
-- **King studs** = `(doorOpenings + windowOpenings) × 2`
-
-### Phase 2 (not yet implemented)
-The following stub methods exist and are syntactically valid — wire up once prefabs are assigned in the Inspector:
-- `InstantiatePlates(payload, wallLengthIn)`
-- `InstantiateFieldStuds(payload, count, studHeightIn)`
-- `InstantiateOpenings(payload, totalOpenings, studHeightIn)`
-- `InstantiateCorners(payload, cornerCount)`
-
-Uncomment the call block inside `BuildWallFromJSON()` to activate.
+### 3D
+Three.js material yard only. The old single-wall "Build Layer" and the abandoned Unity WebGL pipeline have both been fully removed.
 
 ---
 
-## Backend Key Endpoints
+## Key Routes
 
 | Method | Route | Purpose |
 |--------|-------|---------|
-| POST | `/api/estimate/voice-to-json` | Transcript → deterministic JSON for Unity Builder |
-| POST | `/api/process` | Audio upload → material extraction → Firestore |
-| POST | `/api/process-text` | Text input → material extraction → Firestore |
-| POST | `/api/generate-pdf` | Estimate → PDF → email via Nodemailer |
-| POST | `/api/webhook` | Twilio SMS bridge |
-| POST | `/api/webhooks/stripe` | Stripe subscription lifecycle |
-
-Auth: `requireAuth` middleware verifies Google OAuth Bearer token, resolves E.164 phone from email.
+| POST | `/api/process-text` / `/api/process` | Text / audio → Gemini extraction → merge into estimate |
+| GET/POST | `/api/estimates`, `/api/estimates/:id`, `…/save` | List / load / save estimates |
+| DELETE | `/api/estimates/:id` | Delete estimate |
+| POST | `/api/generate-pdf` | Render estimate PDF + email |
+| GET/POST | `/api/settings` | Contractor profile |
+| POST | `/api/upload-csv` | Bulk supplier prices → `price_book` |
+| POST | `/api/billing/create-checkout-session`, `…/verify-session` | Stripe |
+| POST | `/api/auth/register`, `…/verify-otp` | Registration + OTP |
+| POST | `/api/webhook` | Inbound SMS → ledger (validates `x-twilio-signature`) |
 
 ---
 
-## Namespace
-All Unity data classes live in `StudCast.Construction`. `ConstructionManager` is in the global namespace with `using StudCast.Construction;` at the top.
+## Deploy
+Docker → Cloud Run service `lone-ranger-app` (us-central1). The Dockerfile installs Chromium, builds the React app, and prunes dev deps. Secrets (Gemini key, Stripe keys, Twilio auth token, Gmail pass) live in Google Secret Manager; non-secret config as plain env vars.
+
+```bash
+gcloud builds submit --tag gcr.io/$(gcloud config get-value project)/lone-ranger-app
+gcloud run deploy lone-ranger-app --image gcr.io/$(gcloud config get-value project)/lone-ranger-app --region us-central1 --platform managed --allow-unauthenticated
+```
+Env-only changes (no rebuild): `gcloud run services update lone-ranger-app --region us-central1 --update-env-vars KEY=VALUE`.
 
 ---
 
 ## Repo
-`https://github.com/iPolluxx/StudCast`  
-Main branch: `main`  
-Last known good commit: `e68a0bd`  
-Handoff commit (this file): `9b0f2bd`
+`https://github.com/iPolluxx/StudCast` — main branch: `main`.
+
+**Living context doc:** `docs/GEMINI_HANDOFF.md` — full session log, architecture decisions, schema, and open items. Read it before starting a session; update it after significant changes.
