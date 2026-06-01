@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from "react";
 import {
-  SlidersHorizontal,
   DollarSign,
   Receipt,
   Layers,
@@ -219,7 +218,7 @@ export default function App() {
   const [activeEstimateId, setActiveEstimateId] = useState<string>("");
   const [settings, setSettings] = useState<ContractorUserSettings>(defaultSettings);
   const [visualizerMode, setVisualizerMode] = useState<"stack" | "build">("build");
-  const [drywallOpacity, setDrywallOpacity] = useState<number>(30);
+  const drywallOpacity = 30;
   
   // Input fields
   const [textPrompt, setTextPrompt] = useState<string>("");
@@ -229,6 +228,8 @@ export default function App() {
   const [statusFlash, setStatusFlash] = useState<string | null>(null);
   const setActiveStage = (_: number) => {};
   const [vizSize, setVizSize] = useState<'mini' | 'medium' | 'full'>('mini');
+  const [orbState, setOrbState] = useState<'center' | 'rolling' | 'landed'>('center');
+  const prevVizSize = useRef<'mini' | 'medium' | 'full'>('mini');
 
   // Floating instruments panels
   const [activeInstrument, setActiveInstrument] = useState<"sliders" | "pricing" | "change" | "layers" | null>(null);
@@ -352,26 +353,35 @@ export default function App() {
     else if (!isRecording) setActiveStage(3);
   }, [aiProcessing]);
 
-  // Synchronize framing controls on changing estimates
+  // Barrel roll animation when transitioning into theater (medium) mode
   useEffect(() => {
-    if (activeEstimate?.project_name?.toLowerCase().includes("garage")) {
-      setFramingIntent({
-        schemaVersion: "1.0",
-        projectType: "wall_frame",
-        dimensions: { lengthFt: 24, heightFt: 10 },
-        structural: { studSpacingInches: 16, treatedSolePlate: true, wallType: "exterior" },
-        features: { doorOpenings: 1, windowOpenings: 2, cornerCount: 6 }
-      });
-      setVisualizerMode("stack");
-    } else {
-      setFramingIntent({
-        schemaVersion: "1.0",
-        projectType: "wall_frame",
-        dimensions: { lengthFt: 16, heightFt: 8 },
-        structural: { studSpacingInches: 16, treatedSolePlate: false, wallType: "interior" },
-        features: { doorOpenings: 1, windowOpenings: 0, cornerCount: 4 }
-      });
-      setVisualizerMode("build");
+    if (vizSize === 'medium' && prevVizSize.current !== 'medium') {
+      setOrbState('rolling');
+      const t = setTimeout(() => setOrbState('landed'), 1580);
+      prevVizSize.current = vizSize;
+      return () => clearTimeout(t);
+    }
+    if (vizSize !== 'medium') {
+      setOrbState('center');
+    }
+    prevVizSize.current = vizSize;
+  }, [vizSize]);
+
+  // Always stack mode — build mode removed
+  useEffect(() => {
+    setVisualizerMode("stack");
+
+    // Load full details (with items[]) when switching to an estimate that only has summary data
+    if (activeEstimateId && authToken) {
+      const current = estimates.find(e => e.id === activeEstimateId);
+      if (current && !current.items) {
+        fetch(`/api/estimates/${activeEstimateId}`, { headers: apiHeaders(authToken) })
+          .then(r => r.ok ? r.json() : null)
+          .then(full => {
+            if (full) setEstimates(prev => prev.map(e => e.id === activeEstimateId ? full : e));
+          })
+          .catch(() => {});
+      }
     }
   }, [activeEstimateId]);
 
@@ -436,6 +446,16 @@ export default function App() {
     updateEstimateItems(items => items.filter((_, i) => i !== index));
   };
 
+  const handleDeleteProject = async (id: string) => {
+    if (!authToken) return;
+    await fetch(`/api/estimates/${id}`, { method: 'DELETE', headers: apiHeaders(authToken) });
+    const remaining = estimates.filter(e => e.id !== id);
+    setEstimates(remaining);
+    if (activeEstimateId === id) {
+      setActiveEstimateId(remaining[0]?.id ?? '');
+    }
+  };
+
   // Add new blank estimate
   const handleNewProject = () => {
     const nextId = "est-" + Date.now().toString(16);
@@ -458,105 +478,43 @@ export default function App() {
     setProjectDropdownOpen(false);
   };
 
-  // Trigger high fidelity parsing model
+  // Trigger AI extraction — server merges into Firestore, we reload the estimate
   const handleProcessNLP = async (textToParse: string) => {
     if (!textToParse.trim()) return;
     setAiProcessing(true);
-    
+
     try {
       const headers = authToken
         ? apiHeaders(authToken)
         : { "Content-Type": "application/json" };
+
       const response = await fetch("/api/process-text", {
         method: "POST",
         headers,
-        body: JSON.stringify({ text: textToParse }),
+        body: JSON.stringify({
+          text: textToParse,
+          estimateId: activeEstimate?.id ?? null,
+        }),
       });
+
       const data = await response.json();
-      
-      if (data && data.success) {
-        let matchedLength = framingIntent.dimensions.lengthFt;
-        let matchedHeight = framingIntent.dimensions.heightFt;
-        let matchedDoors = framingIntent.features.doorOpenings;
-        let matchedWindows = framingIntent.features.windowOpenings;
-        let spacing: 16 | 24 = framingIntent.structural.studSpacingInches;
-        let pt = framingIntent.structural.treatedSolePlate;
-        let wallType: 'interior' | 'exterior' = framingIntent.structural.wallType;
 
-        const lower = textToParse.toLowerCase();
-        const lenMatch = lower.match(/(\d+)\s*(foot|ft|feet|f)/);
-        if (lenMatch) matchedLength = parseInt(lenMatch[1]);
-        
-        const highMatch = lower.match(/(\d+)\s*(high|tall|height|h|ft)/);
-        if (highMatch && (lower.includes("high") || lower.includes("tall"))) {
-          matchedHeight = parseInt(highMatch[1]);
+      if (response.ok && data.estimateId) {
+        // Server merged into Firestore — reload the estimate to get updated items
+        const refreshed = await fetch(`/api/estimates/${data.estimateId}`, { headers: apiHeaders(authToken!) });
+        if (refreshed.ok) {
+          const full = await refreshed.json();
+          setEstimates(prev => prev.map(e => e.id === full.id ? full : e));
+          if (data.estimateId !== activeEstimateId) setActiveEstimateId(data.estimateId);
         }
-
-        if (lower.includes("door") || lower.includes("opening")) {
-          matchedDoors = 1;
-          if (lower.includes("no door") || lower.includes("0 door")) matchedDoors = 0;
-          else if (lower.includes("two") || lower.includes("2")) matchedDoors = 2;
-        }
-        if (lower.includes("window")) {
-          matchedWindows = 1;
-          if (lower.includes("two") || lower.includes("2")) matchedWindows = 2;
-        }
-        if (lower.includes("24 on center") || lower.includes("24 o") || lower.includes("24-inch")) {
-          spacing = 24;
-        } else if (lower.includes("16 on center") || lower.includes("16 o") || lower.includes("16-inch")) {
-          spacing = 16;
-        }
-        if (lower.includes("treated") || lower.includes("pt")) pt = true;
-        if (lower.includes("interior")) wallType = 'interior';
-        if (lower.includes("exterior")) wallType = 'exterior';
-
-        if (matchedLength < 4) matchedLength = 4;
-        if (matchedLength > 30) matchedLength = 30;
-        if (matchedHeight < 8) matchedHeight = 8;
-        if (matchedHeight > 12) matchedHeight = 12;
-
-        setFramingIntent({
-          schemaVersion: "1.0",
-          projectType: "wall_frame",
-          dimensions: { lengthFt: matchedLength, heightFt: matchedHeight },
-          structural: { studSpacingInches: spacing, treatedSolePlate: pt, wallType },
-          features: { doorOpenings: matchedDoors, windowOpenings: matchedWindows, cornerCount: 4 }
-        });
-
-        const generatedMats: MaterialItem[] = (data.materials || []).map((m: any) => ({
-          name: m.name,
-          quantity: m.quantity || 10,
-          unit: m.unit || "pcs",
-          trade: m.trade || "framing",
-          unit_price: m.estimated_unit_cost || priceSheet.stud,
-          total: (m.quantity || 10) * (m.estimated_unit_cost || priceSheet.stud),
-          price_source: "ai"
-        }));
-
-        const generatedLabor: LaborItem[] = (data.labor || []).map((l: any) => ({
-          role: l.role,
-          hours: l.hours || 4,
-          rate: priceSheet.laborFrame,
-          total: (l.hours || 4) * priceSheet.laborFrame
-        }));
-
-        updateEstimateItems(prev => {
-          const cleanUserModified = prev.filter(i => i.price_source !== "ai" && !i.name?.includes("(AI)"));
-          return [
-            ...cleanUserModified,
-            ...generatedMats.map(m => ({ ...m, type: "material" as const })),
-            ...generatedLabor.map(l => ({ ...l, type: "labor" as const }))
-          ];
-        });
-
-        setStatusFlash(`${generatedMats.length + generatedLabor.length} elements extracted`);
+        setStatusFlash(`${data.itemCount ?? '?'} items in estimate`);
         setTimeout(() => setStatusFlash(null), 4000);
         setTextPrompt("");
-        setActiveStage(3);
       } else {
-        throw new Error("Local proxy failure, fallback to system extractor");
+        throw new Error(data.error || 'Extraction failed');
       }
     } catch (e) {
+      // Fallback: local parse (no Firestore persistence)
       runLocalBackupParser(textToParse);
     } finally {
       setAiProcessing(false);
@@ -810,6 +768,7 @@ export default function App() {
             open={projectDropdownOpen}
             estimates={estimates}
             activeEstimateId={activeEstimateId}
+            onDelete={handleDeleteProject}
             onSelect={async (id) => {
               setProjectDropdownOpen(false);
               // Load full details if we only have the summary
@@ -863,7 +822,16 @@ export default function App() {
           framingIntent={framingIntent}
           materials={materials}
           drywallOpacity={drywallOpacity}
+          showOverlay={vizSize !== 'mini'}
         />
+        {/* Bottom gradient bleed — dissolves the visualizer edge into the content below in theater mode */}
+        {vizSize === 'medium' && (
+          <div
+            className="absolute bottom-0 left-0 right-0 pointer-events-none z-10"
+            style={{ height: '4rem', background: 'linear-gradient(to bottom, transparent 0%, #050810 100%)' }}
+          />
+        )}
+
         {/* Viz state controls */}
         <div className="absolute top-1.5 right-1.5 flex gap-1 z-40">
           {vizSize === 'mini' && (
@@ -906,7 +874,16 @@ export default function App() {
       </div>
 
       {/* ── MAIN SCROLLABLE CONTENT ── */}
-      <main className={`flex-1 overflow-y-auto ${vizSize === 'full' ? 'opacity-0 pointer-events-none' : ''}`}>
+      <main className={`flex-1 overflow-y-auto relative ${vizSize === 'full' ? 'opacity-0 pointer-events-none' : ''}`}>
+
+        {/* Gradient veil — fades content out as it scrolls behind the theater-mode visualizer */}
+        {vizSize === 'medium' && (
+          <div
+            className="sticky top-0 left-0 right-0 z-20 pointer-events-none"
+            style={{ height: '5rem', background: 'linear-gradient(to bottom, #050810 0%, #050810 30%, transparent 100%)', pointerEvents: 'none' }}
+          />
+        )}
+
         <div className={`mx-auto max-w-3xl px-3 sm:px-6 pb-24 sm:pb-12 ${
           vizSize === 'medium' ? 'pt-[42vh] sm:pt-[47vh]' : 'pt-4 sm:pt-6'
         }`}>
@@ -916,7 +893,6 @@ export default function App() {
       <nav className={`hidden md:flex fixed left-4 top-20 z-30 flex-col gap-3 h-auto select-none pointer-events-auto ${vizSize === 'full' ? 'invisible' : ''}`}>
         <div className="glass-panel border-white/10 rounded-2xl p-1.5 flex flex-col gap-2.5 shadow-2xl">
           {[
-            { id: "sliders" as const, icon: SlidersHorizontal, tooltip: "Framing Controls" },
             { id: "pricing" as const, icon: DollarSign, tooltip: "Lumber Price Overrides" },
             { id: "change" as const, icon: Receipt, tooltip: "AI Change Orders" },
             { id: "layers" as const, icon: Layers, tooltip: "Visualization Settings" }
@@ -973,13 +949,11 @@ export default function App() {
           
           <div className="flex items-center justify-between border-b border-white/8 pb-3 mb-4">
             <h3 className="text-[10px] font-black uppercase tracking-widest text-[#ffffff] flex items-center gap-1.5">
-              {activeInstrument === "sliders" && <SlidersHorizontal className="w-3.5 h-3.5 text-cool-blue" />}
               {activeInstrument === "pricing" && <DollarSign className="w-3.5 h-3.5 text-cool-blue" />}
               {activeInstrument === "change" && <Receipt className="w-3.5 h-3.5 text-cool-blue" />}
               {activeInstrument === "layers" && <Layers className="w-3.5 h-3.5 text-soft-violet" />}
               
-              {activeInstrument === "sliders" && "Framing Controls"}
-              {activeInstrument === "pricing" && "Catalog Rates"}
+              {activeInstrument === "pricing" && "Prices & Supplier Sheet"}
               {activeInstrument === "change" && "Change Order Engine"}
               {activeInstrument === "layers" && "Visualization Specs"}
             </h3>
@@ -992,168 +966,62 @@ export default function App() {
             </button>
           </div>
 
-          {/* 1. FRAMING CONTROLS PANEL */}
-          {activeInstrument === "sliders" && (
-            <div className="space-y-4 font-mono text-[10px]">
-              
-              {/* Length FT */}
-              <div className="bg-[#050810]/50 p-3 rounded-xl border border-white/5 space-y-1.5">
-                <div className="flex justify-between items-center">
-                  <span className="text-starlight/70 uppercase">Total Wall Length</span>
-                  <span className="text-cool-blue font-extrabold">{framingIntent.dimensions.lengthFt} FT</span>
-                </div>
-                <input
-                  type="range"
-                  min="4"
-                  max="30"
-                  value={framingIntent.dimensions.lengthFt}
-                  onChange={(e) => setFramingIntent({
-                    ...framingIntent,
-                    dimensions: { ...framingIntent.dimensions, lengthFt: parseInt(e.target.value) }
-                  })}
-                  className="w-full accent-cool-blue bg-void-black h-1 rounded-lg appearance-none cursor-pointer"
-                />
-              </div>
-
-              {/* Height FT */}
-              <div className="bg-[#050810]/50 p-3 rounded-xl border border-white/5 space-y-1.5">
-                <div className="flex justify-between items-center">
-                  <span className="text-starlight/70 uppercase">Lumber Stud Height</span>
-                  <span className="text-cool-blue font-extrabold">{framingIntent.dimensions.heightFt} FT</span>
-                </div>
-                <input
-                  type="range"
-                  min="8"
-                  max="12"
-                  value={framingIntent.dimensions.heightFt}
-                  onChange={(e) => setFramingIntent({
-                    ...framingIntent,
-                    dimensions: { ...framingIntent.dimensions, heightFt: parseInt(e.target.value) }
-                  })}
-                  className="w-full accent-cool-blue bg-void-black h-1 rounded-lg appearance-none cursor-pointer"
-                />
-              </div>
-
-              {/* Spacing selector */}
-              <div>
-                <span className="block text-[8px] font-black uppercase text-soft-violet tracking-wider mb-2">
-                  Stud On-Center Interval
-                </span>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    onClick={() => setFramingIntent({
-                      ...framingIntent,
-                      structural: { ...framingIntent.structural, studSpacingInches: 16 }
-                    })}
-                    className={`py-1.5 text-[9px] font-bold rounded-lg border transition-all uppercase ${
-                      framingIntent.structural.studSpacingInches === 16
-                        ? "bg-cool-blue/15 text-cool-blue border-cool-blue/40"
-                        : "bg-void-black/40 text-starlight/60 border-white/5 hover:border-white/10"
-                    }`}
-                  >
-                    16" spacing
-                  </button>
-                  <button
-                    onClick={() => setFramingIntent({
-                      ...framingIntent,
-                      structural: { ...framingIntent.structural, studSpacingInches: 24 }
-                    })}
-                    className={`py-1.5 text-[9px] font-bold rounded-lg border transition-all uppercase ${
-                      framingIntent.structural.studSpacingInches === 24
-                        ? "bg-cool-blue/15 text-cool-blue border-cool-blue/40"
-                        : "bg-void-black/40 text-starlight/60 border-white/5 hover:border-white/10"
-                    }`}
-                  >
-                    24" spacing
-                  </button>
-                </div>
-              </div>
-
-              {/* Door Holes */}
-              <div className="bg-[#050810]/50 p-3 rounded-xl border border-white/5 space-y-1.5">
-                <div className="flex justify-between items-center">
-                  <span className="text-starlight/70 uppercase">Door Openings</span>
-                  <span className="text-cool-blue font-extrabold">{framingIntent.features.doorOpenings} DOORS</span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="2"
-                  value={framingIntent.features.doorOpenings}
-                  onChange={(e) => setFramingIntent({
-                    ...framingIntent,
-                    features: { ...framingIntent.features, doorOpenings: parseInt(e.target.value) }
-                  })}
-                  className="w-full accent-cool-blue bg-void-black h-1 rounded-lg appearance-none cursor-pointer"
-                />
-              </div>
-
-              {/* Window Holes */}
-              <div className="bg-[#050810]/50 p-3 rounded-xl border border-white/5 space-y-1.5">
-                <div className="flex justify-between items-center">
-                  <span className="text-starlight/70 uppercase">Window Openings</span>
-                  <span className="text-cool-blue font-extrabold">{framingIntent.features.windowOpenings} WINDOWS</span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="2"
-                  value={framingIntent.features.windowOpenings}
-                  onChange={(e) => setFramingIntent({
-                    ...framingIntent,
-                    features: { ...framingIntent.features, windowOpenings: parseInt(e.target.value) }
-                  })}
-                  className="w-full accent-cool-blue bg-void-black h-1 rounded-lg appearance-none cursor-pointer"
-                />
-              </div>
-
-              {/* Toggles */}
-              <div className="space-y-1.5 pt-1">
-                <label className="flex items-center gap-2 cursor-pointer bg-void-black/20 p-2 rounded-lg border border-white/5 hover:border-white/10 transition-colors">
-                  <input
-                    type="checkbox"
-                    checked={framingIntent.structural.treatedSolePlate}
-                    onChange={(e) => setFramingIntent({
-                      ...framingIntent,
-                      structural: { ...framingIntent.structural, treatedSolePlate: e.target.checked }
-                    })}
-                    className="w-3.5 h-3.5 accent-cool-blue"
-                  />
-                  <span>Green Pressure Treated Sole Plate</span>
-                </label>
-
-                <label className="flex items-center gap-2 cursor-pointer bg-void-black/20 p-2 rounded-lg border border-white/5 hover:border-white/10 transition-colors">
-                  <input
-                    type="checkbox"
-                    checked={framingIntent.structural.wallType === "exterior"}
-                    onChange={(e) => setFramingIntent({
-                      ...framingIntent,
-                      structural: { ...framingIntent.structural, wallType: e.target.checked ? "exterior" : "interior" }
-                    })}
-                    className="w-3.5 h-3.5 accent-cool-blue"
-                  />
-                  <span>Exterior Structural Header Sizing</span>
-                </label>
-              </div>
-
-            </div>
-          )}
-
-          {/* 2. CATALOG RATE OVERRIDES PANEL */}
+          {/* PRICES & SUPPLIER SHEET PANEL */}
           {activeInstrument === "pricing" && (
-            <div className="space-y-3 font-mono text-[10px]">
-              <div className="bg-void-black/30 p-2 text-[9px] text-starlight/60 leading-normal rounded-lg border border-white/5 font-sans mb-1">
-                Updates dynamically reconstruct active 3D components and estimate financial registers.
+            <div className="space-y-4 font-mono text-[10px]">
+
+              {/* Supplier CSV upload */}
+              <div className="space-y-2">
+                <span className="block text-[8px] font-black uppercase text-soft-violet tracking-wider">
+                  Supplier Price Sheet
+                </span>
+                <p className="text-[9px] text-starlight/50 font-sans leading-relaxed">
+                  Upload a CSV from your supplier with <span className="text-starlight/80 font-bold">name</span> and <span className="text-starlight/80 font-bold">price</span> columns. Prices are saved to your account and used automatically in future estimates.
+                </p>
+                <label className="flex items-center justify-center gap-2 w-full py-3 border border-dashed border-cool-blue/30 hover:border-cool-blue/60 rounded-xl cursor-pointer transition-all hover:bg-cool-blue/5 text-cool-blue text-[9px] font-black uppercase tracking-widest">
+                  <input
+                    type="file"
+                    accept=".csv"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file || !authToken) return;
+                      const form = new FormData();
+                      form.append('file', file);
+                      const r = await fetch('/api/upload-csv', {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${authToken}` },
+                        body: form,
+                      });
+                      const d = await r.json();
+                      if (r.ok) {
+                        setStatusFlash(`${d.saved ?? '?'} prices imported`);
+                      } else {
+                        setStatusFlash(`Upload failed: ${d.error}`);
+                      }
+                      setTimeout(() => setStatusFlash(null), 4000);
+                      e.target.value = '';
+                    }}
+                  />
+                  ↑ Upload Supplier CSV
+                </label>
               </div>
+
+              <hr className="border-white/5" />
+
+              {/* Manual price overrides */}
+              <span className="block text-[8px] font-black uppercase text-soft-violet tracking-wider">
+                Manual Rate Overrides
+              </span>
 
               {[
-                { label: "2x4 SPF SPF Stud (ea)", val: priceSheet.stud, target: "stud" },
+                { label: "2x4 SPF Stud (ea)", val: priceSheet.stud, target: "stud" },
                 { label: "2x4 PT Bottom Plate (ea)", val: priceSheet.treated, target: "treated" },
-                { label: "2x4 16ft Stud Plate (ea)", val: priceSheet.plate, target: "plate" },
-                { label: "1/2\" Plaster Drywall (ea)", val: priceSheet.drywall, target: "drywall" },
-                { label: "16-D Nails Big Box (ea)", val: priceSheet.nails, target: "nails" },
-                { label: "Framing Labor Rate (/hr)", val: priceSheet.laborFrame, target: "laborFrame" },
-                { label: "Drywall Labor Rate (/hr)", val: priceSheet.laborDrywall, target: "laborDrywall" },
+                { label: "2x4 16ft Plate (ea)", val: priceSheet.plate, target: "plate" },
+                { label: "1/2\" Drywall (ea)", val: priceSheet.drywall, target: "drywall" },
+                { label: "16-D Nails Box (ea)", val: priceSheet.nails, target: "nails" },
+                { label: "Framing Labor (/hr)", val: priceSheet.laborFrame, target: "laborFrame" },
+                { label: "Drywall Labor (/hr)", val: priceSheet.laborDrywall, target: "laborDrywall" },
               ].map((item, idx) => (
                 <div key={idx} className="flex items-center justify-between bg-void-black/40 p-2 rounded-xl border border-white/5">
                   <span className="text-starlight/80">{item.label}</span>
@@ -1163,11 +1031,8 @@ export default function App() {
                       type="number"
                       step="0.01"
                       value={item.val}
-                      onChange={(e) => {
-                        const parsed = parseFloat(e.target.value) || 0;
-                        setPriceSheet({ ...priceSheet, [item.target]: parsed });
-                      }}
-                      className="w-14 bg-void-black border border-white/10 text-right font-bold text-cool-blue px-1.5 py-0.5 rounded focus:outline-none focus:border-cool-blue/50 focus:ring-1 focus:ring-cool-blue/20"
+                      onChange={(e) => setPriceSheet({ ...priceSheet, [item.target]: parseFloat(e.target.value) || 0 })}
+                      className="w-14 bg-void-black border border-white/10 text-right font-bold text-cool-blue px-1.5 py-0.5 rounded focus:outline-none focus:border-cool-blue/50"
                     />
                   </div>
                 </div>
@@ -1232,60 +1097,17 @@ export default function App() {
             </div>
           )}
 
-          {/* 4. VISUALIZATION SPECTACLES PANEL */}
+          {/* 4. VISUALIZATION SETTINGS PANEL */}
           {activeInstrument === "layers" && (
             <div className="space-y-4 font-mono text-[10px]">
-              
-              <div>
-                <span className="block text-[8px] font-black uppercase text-soft-violet tracking-wider mb-2">
-                  Interactive View mode
-                </span>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    onClick={() => setVisualizerMode("build")}
-                    className={`py-2 text-[9px] font-bold rounded-lg border transition-all uppercase ${
-                      visualizerMode === "build"
-                        ? "bg-cool-blue/15 text-cool-blue border-cool-blue/40"
-                        : "bg-void-black/40 text-starlight/60 border-white/5 hover:border-white/10"
-                    }`}
-                  >
-                    🛠️ Framing Wall
-                  </button>
-                  <button
-                    onClick={() => setVisualizerMode("stack")}
-                    className={`py-2 text-[9px] font-bold rounded-lg border transition-all uppercase ${
-                      visualizerMode === "stack"
-                        ? "bg-cool-blue/15 text-cool-blue border-cool-blue/40"
-                        : "bg-void-black/40 text-starlight/60 border-white/5 hover:border-white/10"
-                    }`}
-                  >
-                    📦 Material Yard
-                  </button>
-                </div>
+              <p className="text-[9px] text-starlight/50 font-sans leading-relaxed">
+                Material Yard shows a live 3D digital twin of your lumber drop — lifts, dunnage, and fleet dispatch based on your estimate.
+              </p>
+              <div className="text-[9px] text-starlight/40 leading-normal pl-1 space-y-1 font-sans">
+                <div>• Drag to orbit</div>
+                <div>• Scroll to zoom</div>
+                <div>• Hover materials for weight + quantity</div>
               </div>
-
-              {/* Drywall Opacity */}
-              <div className="bg-[#050810]/50 p-3 rounded-xl border border-white/5 space-y-1.5">
-                <div className="flex justify-between items-center">
-                  <span className="text-starlight/70 uppercase">Drywall Sheathing Opacity</span>
-                  <span className="text-cool-blue font-extrabold">{drywallOpacity}%</span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={drywallOpacity}
-                  onChange={(e) => setDrywallOpacity(parseInt(e.target.value))}
-                  className="w-full accent-cool-blue bg-void-black h-1 rounded-lg appearance-none cursor-pointer"
-                />
-              </div>
-
-              <div className="text-[9px] text-starlight/50 leading-normal pl-1 space-y-1 font-sans">
-                <li>• Drag to orbit space cameras</li>
-                <li>• Scroll to zoom structural framing</li>
-                <li>• Shift+Drag to pan dimensional grid</li>
-              </div>
-
             </div>
           )}
 
@@ -1324,8 +1146,99 @@ export default function App() {
         </div>
       </div>
 
-      {/* ── 3. VOICE ORB SECTION — inline ── */}
-      <section className="flex flex-col items-center gap-3 w-full max-w-sm mx-auto text-center select-none mb-6 sm:mb-8">
+      {/* ── 3. VOICE ORB — animates to left rail in theater mode ── */}
+
+      {/* Landed layout — two flex containers that fill the side spaces */}
+      {orbState === 'landed' && (
+        <>
+          {/* LEFT: orb centered between page-left edge and ledger left edge, and between viz-bottom and viewport-bottom */}
+          <div
+            className="fixed z-30 hidden lg:flex items-center justify-center pointer-events-none"
+            style={{
+              top: 'calc(48px + 40vh)',
+              bottom: 0,
+              left: 0,
+              right: 'calc(50% + 1.5rem)',
+            }}
+          >
+            <div className="flex flex-col items-center gap-3 animate-orb-land pointer-events-auto">
+              <div className="relative flex items-center justify-center">
+                {isRecording && (
+                  <>
+                    <div className="absolute h-16 w-16 rounded-full border border-cool-blue/30 bg-cool-blue/5 animate-ring-expand-1 pointer-events-none" />
+                    <div className="absolute h-16 w-16 rounded-full border border-soft-violet/20 bg-soft-violet/5 animate-ring-expand-2 pointer-events-none" />
+                  </>
+                )}
+                <button
+                  onClick={toggleRecording}
+                  className={`h-14 w-14 rounded-full flex items-center justify-center transition-all duration-300 border cursor-pointer ${
+                    isRecording ? "bg-gradient-to-tr from-rose-500 to-soft-violet border-rose-300 scale-105"
+                      : aiProcessing ? "bg-[#0a0f1e] border-[#273a5a]"
+                      : "bg-gradient-to-tr from-[#121829] to-[#3a2254] border-[#614582] shadow-xl shadow-cool-blue/10"
+                  }`}
+                >
+                  {aiProcessing
+                    ? <RefreshCw className="w-5 h-5 text-cool-blue animate-spin" />
+                    : <Mic className={`w-5 h-5 ${isRecording ? "text-starlight" : "text-cool-blue"}`} />}
+                </button>
+              </div>
+              <span className="text-[8px] font-black tracking-widest text-starlight/40 uppercase font-mono text-center leading-tight">
+                {isRecording ? "Listening..." : aiProcessing ? "Building..." : "Describe Job"}
+              </span>
+              <div className="relative w-36">
+                <input
+                  type="text" value={textPrompt}
+                  onChange={(e) => setTextPrompt(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleProcessNLP(textPrompt)}
+                  placeholder="Type & enter..."
+                  className="w-full bg-[#050810]/80 border border-white/10 rounded-full py-1.5 px-3 text-[10px] text-starlight placeholder-starlight/30 focus:ring-1 focus:ring-cool-blue focus:outline-none font-mono"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* RIGHT: panel centered between ledger right edge and page-right edge */}
+          <div
+            className="fixed z-30 hidden lg:flex items-center justify-center pointer-events-none animate-panel-right"
+            style={{
+              top: 'calc(48px + 40vh)',
+              bottom: 0,
+              left: 'calc(50% + 1.5rem)',
+              right: 0,
+            }}
+          >
+            <div className="glass-panel border-white/15 rounded-2xl p-5 w-52 space-y-4 pointer-events-auto">
+              <span className="text-[8px] font-black tracking-widest text-soft-violet uppercase font-mono block">
+                Estimate Snapshot
+              </span>
+              <div className="space-y-2.5 font-mono text-[11px]">
+                <div className="flex justify-between items-center text-starlight/70">
+                  <span>Materials</span>
+                  <span className="text-cool-blue font-bold">{materials.length}</span>
+                </div>
+                <div className="flex justify-between items-center text-starlight/70">
+                  <span>Labor</span>
+                  <span className="text-cool-blue font-bold">{labor.length} rows</span>
+                </div>
+                <div className="border-t border-white/5 pt-2.5 flex justify-between items-center">
+                  <span className="text-starlight/70">Total</span>
+                  <span className="text-cool-blue font-extrabold text-sm">
+                    ${grandTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+              </div>
+              <p className="text-[8px] text-starlight/25 font-sans italic leading-relaxed">
+                Tell us what to put here.
+              </p>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Center orb (normal + rolling states) */}
+      <section className={`flex flex-col items-center gap-3 w-full max-w-sm mx-auto text-center select-none mb-6 sm:mb-8 ${
+        orbState === 'landed' ? 'invisible h-0 overflow-hidden mb-0' : ''
+      }`}>
         
         {/* Status Flash notification popup above orb */}
         {statusFlash && (
@@ -1352,7 +1265,7 @@ export default function App() {
         )}
 
         {/* Ring expansions representing depth orbit */}
-        <div className="relative flex items-center justify-center">
+        <div className={`relative flex items-center justify-center ${orbState === 'rolling' ? 'animate-barrel-roll' : ''}`}>
           
           {/* Animated pulsing concentric rings */}
           {isRecording && (
@@ -1404,7 +1317,7 @@ export default function App() {
                 handleProcessNLP(textPrompt);
               }
             }}
-            placeholder="e.g. 24 ft garage wall, treated plates, 2 windows..."
+            placeholder="Describe materials, dimensions, or scope..."
             className="w-full bg-[#050810]/80 frosted-input border-white/10 rounded-full py-1.5 px-4 text-xs tracking-wide text-starlight placeholder-starlight/40 focus:ring-1 focus:ring-cool-blue focus:outline-none backdrop-blur-md font-mono"
             style={{ paddingRight: "3rem" }}
           />
@@ -1458,6 +1371,23 @@ export default function App() {
             grandTotal={grandTotal}
             markupPercent={settings.global_markup_percent}
             taxRate={settings.tax_rate}
+            scopeOfWork={activeEstimate?.scope_of_work ?? ''}
+            onScopeChange={(val) => {
+              setEstimates(prev => prev.map(e =>
+                e.id === activeEstimateId ? { ...e, scope_of_work: val } : e
+              ));
+              // Persist to Firestore on change (debounced via natural typing pause)
+              if (authToken && activeEstimate?.id) {
+                clearTimeout((window as any)._scopeTimer);
+                (window as any)._scopeTimer = setTimeout(() => {
+                  fetch(`/api/estimates/${activeEstimate.id}/save`, {
+                    method: 'POST',
+                    headers: apiHeaders(authToken),
+                    body: JSON.stringify({ scope_of_work: val }),
+                  }).catch(() => {});
+                }, 1200);
+              }
+            }}
             onPublish={async () => {
               if (!authToken || !activeEstimate) return;
               const resp = await fetch('/api/generate-pdf', {

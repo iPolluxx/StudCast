@@ -8,6 +8,7 @@ interface ThreeVisualizerProps {
   framingIntent: FramingIntent;
   materials: MaterialItem[];
   drywallOpacity: number;
+  showOverlay?: boolean;
 }
 
 export default function ThreeVisualizer({
@@ -15,6 +16,7 @@ export default function ThreeVisualizer({
   framingIntent,
   materials,
   drywallOpacity,
+  showOverlay = true,
 }: ThreeVisualizerProps) {
   const mountRef = useRef<HTMLDivElement>(null);
   const [tooltipText, setTooltipText] = useState<string | null>(null);
@@ -194,7 +196,7 @@ export default function ThreeVisualizer({
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
     mountRef.current.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
@@ -864,31 +866,19 @@ export default function ThreeVisualizer({
       onMouseMove={handleMouseMove}
       onMouseLeave={() => setTooltipText(null)}
     >
-      {/* 3D Legend/Metrics Overlay */}
-      {mode === "stack" && (
+      {/* 3D Legend/Metrics Overlay — hidden in mini mode */}
+      {showOverlay && mode === "stack" && (
         <div className="absolute top-4 left-4 bg-slate-900/90 border border-purple-500/20 px-3 py-2 rounded-lg text-xs font-semibold text-purple-200 backdrop-blur-md pointer-events-none space-y-1">
           <div className="flex items-center gap-1.5 text-amber-500 font-extrabold uppercase tracking-wider">
             <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
-            Supplier Stack Yard
+            Material Yard
           </div>
           <div>Cargo Weight: <span className="text-white font-bold">{totalWeight.toLocaleString()} lbs</span></div>
           {totalWeight > TRAILER_MAX_LBS && (
             <div className="text-[10px] text-rose-400 font-bold">
-              🚚 Fleet Dispatched: {Math.ceil(totalWeight / TRAILER_MAX_LBS)} flatbeds required
+              🚚 {Math.ceil(totalWeight / TRAILER_MAX_LBS)} flatbeds required
             </div>
           )}
-        </div>
-      )}
-
-      {mode === "build" && (
-        <div className="absolute top-4 left-4 bg-slate-900/90 border border-purple-500/20 px-3 py-2 rounded-lg text-xs font-semibold text-purple-200 backdrop-blur-md pointer-events-none space-y-1">
-          <div className="flex items-center gap-1.5 text-sky-400 font-extrabold uppercase tracking-wider">
-            <span className="w-2.5 h-2.5 rounded-full bg-sky-400 animate-pulse"></span>
-            Dynamic Wall framing
-          </div>
-          <div>Wall Setup: {framingIntent.dimensions.lengthFt} × {framingIntent.dimensions.heightFt} ft</div>
-          <div>Spacing: {framingIntent.structural.studSpacingInches}" O.C.</div>
-          <div>Type: {framingIntent.structural.wallType.toUpperCase()} {framingIntent.structural.treatedSolePlate ? `(PT Plate)` : ""}</div>
         </div>
       )}
 

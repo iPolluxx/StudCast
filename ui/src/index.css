@@ -127,6 +127,53 @@ body {
   animation: slide-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+@keyframes barrel-roll-left {
+  /* Phase 1 — Anticipation: charges up, tilts back */
+  0%   { transform: translateX(0)    rotate(0deg)    scale(1);    opacity: 1; filter: brightness(1);            }
+  5%   { transform: translateX(10px) rotate(-8deg)   scale(1.04); opacity: 1; filter: brightness(1.3);          }
+  13%  { transform: translateX(18px) rotate(-16deg)  scale(1.1);  opacity: 1; filter: brightness(1.7);          }
+  19%  { transform: translateX(5px)  rotate(-5deg)   scale(1.13); opacity: 1; filter: brightness(2.2);          }
+
+  /* Phase 2 — Two full barrel rolls, goes far left */
+  32%  { transform: translateX(-10vw) rotate(160deg)  scale(1.16); opacity: 1; filter: brightness(1.4);         }
+  50%  { transform: translateX(-24vw) rotate(390deg)  scale(1.1);  opacity: 1; filter: brightness(1);           }
+  66%  { transform: translateX(-36vw) rotate(590deg)  scale(1.06); opacity: 1; filter: brightness(1.2);         }
+  78%  { transform: translateX(-44vw) rotate(710deg)  scale(1.01); opacity: 1; filter: brightness(1);           }
+
+  /* Phase 3 — Exaggerated warp exit: big flash then rockets off */
+  83%  { transform: translateX(-46vw) rotate(720deg)  scale(1.4);  opacity: 1;   filter: brightness(5) blur(0); }
+  91%  { transform: translateX(-72vw) rotate(830deg)  scale(0.12); opacity: 0.25; filter: brightness(0.4) blur(4px); }
+  100% { transform: translateX(-78vw) rotate(900deg)  scale(0);    opacity: 0;   filter: blur(8px);              }
+}
+
+@keyframes orb-land {
+  /* "Here I am" — materialises from a flash, overshoots, bounces confident */
+  0%   { opacity: 0;   transform: scale(0.05) rotate(-200deg); filter: brightness(12) blur(10px); }
+  12%  { opacity: 1;   transform: scale(1.6)  rotate(14deg);   filter: brightness(4)  blur(0);   }
+  26%  { opacity: 1;   transform: scale(0.78) rotate(-5deg);   filter: brightness(1.6);           }
+  44%  { opacity: 1;   transform: scale(1.18) rotate(2deg);    filter: brightness(1.3);           }
+  62%  { opacity: 1;   transform: scale(0.93) rotate(-1deg);   filter: brightness(1.1);           }
+  78%  { opacity: 1;   transform: scale(1.05) rotate(0deg);    filter: brightness(1);             }
+  100% { opacity: 1;   transform: scale(1)    rotate(0deg);    filter: brightness(1);             }
+}
+
+@keyframes fade-in-from-right {
+  from { opacity: 0; transform: translateX(3rem) scale(0.92); filter: blur(6px); }
+  to   { opacity: 1; transform: translateX(0)    scale(1);    filter: blur(0);   }
+}
+
+.animate-barrel-roll {
+  animation: barrel-roll-left 1.9s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.animate-orb-land {
+  animation: orb-land 0.65s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.animate-panel-right {
+  animation: fade-in-from-right 0.55s 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
 .grid-glow-row {
   transition: all 0.2s ease;
 }

@@ -16,6 +16,8 @@ interface Props {
   grandTotal: number;
   markupPercent: number;
   taxRate: number;
+  scopeOfWork: string;
+  onScopeChange: (val: string) => void;
   onPublish: () => Promise<void>;
 }
 
@@ -25,11 +27,25 @@ export default function LedgerTable({
   materials, labor, allItems,
   onCellEdit, onDeleteItem, onAddItem,
   materialsSubtotal, laborSubtotal, markupAmount, taxAmount, grandTotal,
-  markupPercent, taxRate, onPublish,
+  markupPercent, taxRate, scopeOfWork, onScopeChange, onPublish,
 }: Props) {
   const [publishing, setPublishing] = useState(false);
   return (
     <div className="flex flex-col p-3 sm:p-5 bg-void-black/35 gap-4">
+
+      {/* ── Scope of Work ── */}
+      <div className="space-y-1.5">
+        <span className="text-[9px] font-black tracking-wider text-soft-violet uppercase font-mono">
+          Scope of Work
+        </span>
+        <textarea
+          value={scopeOfWork}
+          onChange={(e) => onScopeChange(e.target.value)}
+          placeholder="Describe the project scope — this appears on the PDF estimate sent to your client..."
+          rows={3}
+          className="w-full bg-void-black/60 border border-white/10 rounded-xl px-3 py-2.5 text-[11px] text-starlight font-sans placeholder-starlight/30 outline-none focus:border-cool-blue/50 resize-none leading-relaxed"
+        />
+      </div>
 
       <div className="space-y-4">
 
