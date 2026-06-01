@@ -1,7 +1,7 @@
 # Lone Ranger Estimator — Live Project Context
 > **Purpose:** This document is the handoff bridge between Gemini brainstorming sessions and Claude Code
 > implementation sessions. Update it after every meaningful work session.
-> **Last updated:** 2026-06-01 — Barrel roll orb animation, real starfield photo background, mobile polish, deployed rev 00039
+> **Last updated:** 2026-06-01 — Twilio SMS wired + SMS_LIVE gate, Stripe prod fix, SMS opt-in preview page, deployed rev 00044
 
 ---
 
@@ -249,6 +249,53 @@ From `ui/dist/` (built by Dockerfile):
 ---
 
 ## Work Session Log
+
+### Session: 2026-06-01 (3) — Twilio SMS, Stripe Prod Fix, A2P Campaign Support
+
+#### 1. Twilio credentials wired (root cause of "SMS never worked")
+`.env` never had `TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN`, so `twilioClient.messages.create()` in `/api/auth/register` always threw → fell through to email/log. That's why OTP only ever appeared in logs. Added to local `.env`:
+- `TWILIO_ACCOUNT_SID` — the `AC…` SID (in local `.env` / Cloud Run env; full value in Twilio Console)
+- `TWILIO_AUTH_TOKEN` (sensitive — local `.env` + Secret Manager only, never committed)
+- `TWILIO_PHONE_NUMBER=+17156002720`
+- Test recipient used: `+15346262235`
+
+Production (Cloud Run): SID + phone as plain env vars; **auth token in Google Secret Manager** secret `TWILIO_AUTH_TOKEN` (runtime SA `lonerangerrunner@mightdoit.iam.gserviceaccount.com` granted `secretAccessor`).
+
+#### 2. CRITICAL: SMS_LIVE gate (`src/server.js` register endpoint)
+Diagnostic test send confirmed `messages.create()` resolves to **"queued"** even for unregistered 10DLC numbers — the carrier rejection (**error 30034**) happens **async** and NEVER throws. So with creds present but campaign unapproved, the endpoint would falsely report `channel:'sms'` and skip the email fallback, stranding every signup.
+
+**Fix:** Twilio attempt is now gated behind `SMS_LIVE` env flag. While `SMS_LIVE !== 'true'`, OTP routes through the email fallback (works today). Set in both `.env` and Cloud Run as `SMS_LIVE=false`.
+
+>>> **WHEN CAMPAIGN IS APPROVED:** flip the flag — `gcloud run services update lone-ranger-app --region us-central1 --update-env-vars SMS_LIVE=true` (and set `SMS_LIVE=true` in local `.env`). SMS takes over instantly, zero code changes.
+
+#### 3. Stripe checkout was BROKEN in production — fixed
+`STRIPE_PRICE_ID` and `APP_URL` were missing from Cloud Run env (dropped in an earlier revision). Effects: `line_items[].price = undefined` → every subscribe 500'd; `APP_URL` fell back to `localhost:8080` → post-payment redirect went nowhere. Restored both via `--update-env-vars`:
+- `STRIPE_PRICE_ID=price_1TbSwnDBZKEvykJPQB1BQE7c` (verified: active, $74.99/mo USD, test mode)
+- `APP_URL=https://lone-ranger-app-879716207624.us-central1.run.app`
+
+Note: price is test-mode; UI advertises $49–50/mo (mismatch is fine — pricing not finalized, dev/test only).
+
+#### 4. A2P 10DLC campaign support
+- Strengthened SMS consent checkbox in registration (`dashboard.html`) + public SMS disclosure in landing footer (`index.html`)
+- Privacy policy already has gold-standard clause (`privacy.html:203` — "no mobile info shared with third parties... opt-in data not shared")
+- **`public/sms-optin.html`** — standalone public preview of the consent UI so reviewers can verify CTA without Google OAuth login. Served automatically by express.static at `/sms-optin.html`.
+
+>>> **TO REVERT POST-APPROVAL:** delete `public/sms-optin.html` and redeploy. Nothing references it (no routes/links/React) — clean removal.
+
+**Campaign status:** submitted and **locked in review (cannot edit)**. Submission did NOT include the `/sms-optin.html` URL (page went live after submission). If rejected again, resubmit with that URL in the CTA/opt-in field. The $15 vetting fee is one-time per brand — editing/resubmitting a rejected campaign generally does not re-charge it.
+
+#### 5. Outstanding console action (done by user)
+- Inbound SMS webhook for `+17156002720` → already pointed at `https://lone-ranger-app-879716207624.us-central1.run.app/api/webhook`. Inbound bridge (`/api/webhook`, validates `x-twilio-signature` with `TWILIO_AUTH_TOKEN`) is gated by campaign approval like outbound.
+
+#### 6. Security note
+Twilio auth token was shared in plaintext during this session → rotate it in Twilio Console after approval, then update local `.env` + add a new Secret Manager version.
+
+#### Current deployment state
+- **Revision:** `lone-ranger-app-00044-k8k`
+- **URL:** `https://lone-ranger-app-879716207624.us-central1.run.app`
+- SMS_LIVE=false (email OTP fallback active); Stripe checkout working (test mode); SMS opt-in preview live
+
+---
 
 ### Session: 2026-06-01 (2) — Orb Animation, Starfield Photo, UI Polish
 
