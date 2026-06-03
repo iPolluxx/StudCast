@@ -32,9 +32,10 @@ export function Starfield() {
     let raf: number;
 
     const onMove = (e: MouseEvent) => {
-      // Subtle drift: 48–52% range so the photo never hard-pans
-      tgtX = 48 + (e.clientX / window.innerWidth)  * 4;
-      tgtY = 48 + (e.clientY / window.innerHeight) * 4;
+      // Horizontal: ±2% (portrait src has little horizontal room under cover)
+      // Vertical: ±4% around 52% center — nebula drifts gently with cursor
+      tgtX = 49 + (e.clientX / window.innerWidth)  * 2;
+      tgtY = 50 + (e.clientY / window.innerHeight) * 4;
     };
     window.addEventListener("mousemove", onMove);
 
@@ -56,29 +57,30 @@ export function Starfield() {
 
   return (
     <>
-      {/* Real starfield photo — slightly oversized so parallax has room to drift */}
+      {/* Milky Way nebula photo — cover fills landscape viewport; portrait src gives
+          vertical parallax room. Nebula glow sits ~55% down, framed below center. */}
       <div
         ref={bgRef}
         className="fixed inset-0 z-0 pointer-events-none"
         style={{
           backgroundImage: `url(${starfieldSrc})`,
-          backgroundSize: '115% 115%',
-          backgroundPosition: '50% 50%',
-          // Darken + boost contrast + push blue-violet tones
-          filter: 'brightness(0.52) contrast(1.25) saturate(1.8) hue-rotate(8deg)',
+          backgroundSize: 'cover',
+          backgroundPosition: '50% 52%',
+          // Dim enough for UI legibility; preserve warm amber nebula, slight cool shift
+          filter: 'brightness(0.6) contrast(1.35) saturate(1.35) hue-rotate(-8deg)',
         }}
       />
-      {/* Violet aurora pool — upper left */}
+      {/* Violet aurora pool — upper left, bleeds into cool star field */}
       <div className="fixed inset-0 z-0 pointer-events-none" style={{
-        background: 'radial-gradient(ellipse 55% 45% at 22% 28%, rgba(30,14,60,0.55) 0%, transparent 100%)',
+        background: 'radial-gradient(ellipse 55% 45% at 22% 28%, rgba(30,14,60,0.6) 0%, transparent 100%)',
       }} />
-      {/* Blue aurora pool — lower right */}
+      {/* Blue aurora pool — lower right, complements warm nebula center */}
       <div className="fixed inset-0 z-0 pointer-events-none" style={{
-        background: 'radial-gradient(ellipse 65% 50% at 78% 72%, rgba(8,22,55,0.5) 0%, transparent 100%)',
+        background: 'radial-gradient(ellipse 65% 50% at 78% 72%, rgba(8,22,55,0.55) 0%, transparent 100%)',
       }} />
-      {/* Very thin void-black vignette around edges */}
+      {/* Edge vignette pulls corners to void-black */}
       <div className="fixed inset-0 z-0 pointer-events-none" style={{
-        background: 'radial-gradient(ellipse 80% 80% at 50% 50%, transparent 50%, rgba(5,8,16,0.7) 100%)',
+        background: 'radial-gradient(ellipse 80% 80% at 50% 50%, transparent 45%, rgba(5,8,16,0.75) 100%)',
       }} />
     </>
   );
