@@ -11,9 +11,10 @@ Live production: `https://lone-ranger-app-879716207624.us-central1.run.app`
 
 ```mermaid
 graph TD
-    A[Twilio SMS / Web UI] -->|Voice & Text Ingestion| B(Gemini 1.5 Pro Supervisor)
-    B -->|Nondeterministic Extraction Payload| C{sanitizePhase1Intent}
-    C -->|Clamped & Typed Deterministic JSON| D[Atomic Firestore Transaction Layer]
+    A[Twilio SMS / Web UI] -->|Voice & Text Ingestion| B(Stage 1 · Estimator — Gemini 3.5 Flash)
+    B -->|Price-free Scope JSON| P(Stage 2 · Pricer — deterministic, 0 tokens)
+    P -->|Priced Ledger| R(Stage 3 · Reviewer — Gemini 3.5 Flash, temp 0)
+    R -->|Reviewed Ledger + Anomaly Warnings| D[Atomic Firestore Transaction Layer]
     D -->|Sandboxed Multi-Tenant Namespace| E[(Firestore — isolated by E.164 phone)]
     D -->|Verified State Payload| F[Puppeteer PDF Engine]
     F -->|Nodemailer SMTP| G[Contractor Email Delivery]
@@ -34,7 +35,7 @@ graph TD
 | Runtime | Node.js 20 / Express |
 | Deployment | Google Cloud Run (auto-scaled, containerized) |
 | Database | Cloud Firestore (multi-tenant, serverless) |
-| AI Model | Gemini 1.5 Pro (`@google/genai`) |
+| AI Model | Gemini 3.5 Flash (`@google/genai`) — deterministic 3-stage pipeline |
 | Frontend | React 18 + Vite + TypeScript + Tailwind CSS v4 |
 | 3D Engine | Three.js (WebGL) — OrbitControls, raycasting, procedural geometry |
 | Auth | Google OAuth 2.0 ID Tokens |
@@ -43,16 +44,30 @@ graph TD
 | PDF | Puppeteer (headless Chrome) |
 | Secrets | Google Secret Manager |
 | Build | Google Cloud Build (`cloudbuild.yaml`) |
-| Testing | Jest — 56 unit tests, dependency injection, zero-cost offline suite |
+| Testing | Jest — 66 unit/integration tests, dependency injection, zero-cost offline suite |
 | CI/CD | GitHub Actions — runs on every push and pull request to `main` |
 
 ---
 
 ## Key Systems
 
-### 1. LLM → Deterministic Pipeline
+### 1. The Deterministic 3-Stage Estimation Pipeline
 
-Voice or text input is processed by Gemini 1.5 Pro, which extracts a raw material takeoff. The output is inherently nondeterministic — so it passes through `sanitizePhase1Intent()`, a typed clamping layer that enforces real-world building physics before any data is persisted:
+Voice or text input is **not** handed to a single monolithic AI call. It flows through a deterministic pipeline that quarantines nondeterminism to exactly **two auditable LLM boundaries**, with pure, zero-token business math in the middle:
+
+| Stage | Module | Type | Responsibility |
+|-------|--------|------|----------------|
+| **1 · Estimator** | `src/lib/estimator.js` | LLM — Gemini 3.5 Flash | Raw input → strict, **price-free** scope JSON. Input-source-agnostic (`text` / `voice` / `image`), so blueprint-vision becomes a swap rather than a rewrite. |
+| **2 · Pricer** | `src/lib/pricer.js` | Deterministic | Runs the scope through the 3-priority pricing waterfall. Issues **zero LLM calls of its own** — pure backend math, structurally protecting cloud billing. |
+| **3 · Reviewer** | `src/lib/reviewer.js` | LLM — Gemini 3.5 Flash, `temperature: 0` | Non-destructive QA pass. Returns the priced ledger plus structured anomaly warnings; it **never mutates the numbers**, only annotates. |
+
+`src/lib/pipeline.js` orchestrates the three stages in memory (`createPipeline({ db, ai }).runPipeline(input, ctx)`); the Express layer owns persistence via a shared `persistLedger()` so pricing is never run twice. The whole pipeline is gated behind the `PIPELINE_V2` flag for a zero-downtime rollout alongside the legacy monolith.
+
+**Why this matters:** the cost-bearing arithmetic never touches a model, the two LLM boundaries are isolated and individually testable, and a single data contract serves text, voice, and — next — blueprint images.
+
+#### Deterministic clamping for the 3D path
+
+The 3D framing intent that drives the visualizer is guarded by a second deterministic layer, `sanitizePhase1Intent()`, which enforces real-world building physics before any geometry is rendered:
 
 - Wall length clamped to `4–30 ft`
 - Wall height clamped to `8–12 ft`
@@ -128,10 +143,16 @@ src/lib/
 │   ├── normalizePhone()         Normalize to E.164 (+1XXXXXXXXXX), throws 400-tagged Error on invalid input
 │   └── sanitizePhase1Intent()   Deterministic clamping layer for AI-produced framing JSON
 │
-└── pricingEngine.js     Stateful business logic via Dependency Injection
-    └── createPricingEngine({ db, ai })
-        ├── assignUnitPrice(item, zipCode, phone)   3-priority material pricing waterfall
-        └── assignLaborRate(laborItem, phone)       3-priority labor rate resolution
+├── pricingEngine.js     Stateful business logic via Dependency Injection
+│   └── createPricingEngine({ db, ai })
+│       ├── assignUnitPrice(item, zipCode, phone)   3-priority material pricing waterfall
+│       └── assignLaborRate(laborItem, phone)       3-priority labor rate resolution
+│
+│  ── Deterministic 3-Stage Pipeline (gated behind PIPELINE_V2) ──
+├── estimator.js         createEstimator({ ai })   Stage 1 — input-agnostic, price-free extraction
+├── pricer.js            createPricer({ db, ai })  Stage 2 — deterministic pricing, zero AI of its own
+├── reviewer.js          createReviewer({ ai })    Stage 3 — non-destructive, temp-0 anomaly review
+└── pipeline.js          createPipeline({ db, ai })  Orchestrator — chains Stage 1 → 2 → 3 in memory
 ```
 
 `sanitize.js` has no imports beyond Node built-ins. Every function is a pure transformation — given the same input, it always returns the same output. This makes them unconditionally unit-testable without any test doubles.
@@ -150,21 +171,23 @@ const { assignUnitPrice, assignLaborRate } = createPricingEngine({ db: mockDb, a
 
 Neither the Express handlers nor the business logic changes between environments — only the injection point differs. This is the boundary between infrastructure and application logic.
 
-### Jest Test Suite — 56 Tests, $0 API Cost
+### Jest Test Suite — 66 Tests, $0 API Cost
 
-The full pricing waterfall and every sanitization rule are covered by an offline unit test suite. No cloud credentials are required; no Firestore reads or Gemini calls are made at test time.
+The full pricing waterfall, every sanitization rule, and the end-to-end pipeline are covered by an offline suite. No cloud credentials are required; no Firestore reads or Gemini calls are made at test time.
 
 ```
 __tests__/
 ├── sanitize.test.js        35 tests — all branches of the four pure utility functions
-└── pricingEngine.test.js   21 tests — every priority path in assignUnitPrice + assignLaborRate
+├── pricingEngine.test.js   21 tests — every priority path in assignUnitPrice + assignLaborRate
+└── pipeline.test.js        10 tests — Estimator → Pricer → Reviewer integration, Gemini + Firestore mocked
 ```
 
 **Testing strategy highlights:**
 
 - **Call-count assertions on DB mock:** Priority 1 (explicit user price) tests assert `expect(db.get).not.toHaveBeenCalled()` — proving the waterfall short-circuits before touching Firestore, not just that it returns the right number.
-- **Sequential snapshot mocks:** `makeDb(snap1, snap2)` returns each snapshot in call order. For the `labor-general` path, this verifies that the price_book miss triggers a second read for settings — the correct two-read sequence — without coupling tests to implementation internals.
-- **Error path coverage:** Firestore rejection → graceful degradation to the AI-estimate fallback. AI rejection → `rate: 0, total: 0` with no uncaught promise rejection.
+- **Zero-token guarantee, enforced:** the pipeline suite asserts `generateContent` is called exactly twice end-to-end (Stage 1 + Stage 3) and never with the labor-rate prompt when a default rate exists — proving Stage 2 spends $0 in tokens, structurally rather than by convention.
+- **Concurrency-safe Firestore mock:** the pipeline prices materials and labor via `Promise.all`, so the mock returns a fresh immutable path-node per `collection()`/`doc()` call — no shared mutable state to corrupt under concurrent reads.
+- **Graceful degradation:** a rejected Reviewer call is proven not to sink the pipeline — the ledger still returns with a single `info` warning. Firestore rejection → AI-estimate fallback; AI rejection → `rate: 0, total: 0` with no uncaught promise rejection.
 - **Boundary conditions:** `explicit_user_price: 0` is valid (owner-supplied free material); `explicit_user_price: "abc"` is not finite and falls through; `NaN` from `Number(undefined)` correctly blocks the default-labor-rate branch.
 
 ```bash
@@ -196,7 +219,7 @@ The workflow requires no secrets — the suite is entirely offline. A failing te
 | GET | `/api/estimates/:id` | Bearer | Full estimate with line items |
 | POST | `/api/estimates/:id/save` | Bearer | Save / update estimate |
 | DELETE | `/api/estimates/:id` | Bearer | Delete estimate |
-| POST | `/api/process-text` | Bearer + Sub | Text → Gemini material extraction |
+| POST | `/api/process-text` | Bearer + Sub | Text → extraction → priced ledger (3-stage pipeline when `PIPELINE_V2` is enabled) |
 | POST | `/api/process` | Bearer + Sub | Audio upload → Gemini extraction |
 | POST | `/api/generate-pdf` | Bearer + Sub | Puppeteer PDF → email delivery |
 | GET | `/api/settings` | Bearer | Load contractor profile |
@@ -267,11 +290,12 @@ The GitHub Actions CI pipeline (`.github/workflows/ci.yml`) runs `npm ci && npm 
 | Multi-tenant Firestore | ✅ Live |
 | Google OAuth auth | ✅ Live |
 | Gemini AI extraction | ✅ Live |
+| Deterministic 3-stage pipeline | ✅ Built + tested — flag-gated behind `PIPELINE_V2` |
 | Stripe subscriptions | ✅ Live |
 | Puppeteer PDF + email | ✅ Live |
 | Twilio SMS (10DLC) | 🔄 Campaign review pending |
 | Email OTP fallback | ✅ Live |
 | React dashboard | ✅ Live (migrating from legacy) |
 | Three.js visualizer | ✅ Live — Stack + Build modes |
-| Jest unit test suite | ✅ 56 tests passing — offline, $0 API cost |
+| Jest test suite | ✅ 66 tests passing — offline, $0 API cost |
 | GitHub Actions CI | ✅ Active — runs on every push and PR to `main` |

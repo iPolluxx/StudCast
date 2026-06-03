@@ -19,6 +19,8 @@ const cors = require('cors');
 
 const { parseGeminiJSON, sanitizeItemId, normalizePhone, sanitizePhase1Intent } = require('./lib/sanitize');
 const { createPricingEngine } = require('./lib/pricingEngine');
+const { createPipeline } = require('./lib/pipeline');
+const { EXTRACTION_PROMPT, VALID_TRADES } = require('./lib/estimator');
 
 // ── Twilio Client (outbound SMS) ──────────────────────────────────────
 const twilio = require('twilio');
@@ -79,6 +81,10 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 // ── Pricing engine (db + ai injected so the functions are unit-testable) ─
 const { assignUnitPrice, assignLaborRate } = createPricingEngine({ db, ai });
+
+// V2 deterministic 3-stage pipeline (Estimator → Pricer → Reviewer).
+// Gated behind the PIPELINE_V2 env flag; see POST /api/process-text.
+const pipeline = createPipeline({ db, ai });
 
 // ── Google OAuth — serverless-first, file-based fallback ─────────────
 //
@@ -546,13 +552,26 @@ async function requireSubscription(req, res, next) {
 async function mergeIntoLedger(extracted, phone, zipCode, estimateId = null) {
     const { projectName = 'General', scope_of_work = '', materials = [], labor = [] } = extracted;
 
-    console.log(`[${phone}] Merging ${materials.length} material(s) + ${labor.length} labor item(s) into "${projectName}" (estimateId: ${estimateId})`);
-
-    // Pass both zipCode (reserved) and normalized phone (subcollection scope) to pricing engine.
+    // Legacy inline pricing, then hand off to the shared persistence layer below.
     const [pricedMaterials, pricedLabor] = await Promise.all([
         Promise.all(materials.map(item => assignUnitPrice(item, zipCode, phone))),
         Promise.all(labor.map(item => assignLaborRate(item, phone))),
     ]);
+
+    return persistLedger({ projectName, scope_of_work, pricedMaterials, pricedLabor }, phone, estimateId);
+}
+
+/**
+ * Shared persistence layer — merges ALREADY-PRICED materials and labor into the
+ * user's Firestore estimates collection. Used by BOTH the legacy mergeIntoLedger
+ * path and the V2 pipeline path, so item pricing is never run twice.
+ *
+ * @param {{ projectName: string, scope_of_work: string, pricedMaterials: object[], pricedLabor: object[] }} priced
+ * @param {string} phone      - Authenticated user's E.164 phone number.
+ * @param {string} estimateId - Optional active estimate ID to merge into.
+ */
+async function persistLedger({ projectName = 'General', scope_of_work = '', pricedMaterials = [], pricedLabor = [] }, phone, estimateId = null) {
+    console.log(`[${phone}] Persisting ${pricedMaterials.length} material(s) + ${pricedLabor.length} labor item(s) into "${projectName}" (estimateId: ${estimateId})`);
 
     let docRef;
     let existingData = null;
@@ -645,46 +664,10 @@ async function mergeIntoLedger(extracted, phone, zipCode, estimateId = null) {
 }
 
 // ══════════════════════════════════════════════════════════════════════
-//  EXTRACTION SYSTEM PROMPT  (Phase 3 — Strict Trade Enum enforced)
-//
-//  Pure extraction only — no pricing in this prompt.
-//  Pricing is handled separately by the Pricing Engine above.
+//  EXTRACTION SYSTEM PROMPT + VALID_TRADES
+//  Moved to src/lib/estimator.js (single source of truth, shared by the
+//  legacy monolith path below and the V2 pipeline). Imported at the top.
 // ══════════════════════════════════════════════════════════════════════
-
-const VALID_TRADES = [
-    'concrete', 'flooring', 'roofing', 'tile', 'drywall', 'deck', 'fence',
-    'paint', 'kitchen-remodel', 'bathroom-remodel', 'siding', 'insulation',
-    'gravel', 'mulch', 'electrical', 'plumbing', 'labor-general', 'hvac',
-    'windows', 'doors', 'countertops', 'cabinetry', 'gutters', 'demolition',
-    'landscaping', 'foundation', 'garage', 'masonry', 'stucco', 'driveways',
-    'waterproofing', 'framing', 'excavation',
-];
-
-const EXTRACTION_PROMPT =
-    `You are an expert residential construction estimator based in central Wisconsin. ` +
-    `Extract materials and labor from the contractor's job description below.\n` +
-    `Always infer or extract a projectName from context (default: 'General').\n` +
-    `Extract ONLY the new items mentioned. Do not pad or duplicate.\n\n` +
-    `SCOPE_OF_WORK: Write a professional 2-3 sentence project scope summary suitable for a contractor estimate document. Base it strictly on the job description provided. Use formal language a homeowner or insurance adjuster would expect to read.\n\n` +
-    `MATERIAL NAMES: Use highly descriptive, industry-standard terminology a contractor would use ` +
-    `(e.g. "2x6x16 Pressure Treated Lumber", "30-Year Architectural Shingles", "5/8 inch Type X Drywall"). ` +
-    `Include size, grade, or spec when mentioned or inferable.\n\n` +
-    `TRADE FIELD: Each material MUST have a "trade" field set to exactly one of:\n` +
-    `${VALID_TRADES.join(', ')}\n` +
-    `Do NOT use the trade name as the material name.\n\n` +
-    `ESTIMATED_UNIT_COST: For every material item, add a numeric "estimated_unit_cost" field. ` +
-    `This is YOUR best conservative retail unit price estimate in USD for central Wisconsin — ` +
-    `think Home Depot / Menards shelf price. Be specific and accurate. ` +
-    `This is a fallback safety net; slightly conservative is better than zero.\n\n` +
-    `EXPLICIT_USER_PRICE: If the user explicitly states a unit price for a material or labor item ` +
-    `(e.g. "framing lumber at $1.25 a board foot", "OSB costing $15 each", "shingles for $120 a square"), ` +
-    `extract that EXACT number into the "explicit_user_price" field — e.g. 1.25, 15.00, or 120.00. ` +
-    `If NO price is dictated by the user, this field MUST be strictly null (not zero, not omitted — null).\n\n` +
-    `Output ONLY valid JSON, no markdown:\n` +
-    `{ "projectName": "String", ` +
-    `"scope_of_work": "String", ` +
-    `"materials": [{ "name": "descriptive name", "quantity": 0, "unit": "", "trade": "enum", "estimated_unit_cost": 0.00, "explicit_user_price": null }], ` +
-    `"labor": [{ "role": "", "hours": 0, "explicit_user_price": null }] }`;
 
 // ══════════════════════════════════════════════════════════════════════
 //  ENDPOINT: GET /api/pending-estimates
@@ -825,6 +808,27 @@ app.post('/api/process-text', requireAuth, requireSubscription, async (req, res)
     let transcript = `User: ${text}`;
 
     try {
+        // ── V2 deterministic 3-stage pipeline (flag-gated) ──────────────────
+        // Estimator → Pricer → Reviewer, then the shared persistence layer.
+        if (process.env.PIPELINE_V2 === 'true') {
+            console.log(`[${phone}] process-text: running PIPELINE_V2 (Estimator → Pricer → Reviewer)...`);
+            const reviewed = await pipeline.runPipeline(
+                { type: 'text', payload: text },
+                { userPhone: phone, zipCode: user.zipCode }
+            );
+            const result = await persistLedger({
+                projectName:     reviewed.projectName,
+                scope_of_work:   reviewed.scope_of_work,
+                pricedMaterials: reviewed.materials,
+                pricedLabor:     reviewed.labor,
+            }, phone, estimateId);
+
+            status = 'Completed';
+            transcript = `User: ${text}\nAI: [v2] "${result.projectName}" — review ${reviewed.status}, ${reviewed.warnings.length} warning(s).`;
+            return res.json({ success: true, ...result, warnings: reviewed.warnings, review_status: reviewed.status });
+        }
+
+        // ── LEGACY monolithic path (delete after V2 validated in prod) ──────
         console.log(`[${phone}] process-text: extracting items...`);
         const response = await ai.models.generateContent({
             model: 'gemini-3.5-flash',
