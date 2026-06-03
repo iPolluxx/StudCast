@@ -43,6 +43,8 @@ graph TD
 | PDF | Puppeteer (headless Chrome) |
 | Secrets | Google Secret Manager |
 | Build | Google Cloud Build (`cloudbuild.yaml`) |
+| Testing | Jest — 56 unit tests, dependency injection, zero-cost offline suite |
+| CI/CD | GitHub Actions — runs on every push and pull request to `main` |
 
 ---
 
@@ -112,6 +114,78 @@ Returns `{ channel: 'sms' | 'email' | 'log' }` so the frontend renders the corre
 
 ---
 
+## Service Layer Architecture
+
+### Separation of Concerns — `src/lib/`
+
+Business logic that is deterministic and side-effect-free is extracted into a dedicated module layer, completely decoupled from the Express request lifecycle and from any external infrastructure client:
+
+```
+src/lib/
+├── sanitize.js          Pure utility functions — zero I/O, zero side effects
+│   ├── parseGeminiJSON()        Strip markdown fences and parse AI response text
+│   ├── sanitizeItemId()         Produce a Firestore-safe document ID from a material name
+│   ├── normalizePhone()         Normalize to E.164 (+1XXXXXXXXXX), throws 400-tagged Error on invalid input
+│   └── sanitizePhase1Intent()   Deterministic clamping layer for AI-produced framing JSON
+│
+└── pricingEngine.js     Stateful business logic via Dependency Injection
+    └── createPricingEngine({ db, ai })
+        ├── assignUnitPrice(item, zipCode, phone)   3-priority material pricing waterfall
+        └── assignLaborRate(laborItem, phone)       3-priority labor rate resolution
+```
+
+`sanitize.js` has no imports beyond Node built-ins. Every function is a pure transformation — given the same input, it always returns the same output. This makes them unconditionally unit-testable without any test doubles.
+
+### Dependency Injection — `createPricingEngine`
+
+`assignUnitPrice` and `assignLaborRate` have two infrastructure dependencies: the Firestore client (`db`) and the Gemini client (`ai`). Rather than closing over module-level singletons, the pricing module exposes a factory:
+
+```js
+// Production (src/server.js) — live Cloud clients injected after initialization
+const { assignUnitPrice, assignLaborRate } = createPricingEngine({ db, ai });
+
+// Tests (__tests__/pricingEngine.test.js) — mocks injected, no credentials needed
+const { assignUnitPrice, assignLaborRate } = createPricingEngine({ db: mockDb, ai: mockAi });
+```
+
+Neither the Express handlers nor the business logic changes between environments — only the injection point differs. This is the boundary between infrastructure and application logic.
+
+### Jest Test Suite — 56 Tests, $0 API Cost
+
+The full pricing waterfall and every sanitization rule are covered by an offline unit test suite. No cloud credentials are required; no Firestore reads or Gemini calls are made at test time.
+
+```
+__tests__/
+├── sanitize.test.js        35 tests — all branches of the four pure utility functions
+└── pricingEngine.test.js   21 tests — every priority path in assignUnitPrice + assignLaborRate
+```
+
+**Testing strategy highlights:**
+
+- **Call-count assertions on DB mock:** Priority 1 (explicit user price) tests assert `expect(db.get).not.toHaveBeenCalled()` — proving the waterfall short-circuits before touching Firestore, not just that it returns the right number.
+- **Sequential snapshot mocks:** `makeDb(snap1, snap2)` returns each snapshot in call order. For the `labor-general` path, this verifies that the price_book miss triggers a second read for settings — the correct two-read sequence — without coupling tests to implementation internals.
+- **Error path coverage:** Firestore rejection → graceful degradation to the AI-estimate fallback. AI rejection → `rate: 0, total: 0` with no uncaught promise rejection.
+- **Boundary conditions:** `explicit_user_price: 0` is valid (owner-supplied free material); `explicit_user_price: "abc"` is not finite and falls through; `NaN` from `Number(undefined)` correctly blocks the default-labor-rate branch.
+
+```bash
+npm test                    # run the full suite (~1 second)
+npm test -- --verbose       # per-test output with pass/fail for each case
+```
+
+### GitHub Actions CI — `.github/workflows/ci.yml`
+
+Every push and pull request to `main` runs the complete test suite on a clean Ubuntu environment:
+
+```yaml
+on:
+  push:        { branches: [main] }
+  pull_request: { branches: [main] }
+```
+
+The workflow requires no secrets — the suite is entirely offline. A failing test blocks merge at the branch protection level.
+
+---
+
 ## API Surface
 
 | Method | Route | Auth | Description |
@@ -176,7 +250,12 @@ Environment secrets (Gemini API key, Stripe keys, Twilio credentials, Gmail App 
 # Deploy
 gcloud builds submit
 gcloud run deploy lone-ranger-app --region us-central1 --platform managed
+
+# Env-only change (no image rebuild required)
+gcloud run services update lone-ranger-app --region us-central1 --update-env-vars KEY=VALUE
 ```
+
+The GitHub Actions CI pipeline (`.github/workflows/ci.yml`) runs `npm ci && npm test` on every push to `main` and on all pull requests. Tests are fully offline — no credentials, no Cloud Run, no cost. Cloud Build is only invoked for verified, green commits.
 
 ---
 
@@ -194,3 +273,5 @@ gcloud run deploy lone-ranger-app --region us-central1 --platform managed
 | Email OTP fallback | ✅ Live |
 | React dashboard | ✅ Live (migrating from legacy) |
 | Three.js visualizer | ✅ Live — Stack + Build modes |
+| Jest unit test suite | ✅ 56 tests passing — offline, $0 API cost |
+| GitHub Actions CI | ✅ Active — runs on every push and PR to `main` |

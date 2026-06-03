@@ -4,11 +4,13 @@
   "description": "Voice to Estimate Web App using Gemini SDK",
   "main": "src/server.js",
   "scripts": {
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "test": "jest"
   },
   "dependencies": {
     "@google-cloud/firestore": "^8.6.0",
     "@google/genai": "^2.5.0",
+    "cors": "^2.8.6",
     "csv-parser": "^3.2.1",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
@@ -20,5 +22,9 @@
     "puppeteer": "^24.43.1",
     "stripe": "^22.1.1",
     "twilio": "^6.0.2"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "jest": "^30.4.2"
   }
 }

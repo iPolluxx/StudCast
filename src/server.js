@@ -15,6 +15,10 @@ const puppeteer = require('puppeteer');
 const { OAuth2Client } = require('google-auth-library');
 const authClient = new OAuth2Client(process.env.GOOGLE_OAUTH_CLIENT_ID);
 const crypto = require('crypto');
+const cors = require('cors');
+
+const { parseGeminiJSON, sanitizeItemId, normalizePhone, sanitizePhase1Intent } = require('./lib/sanitize');
+const { createPricingEngine } = require('./lib/pricingEngine');
 
 // ── Twilio Client (outbound SMS) ──────────────────────────────────────
 const twilio = require('twilio');
@@ -22,6 +26,7 @@ const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_A
 
 
 const app = express();
+app.use(cors({ origin: 'http://localhost:5174' }));
 const port = process.env.PORT || 8080;   // Cloud Run requires 8080
 
 // ── Firestore client ──────────────────────────────────────────────────
@@ -71,6 +76,9 @@ const csvUpload = multer({
 
 // ── Gemini SDK ────────────────────────────────────────────────────────
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+// ── Pricing engine (db + ai injected so the functions are unit-testable) ─
+const { assignUnitPrice, assignLaborRate } = createPricingEngine({ db, ai });
 
 // ── Google OAuth — serverless-first, file-based fallback ─────────────
 //
@@ -264,51 +272,31 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ══════════════════════════════════════════════════════════════════════
-//  UTILITY: Gemini JSON response sanitiser
-// ══════════════════════════════════════════════════════════════════════
-
-function parseGeminiJSON(rawText) {
-    const clean = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
-    return JSON.parse(clean);
-}
-
-// ══════════════════════════════════════════════════════════════════════
-//  UTILITY: E.164 Phone Normalizer — The Gatekeeper
-//
-//  Rules (in order):
-//   1. Strip all non-digit characters except a leading +.
-//   2. If already +1XXXXXXXXXX (12 chars), keep as-is.
-//   3. If exactly 10 digits (no country code), prepend +1.
-//   4. Anything else → throw a 400-able error.
-// ══════════════════════════════════════════════════════════════════════
-
-function normalizePhone(phoneStr) {
-    if (!phoneStr) throw Object.assign(new Error('Phone number is required.'), { status: 400 });
-
-    const raw = String(phoneStr).trim();
-
-    // Preserve a leading + then strip everything non-numeric
-    const hasPlus  = raw.startsWith('+');
-    const digitsOnly = raw.replace(/\D/g, '');
-
-    let normalized;
-    if (hasPlus && digitsOnly.length === 11 && digitsOnly.startsWith('1')) {
-        // Already a valid +1XXXXXXXXXX
-        normalized = '+' + digitsOnly;
-    } else if (digitsOnly.length === 10) {
-        // Bare 10-digit US number — prepend country code
-        normalized = '+1' + digitsOnly;
-    } else if (digitsOnly.length === 11 && digitsOnly.startsWith('1')) {
-        // 11 digits starting with 1, no explicit + — treat as US
-        normalized = '+' + digitsOnly;
-    } else {
-        throw Object.assign(
-            new Error(`Invalid phone number "${phoneStr}". Expected a 10-digit US number or E.164 format.`),
-            { status: 400 }
-        );
+// ── Log AI Interaction to Firestore ──────────────────────────────────
+async function logInteraction({ source, inputType, processingTimeMs, cost, status, callerId, transcript, llmTokens, error }) {
+    try {
+        const docRef = db.collection('Ai_Interactions').doc();
+        const docData = {
+            id: docRef.id,
+            timestamp: FieldValue.serverTimestamp(),
+            source,
+            inputType,
+            processingTimeMs,
+            cost,
+            status,
+            callerId: callerId || 'anonymous',
+            transcript: transcript || '',
+            llmTokens: llmTokens || 0
+        };
+        if (status === 'Failed' && error) {
+            docData.error = error;
+        }
+        await docRef.set(docData);
+        console.log(`[metrics] Logged interaction ${docRef.id} successfully.`);
+        return docRef.id;
+    } catch (err) {
+        console.error('[metrics] Failed to log interaction:', err.message);
     }
-    return normalized;
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -542,163 +530,6 @@ async function requireSubscription(req, res, next) {
 //  waterproofing | framing | excavation
 // ══════════════════════════════════════════════════════════════════════
 
-// ── Shared sanitizer for price_book document IDs ──────────────────────
-function sanitizeItemId(name) {
-    return (name || '').replace(/[^a-zA-Z0-9]/g, '_').toLowerCase().substring(0, 100);
-}
-
-/**
- * Assigns a market unit_price to a material item.
- *
- * Lookup order:
- *   1. Firestore price_book (exact sanitized ID match)
- *   2. item.estimated_unit_cost  — the AI's conservative Wisconsin retail estimate
- *      (embedded in the item by EXTRACTION_PROMPT; used as fallback / until a
- *      human-approved price overwrites the price_book entry)
- *
- * The function mutates the item in place AND returns it for convenience.
- *
- * @param {{ name: string, quantity: number, unit: string, trade: string, estimated_unit_cost: number }} item
- * @returns {Promise<object>} The same item with unit_price and total attached.
- */
-/**
- * Assigns a unit_price to a material item using a strict 3-priority waterfall.
- *
- * Priority 1 — Explicit user-dictated price (hallucination-safe):
- *   If item.explicit_user_price is a valid finite number (never null/undefined),
- *   use it immediately — skip all database reads entirely.
- *
- * Priority 2 — Per-user private price_book subcollection:
- *   Reads from users/{userPhone}/price_book/{sanitizedId}.
- *   Only the approving user's past estimates can seed this; other tenants
- *   cannot influence each other's pricing.
- *
- * Priority 3 — AI-estimated fallback:
- *   Falls back to item.estimated_unit_cost embedded by the extraction prompt.
- *
- * @param {object} item         — material item with name, quantity, estimated_unit_cost, explicit_user_price
- * @param {string} userZipCode  — user's zip code (reserved for future regional pricing)
- * @param {string} userPhone    — normalized E.164 phone; scopes the price_book subcollection
- */
-async function assignUnitPrice(item, userZipCode, userPhone) {
-    const itemId = sanitizeItemId(item.name);
-
-    // ── Priority 1: Explicit user-dictated price ──────────────────────
-    if (item.explicit_user_price !== null && item.explicit_user_price !== undefined
-            && Number.isFinite(Number(item.explicit_user_price))) {
-        item.unit_price  = Number(item.explicit_user_price);
-        item.price_source = 'override';
-        console.log(`[pricing] EXPLICIT "${item.name}" → $${item.unit_price} (user-dictated, skipping DB)`);
-        item.total = Math.round((item.quantity || 0) * item.unit_price * 100) / 100;
-        return item;
-    }
-
-    // ── Priority 2: Per-user private price_book subcollection ─────────
-    try {
-        const snap = await db
-            .collection('users').doc(userPhone)
-            .collection('price_book').doc(itemId)
-            .get();
-        if (snap.exists) {
-            item.unit_price  = Number(snap.data().price) || 0;
-            item.price_source = 'database';
-            console.log(`[price_book] HIT  [${userPhone}] "${item.name}" → $${item.unit_price}`);
-            item.total = Math.round((item.quantity || 0) * item.unit_price * 100) / 100;
-            return item;
-        }
-        console.log(`[price_book] MISS [${userPhone}] "${item.name}" — falling back to next priority`);
-    } catch (err) {
-        console.error(`[price_book] Firestore error for "${item.name}":`, err.message);
-    }
-
-    // ── Priority 2.5: default_labor_rate configuration ─────────────────
-    if (item.trade === 'labor-general' || item.type === 'labor') {
-        let defaultLaborRate = 55;
-        try {
-            const configSnap = await db.collection('users').doc(userPhone).collection('settings').doc('config').get();
-            if (configSnap.exists) {
-                defaultLaborRate = Number(configSnap.data().default_labor_rate) || 55;
-            }
-        } catch (err) {
-            console.error(`[pricing] Failed to load settings for default labor rate:`, err.message);
-        }
-        item.unit_price = defaultLaborRate;
-        item.price_source = 'database';
-        console.log(`[pricing] DEFAULT LABOR RATE HIT [${userPhone}] "${item.name}" → $${item.unit_price}/hr`);
-        item.total = Math.round((item.quantity || 0) * item.unit_price * 100) / 100;
-        return item;
-    }
-
-    // ── Priority 3: AI-estimated fallback ────────────────────────────
-    item.unit_price  = Number(item.estimated_unit_cost) || 0;
-    item.price_source = 'ai';
-    console.log(`[price_book] AI   [${userPhone}] "${item.name}" → $${item.unit_price}`);
-    item.total = Math.round((item.quantity || 0) * item.unit_price * 100) / 100;
-    return item;
-}
-
-/**
- * Assigns a market hourly rate and calculated total to a labor item.
- * Uses Gemini AI estimation.
- *
- * NEXT SPRINT — replace the body of this function with the appropriate fetch() call.
- *
- * @param {{ role: string, hours: number }} laborItem
- * @returns {Promise<{ role, hours, rate, total }>}
- */
-async function assignLaborRate(laborItem, userPhone) {
-    if (laborItem.explicit_user_price !== null && laborItem.explicit_user_price !== undefined
-            && Number.isFinite(Number(laborItem.explicit_user_price))) {
-        const rate = Number(laborItem.explicit_user_price);
-        console.log(`[pricing] EXPLICIT LABOR "${laborItem.role}" → $${rate}/hr (user-dictated, skipping AI)`);
-        return {
-            ...laborItem,
-            rate,
-            total: Math.round(laborItem.hours * rate * 100) / 100,
-        };
-    }
-
-    // Try default labor rate from settings
-    let defaultLaborRate = null;
-    if (userPhone) {
-        try {
-            const configSnap = await db.collection('users').doc(userPhone).collection('settings').doc('config').get();
-            if (configSnap.exists) {
-                defaultLaborRate = Number(configSnap.data().default_labor_rate);
-            }
-        } catch (_) {}
-    }
-
-    if (defaultLaborRate !== null && defaultLaborRate !== undefined && !isNaN(defaultLaborRate)) {
-        console.log(`[pricing] DEFAULT LABOR RATE HIT [${userPhone}] "${laborItem.role}" → $${defaultLaborRate}/hr`);
-        return {
-            ...laborItem,
-            rate: defaultLaborRate,
-            total: Math.round(laborItem.hours * defaultLaborRate * 100) / 100,
-        };
-    }
-
-    const prompt =
-        `You are a US construction cost estimator. What is the standard market hourly rate (USD) for a "${laborItem.role}"? ` +
-        `Output ONLY valid JSON with no markdown: { "rate": 0.00 }`;
-    try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-3.5-flash',
-            contents: { role: 'user', parts: [{ text: prompt }] },
-        });
-        const parsed = parseGeminiJSON(response.text);
-        const rate   = Number(parsed.rate) || 0;
-        return {
-            ...laborItem,
-            rate,
-            total: Math.round(laborItem.hours * rate * 100) / 100,
-        };
-    } catch (err) {
-        console.error(`assignLaborRate: failed for "${laborItem.role}", defaulting to $0:`, err.message);
-        return { ...laborItem, rate: 0, total: 0 };
-    }
-}
-
 // ══════════════════════════════════════════════════════════════════════
 //  MERGE ENGINE
 // ══════════════════════════════════════════════════════════════════════
@@ -914,6 +745,12 @@ app.post('/api/webhook', async (req, res) => {
     }
 
     const { user } = auth;
+    const startTime = Date.now();
+    let status = 'Failed';
+    let errorMsg = null;
+    let llmTokens = 0;
+    let cost = 0;
+    let transcript = `User: ${text}`;
 
     try {
         console.log(`Twilio Webhook: extracting items from text sent by ${from} (${user.companyName})...`);
@@ -921,18 +758,46 @@ app.post('/api/webhook', async (req, res) => {
             model: 'gemini-3.5-flash',
             contents: { role: 'user', parts: [{ text: text + '\n\n' + EXTRACTION_PROMPT }] },
         });
+        const usage = response.usageMetadata || {};
+        const promptTokens = usage.promptTokenCount || 0;
+        const outputTokens = usage.candidatesTokenCount || 0;
+        llmTokens = usage.totalTokenCount || (promptTokens + outputTokens);
+        cost = (promptTokens * 1.50 + outputTokens * 9.00) / 1000000;
+
         const extracted = parseGeminiJSON(response.text);
         const result    = await mergeIntoLedger(extracted, from, user.zipCode);
 
+        status = 'Completed';
+        const responseMsg = `Added ${result.itemCount} item(s) to "${result.projectName}". Ledger updated.`;
+        transcript = `User: ${text}\nAI: ${responseMsg}`;
+
         const twiml = new MessagingResponse();
-        twiml.message(`Added ${result.itemCount} item(s) to "${result.projectName}". Ledger updated.`);
+        twiml.message(responseMsg);
         res.type('text/xml').send(twiml.toString());
 
     } catch (err) {
         console.error('Webhook error:', err);
+        status = 'Failed';
+        errorMsg = err.message || 'Unknown error';
+        const responseMsg = "Sorry, I didn't catch any materials in that message. Please try again.";
+        transcript = `User: ${text}\nAI: ${responseMsg}\nError: ${errorMsg}`;
+
         const twiml = new MessagingResponse();
-        twiml.message("Sorry, I didn't catch any materials in that message. Please try again.");
+        twiml.message(responseMsg);
         res.type('text/xml').send(twiml.toString());
+    } finally {
+        const processingTimeMs = Date.now() - startTime;
+        logInteraction({
+            source: 'twilio-webhook',
+            inputType: 'text',
+            processingTimeMs,
+            cost,
+            status,
+            callerId: from,
+            transcript,
+            llmTokens,
+            error: errorMsg || undefined
+        }).catch(logErr => console.error('Failed to log Twilio webhook interaction:', logErr));
     }
 });
 
@@ -952,6 +817,12 @@ app.post('/api/process-text', requireAuth, requireSubscription, async (req, res)
     }
 
     const user = req.authedUser;
+    const startTime = Date.now();
+    let status = 'Failed';
+    let errorMsg = null;
+    let llmTokens = 0;
+    let cost = 0;
+    let transcript = `User: ${text}`;
 
     try {
         console.log(`[${phone}] process-text: extracting items...`);
@@ -959,12 +830,39 @@ app.post('/api/process-text', requireAuth, requireSubscription, async (req, res)
             model: 'gemini-3.5-flash',
             contents: { role: 'user', parts: [{ text: text + '\n\n' + EXTRACTION_PROMPT }] },
         });
+        const usage = response.usageMetadata || {};
+        const promptTokens = usage.promptTokenCount || 0;
+        const outputTokens = usage.candidatesTokenCount || 0;
+        llmTokens = usage.totalTokenCount || (promptTokens + outputTokens);
+        cost = (promptTokens * 1.50 + outputTokens * 9.00) / 1000000;
+
         const extracted = parseGeminiJSON(response.text);
         const result    = await mergeIntoLedger(extracted, phone, user.zipCode, estimateId);
+
+        status = 'Completed';
+        const responseMsg = `Successfully parsed estimate for "${result.projectName}" with ${result.itemCount} items.`;
+        transcript = `User: ${text}\nAI: ${responseMsg}`;
+
         res.json({ success: true, ...result });
     } catch (err) {
         console.error('process-text error:', err);
-        res.status(500).json({ error: err.message || 'Failed to process text' });
+        status = 'Failed';
+        errorMsg = err.message || 'Failed to process text';
+        transcript = `User: ${text}\nAI: Error: ${errorMsg}`;
+        res.status(500).json({ error: errorMsg });
+    } finally {
+        const processingTimeMs = Date.now() - startTime;
+        logInteraction({
+            source: 'web-ui-text',
+            inputType: 'text',
+            processingTimeMs,
+            cost,
+            status,
+            callerId: phone,
+            transcript,
+            llmTokens,
+            error: errorMsg || undefined
+        }).catch(logErr => console.error('Failed to log process-text interaction:', logErr));
     }
 });
 
@@ -983,6 +881,13 @@ app.post('/api/process', upload.single('audio'), requireAuth, requireSubscriptio
     const user = req.authedUser;
     const audioFilePath = req.file.path;
     let geminiFile = null;
+
+    const startTime = Date.now();
+    let status = 'Failed';
+    let errorMsg = null;
+    let llmTokens = 0;
+    let cost = 0;
+    let transcript = `User: (Audio Input)`;
 
     try {
         console.log(`[${phone}] process (audio): uploading to Gemini File API...`);
@@ -1003,19 +908,46 @@ app.post('/api/process', upload.single('audio'), requireAuth, requireSubscriptio
             },
         });
 
+        const usage = response.usageMetadata || {};
+        const promptTokens = usage.promptTokenCount || 0;
+        const outputTokens = usage.candidatesTokenCount || 0;
+        llmTokens = usage.totalTokenCount || (promptTokens + outputTokens);
+        cost = (promptTokens * 1.50 + outputTokens * 9.00) / 1000000;
+
         const extracted = parseGeminiJSON(response.text);
         const estimateId = req.body.estimateId || null;
         const result    = await mergeIntoLedger(extracted, phone, user.zipCode, estimateId);
+
+        status = 'Completed';
+        const responseMsg = `Successfully parsed estimate for "${result.projectName}" with ${result.itemCount} items.`;
+        transcript = `User: (Audio Input - ${extracted.scope_of_work || 'Estimating materials/labor'})\nAI: ${responseMsg}`;
+
         res.json({ success: true, ...result });
 
     } catch (err) {
         console.error('process (audio) error:', err);
-        res.status(500).json({ error: err.message || 'Failed to process audio' });
+        status = 'Failed';
+        errorMsg = err.message || 'Failed to process audio';
+        transcript = `User: (Audio Input)\nAI: Error: ${errorMsg}`;
+        res.status(500).json({ error: errorMsg });
     } finally {
         if (fs.existsSync(audioFilePath)) fs.unlinkSync(audioFilePath);
         if (geminiFile?.name) {
             try { await ai.files.delete({ name: geminiFile.name }); } catch (_) { /* swallow */ }
         }
+
+        const processingTimeMs = Date.now() - startTime;
+        logInteraction({
+            source: 'web-ui-voice',
+            inputType: 'voice',
+            processingTimeMs,
+            cost,
+            status,
+            callerId: phone,
+            transcript,
+            llmTokens,
+            error: errorMsg || undefined
+        }).catch(logErr => console.error('Failed to log process audio interaction:', logErr));
     }
 });
 
@@ -2803,57 +2735,6 @@ app.post('/api/change-orders/approve', async (req, res) => {
 //  Schema v1.0  (wall_frame only — Phase 1 MVP)
 // ══════════════════════════════════════════════════════════════════════
 
-// ── Phase 1 Intent Sanitizer ──────────────────────────────────────────
-//
-//  Reconstructs the full Phase 1 object from scratch using deterministic
-//  fallbacks. This is the hard guarantee the Unity C# Builder relies on —
-//  Gemini may return null/undefined/wrong-type values despite prompt defaults.
-//  Pattern mirrors assignUnitPrice(): AI provides the estimate, Express is
-//  the final gate before the value leaves the server.
-function sanitizePhase1Intent(raw) {
-    const dim = raw.dimensions || {};
-    const str = raw.structural  || {};
-    const fea = raw.features    || {};
-
-    // studSpacingInches must be exactly 16 or 24 — snap anything else to 16
-    const rawSpacing  = Number(str.studSpacingInches);
-    const studSpacing = rawSpacing === 24 ? 24 : 16;
-
-    // wallType must be exactly "interior" or "exterior" — anything else defaults to "exterior"
-    const wallType = str.wallType === 'interior' ? 'interior' : 'exterior';
-
-    return {
-        schemaVersion: '1.0',        // always hard-pin — never trust AI on versioning
-        projectType:   'wall_frame', // Phase 1 only — always hard-pin
-        dimensions: {
-            lengthFt: Number.isFinite(Number(dim.lengthFt)) && Number(dim.lengthFt) > 0
-                ? Math.round(Number(dim.lengthFt) * 10) / 10
-                : 20,
-            heightFt: Number.isFinite(Number(dim.heightFt)) && Number(dim.heightFt) > 0
-                ? Math.round(Number(dim.heightFt) * 10) / 10
-                : 9,
-        },
-        structural: {
-            studSpacingInches: studSpacing,
-            treatedSolePlate:  typeof str.treatedSolePlate === 'boolean'
-                ? str.treatedSolePlate
-                : false,
-            wallType,
-        },
-        features: {
-            doorOpenings:  Number.isInteger(Number(fea.doorOpenings))  && Number(fea.doorOpenings)  >= 0
-                ? Math.floor(Number(fea.doorOpenings))
-                : 0,
-            windowOpenings: Number.isInteger(Number(fea.windowOpenings)) && Number(fea.windowOpenings) >= 0
-                ? Math.floor(Number(fea.windowOpenings))
-                : 0,
-            cornerCount:   Number.isInteger(Number(fea.cornerCount))   && Number(fea.cornerCount)   >= 0
-                ? Math.floor(Number(fea.cornerCount))
-                : 4,
-        },
-    };
-}
-
 const VOICE_TO_JSON_SYSTEM_PROMPT =
     `You are a Construction Intent Translator for the Lone Ranger Estimator's 3D framing engine. ` +
     `Your ONLY job is to convert a contractor's spoken transcript into a precise JSON command packet. ` +
@@ -2931,6 +2812,165 @@ app.post('/api/estimate/voice-to-json', requireAuth, async (req, res) => {
     } catch (err) {
         console.error(`[${userPhone}] voice-to-json error:`, err.message);
         res.status(500).json({ error: err.message || 'Failed to translate transcript.' });
+    }
+});
+
+// ── GET /api/interactions/stream ──────────────────────────────────────
+app.get('/api/interactions/stream', (req, res) => {
+    res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive'
+    });
+    res.flushHeaders();
+
+    const unsubscribe = db.collection('Ai_Interactions')
+        .orderBy('timestamp', 'desc')
+        .limit(50)
+        .onSnapshot(snapshot => {
+            console.log(`[SSE] Snapshot triggered. Docs count: ${snapshot.size}`);
+            const interactions = [];
+            snapshot.forEach(doc => {
+                const data = doc.data();
+                const dateStr = data.timestamp && typeof data.timestamp.toDate === 'function' 
+                    ? data.timestamp.toDate().toISOString() 
+                    : new Date().toISOString();
+                
+                interactions.push({
+                    id: doc.id,
+                    date: dateStr,
+                    timestamp: data.timestamp,
+                    source: data.source,
+                    inputType: data.inputType,
+                    processingTimeMs: data.processingTimeMs,
+                    latencyMs: data.processingTimeMs,
+                    durationSeconds: data.processingTimeMs ? Math.round(data.processingTimeMs / 1000) : 0,
+                    cost: data.cost,
+                    status: data.status,
+                    callerId: data.callerId,
+                    transcript: data.transcript,
+                    llmTokens: data.llmTokens,
+                    error: data.error
+                });
+            });
+
+            res.write(`data: ${JSON.stringify(interactions)}\n\n`);
+        }, error => {
+            console.error('[SSE] onSnapshot error:', error);
+        });
+
+    req.on('close', () => {
+        unsubscribe();
+        console.log('[SSE] Client disconnected, unsubscribed.');
+    });
+});
+
+// ── GET /api/interactions ─────────────────────────────────────────────
+app.get('/api/interactions', async (req, res) => {
+    try {
+        const snap = await db.collection('Ai_Interactions')
+            .orderBy('timestamp', 'desc')
+            .limit(50)
+            .get();
+
+        const interactions = [];
+        snap.forEach(doc => {
+            const data = doc.data();
+            const dateStr = data.timestamp ? data.timestamp.toDate().toISOString() : new Date().toISOString();
+            
+            interactions.push({
+                id: doc.id,
+                date: dateStr,
+                timestamp: data.timestamp,
+                source: data.source,
+                inputType: data.inputType,
+                processingTimeMs: data.processingTimeMs,
+                latencyMs: data.processingTimeMs,
+                durationSeconds: data.processingTimeMs ? Math.round(data.processingTimeMs / 1000) : 0,
+                cost: data.cost,
+                status: data.status,
+                callerId: data.callerId,
+                transcript: data.transcript,
+                llmTokens: data.llmTokens,
+                error: data.error
+            });
+        });
+
+        res.json(interactions);
+    } catch (err) {
+        console.error('GET /api/interactions error:', err);
+        res.status(500).json({ error: err.message || 'Failed to fetch interactions.' });
+    }
+});
+
+// ── GET /api/metrics ──────────────────────────────────────────────────
+app.get('/api/metrics', async (req, res) => {
+    try {
+        const allSnap = await db.collection('Ai_Interactions').get();
+        const totalCalls = allSnap.size;
+        
+        let totalLatency = 0;
+        let successCount = 0;
+        let totalLlmCostUsd = 0;
+        
+        allSnap.forEach(doc => {
+            const data = doc.data();
+            if (data.status === 'Completed' && data.processingTimeMs) {
+                totalLatency += data.processingTimeMs;
+                successCount++;
+            }
+            if (data.cost) {
+                totalLlmCostUsd += data.cost;
+            }
+        });
+        
+        const averageLatencyMs = successCount > 0 ? Math.round(totalLatency / successCount) : 0;
+        const roundedCost = Math.round(totalLlmCostUsd * 10000) / 10000;
+        
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const formatShortDate = (d) => `${months[d.getMonth()]} ${String(d.getDate()).padStart(2, '0')}`;
+        
+        const activityMap = new Map();
+        const activityList = [];
+        for (let i = 6; i >= 0; i--) {
+            const d = new Date();
+            d.setDate(d.getDate() - i);
+            const dateStr = formatShortDate(d);
+            activityMap.set(dateStr, 0);
+            activityList.push(dateStr);
+        }
+        
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        sevenDaysAgo.setHours(0, 0, 0, 0);
+        
+        allSnap.forEach(doc => {
+            const data = doc.data();
+            if (data.timestamp) {
+                const dateObj = data.timestamp.toDate();
+                if (dateObj >= sevenDaysAgo) {
+                    const dateStr = formatShortDate(dateObj);
+                    if (activityMap.has(dateStr)) {
+                        activityMap.set(dateStr, activityMap.get(dateStr) + 1);
+                    }
+                }
+            }
+        });
+        
+        const activity = activityList.map(date => ({
+            date,
+            calls: activityMap.get(date)
+        }));
+        
+        res.json({
+            totalCalls,
+            averageLatencyMs,
+            totalLlmCostUsd: roundedCost,
+            activity
+        });
+    } catch (err) {
+        console.error('GET /api/metrics error:', err);
+        res.status(500).json({ error: err.message || 'Failed to fetch metrics.' });
     }
 });
 

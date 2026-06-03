@@ -1,7 +1,7 @@
 # Lone Ranger Estimator — Live Project Context
 > **Purpose:** This document is the handoff bridge between Gemini brainstorming sessions and Claude Code
 > implementation sessions. Update it after every meaningful work session.
-> **Last updated:** 2026-06-01 — Twilio SMS wired + SMS_LIVE gate, Stripe prod fix, SMS opt-in preview page, deployed rev 00044
+> **Last updated:** 2026-06-02 — Service layer extraction (`src/lib/`), Jest test suite (56 tests), GitHub Actions CI pipeline
 
 ---
 
@@ -31,6 +31,7 @@ Two fully separate layers. Unity WebGL was abandoned 2026-05-31 in favor of nati
 - Calls Gemini to interpret contractor intent
 - Emits deterministic JSON command packets
 - Handles all business logic, auth, Stripe, PDF, Firestore
+- **Service layer (`src/lib/`):** deterministic utilities and pricing logic are extracted into a dedicated module layer; `server.js` requires from there rather than defining inline. See below.
 
 ### Deterministic Builder (live — `public/dashboard.html` VizController)
 - Three.js running in the browser — no compilation, no VM needed
@@ -113,6 +114,26 @@ Priority order inside `assignUnitPrice()` (never short-circuits without reason):
 3. **AI estimate fallback** — `item.estimated_unit_cost` embedded by Gemini in the extraction prompt
 
 Labor uses the same 3-tier logic via `assignLaborRate()`, with `default_labor_rate` from settings as tier 2.
+
+**Implementation note:** Both functions live in `src/lib/pricingEngine.js` and are exposed via a factory:
+`createPricingEngine({ db, ai })` — `db` is the Firestore client, `ai` is the Gemini client. In production, the live clients from `server.js` are injected after initialization. In tests, mock objects are injected instead. This is the dependency injection boundary that allows the entire waterfall to be covered by offline unit tests with no cloud credentials.
+
+## Service Layer (`src/lib/`)
+
+Two modules extracted from `server.js` to make business logic independently testable:
+
+| File | Contents | External deps |
+|---|---|---|
+| `src/lib/sanitize.js` | `parseGeminiJSON`, `sanitizeItemId`, `normalizePhone`, `sanitizePhase1Intent` | None — pure functions |
+| `src/lib/pricingEngine.js` | `createPricingEngine({ db, ai })` factory → `assignUnitPrice`, `assignLaborRate` | `db` and `ai` injected via DI |
+
+`server.js` requires from these modules and provides its live clients at startup:
+```js
+const { parseGeminiJSON, sanitizeItemId, normalizePhone, sanitizePhase1Intent } = require('./lib/sanitize');
+const { createPricingEngine } = require('./lib/pricingEngine');
+// ... after db and ai are initialized ...
+const { assignUnitPrice, assignLaborRate } = createPricingEngine({ db, ai });
+```
 
 ---
 
@@ -249,6 +270,69 @@ From `ui/dist/` (built by Dockerfile):
 ---
 
 ## Work Session Log
+
+### Session: 2026-06-02 — Service Layer Extraction, Jest Test Suite, GitHub Actions CI
+
+**Gemini:** Strategic review — identified zero tests as the primary gap for employer signal; directed path toward AI orchestration + XR niche.
+**Claude:** Extracted service modules, wired DI, wrote 56-test offline suite, added CI pipeline.
+
+#### 1. Service layer extraction — `src/lib/`
+
+Four pure utility functions moved from `server.js` to `src/lib/sanitize.js`:
+- `parseGeminiJSON` — strips Gemini markdown fences, returns parsed object
+- `sanitizeItemId` — Firestore-safe document ID from a material name
+- `normalizePhone` — E.164 normalization with 400-tagged error for invalid input
+- `sanitizePhase1Intent` — deterministic clamping layer for AI-produced framing JSON
+
+`assignUnitPrice` and `assignLaborRate` moved to `src/lib/pricingEngine.js` as a DI factory. Both previously closed over module-level `db` and `ai` singletons, making them impossible to test without live cloud clients.
+
+`server.js` now requires from both modules and injects its live Firestore + Gemini instances at startup. Zero behavior change — pure refactor.
+
+#### 2. Jest test suite — `__tests__/`
+
+**`__tests__/sanitize.test.js`** (35 tests) — exercises every branch in the four pure functions:
+- `parseGeminiJSON`: clean JSON, fenced JSON, whitespace, invalid input → `SyntaxError`
+- `sanitizeItemId`: casing, special chars, null, truncation at 100 chars
+- `normalizePhone`: 10-digit bare, formatted, E.164 passthrough, 11-digit no-plus, null/undefined throws with `status: 400`
+- `sanitizePhase1Intent`: hard-pin of `schemaVersion`/`projectType`, all defaults on empty input, stud spacing snap, case-sensitive wallType validation, boolean-only treatedSolePlate, positive-only dimensions, integer-only feature counts, 1-decimal rounding
+
+**`__tests__/pricingEngine.test.js`** (21 tests) — verifies every priority path:
+- `assignUnitPrice`: Priority 1 explicit price (including 0, string coercion, non-numeric fallthrough); Priority 2 DB hit; Priority 3 AI fallback; Priority 2.5 labor-general with settings; $55/hr hardcoded default when settings doc missing; Firestore rejection → graceful fallback; total rounding; quantity=0 edge case
+- `assignLaborRate`: Priority 1 explicit (including 0); Priority 2 settings hit (AI not called); Priority 3 AI fallback; AI failure → `rate:0`; null `userPhone` skips DB; total rounding; markdown-fenced AI response; field spread preservation
+
+All 56 tests run offline in ~1 second. Zero API calls. Zero cloud credentials required.
+
+#### 3. GitHub Actions CI — `.github/workflows/ci.yml`
+
+Triggers on `push` and `pull_request` to `main`. Steps: `actions/checkout@v4` → `actions/setup-node@v4` (Node 20, npm cache) → `npm ci` → `npm test`. No secrets required. A failing test blocks the merge.
+
+#### 4. Documentation
+
+`README.md` updated with:
+- New tech stack rows for Jest and GitHub Actions
+- New "Service Layer Architecture" section (separation of concerns, DI pattern, test strategy, CI workflow YAML)
+- Deployment section updated to link CI to Cloud Build
+- Production Status table updated with test suite and CI rows
+
+#### Files created
+```
+src/lib/sanitize.js
+src/lib/pricingEngine.js
+__tests__/sanitize.test.js
+__tests__/pricingEngine.test.js
+jest.config.js
+.github/workflows/ci.yml
+```
+
+#### Files modified
+```
+package.json           — added "test": "jest" script, jest + @types/jest devDependencies
+src/server.js          — removed 6 inline function definitions; requires from src/lib/
+README.md              — service layer section, updated tables
+docs/GEMINI_HANDOFF.md — this entry
+```
+
+---
 
 ### Session: 2026-06-01 (3) — Twilio SMS, Stripe Prod Fix, A2P Campaign Support
 
@@ -786,6 +870,9 @@ All Unity development happens on a dedicated GCP cloud workstation.
 
 ## Open Items / Next Steps
 
+- [x] ~~**Jest test suite**~~ — 56 tests across `sanitize.js` and `pricingEngine.js`; offline, $0 API cost, 1s runtime
+- [x] ~~**GitHub Actions CI**~~ — `.github/workflows/ci.yml` runs on every push + PR to `main`; no secrets required
+- [x] ~~**Service layer extraction**~~ — `src/lib/sanitize.js` (pure functions) + `src/lib/pricingEngine.js` (DI factory); `server.js` now requires from lib
 - [x] ~~**Deterministic 3D Builder**~~ — Three.js Build Layer live; wall framing with doors + windows renders from voice input
 - [x] ~~**Phase 1 Schema**~~ — `windowOpenings`, `cornerCount`, `wallType`, `doorOpenings` all wired end-to-end
 - [x] ~~**Security audit**~~ — 6 vulnerabilities patched (XSS, PII exposure, weak randomness)
