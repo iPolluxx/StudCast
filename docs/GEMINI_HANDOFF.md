@@ -1,7 +1,7 @@
 # Lone Ranger Estimator — Live Project Context
 > **Purpose:** This document is the handoff bridge between Gemini brainstorming sessions and Claude Code
 > implementation sessions. Update it after every meaningful work session.
-> **Last updated:** 2026-06-02 — Service layer extraction (`src/lib/`), Jest test suite (56 tests), GitHub Actions CI pipeline
+> **Last updated:** 2026-06-03 — Sprint 2: deterministic 3-stage pipeline (Estimator → Pricer → Reviewer), flag-gated behind `PIPELINE_V2`
 
 ---
 
@@ -45,6 +45,36 @@ Two fully separate layers. Unity WebGL was abandoned 2026-05-31 in favor of nati
 **The key rule:** The Supervisor thinks. The Builder builds. They never swap roles.
 
 **Unity status:** The `unity/` folder and C# scripts remain in the repo but are not part of the web product. GCP VM (`lone-ranger-unity-desktop`) is stopped and only needed if Unity standalone work resumes.
+
+---
+
+## Sprint 2: Deterministic 3-Stage Pipeline (`PIPELINE_V2`)
+
+The monolithic "one big Gemini extract-and-price call" is being replaced by a deterministic pipeline that
+quarantines non-determinism to exactly **two auditable LLM boundaries**, with pure math in the middle.
+
+| Stage | Module | Type | Responsibility |
+|-------|--------|------|----------------|
+| 1. Estimator | `src/lib/estimator.js` | LLM (`gemini-3.5-flash`) | Raw input → price-free scope JSON. **Input-source-agnostic** (`{ type: 'text'\|'voice'\|'image', payload }`) so the Sprint 3 blueprint-vision pivot is a ~20-line swap. |
+| 2. Pricer | `src/lib/pricer.js` | Deterministic | Runs scope through existing `createPricingEngine`. Issues **zero LLM calls of its own**. |
+| 3. Reviewer | `src/lib/reviewer.js` | LLM (`gemini-3.5-flash`, temp 0) | Non-destructive QA pass. Returns `{ ledger, warnings[], status }` — never mutates priced numbers. |
+| — | `src/lib/pipeline.js` | Orchestrator | `createPipeline({db, ai}).runPipeline(input, ctx)` chains 1→2→3 in memory (no persistence). |
+
+**Cost-protection caveat (be precise):** Stage 2 issues no AI call itself, but the underlying engine's
+`assignLaborRate` Priority 3 has a *latent* AI fallback that fires only when a labor item has neither an
+explicit rate nor a configured `default_labor_rate`. With a default rate set, the stage is fully offline.
+
+**Rollout:** Gated behind the `PIPELINE_V2` env flag. `POST /api/process-text` has a single fork:
+`PIPELINE_V2 === 'true'` → pipeline; else the legacy monolith (fenced with a
+`// LEGACY: delete after V2 validated in prod` marker). Both paths share the new `persistLedger()` helper
+(extracted from `mergeIntoLedger`) so item pricing never runs twice.
+**Removal trigger:** once V2 runs clean in prod, delete the legacy branch + `mergeIntoLedger`.
+
+**Tests:** `__tests__/pipeline.test.js` — fully offline ($0 API), mocks Gemini + Firestore. Asserts the
+end-to-end flow and that the Pricer makes zero AI calls when a default labor rate is present.
+
+**Enable locally:** `PIPELINE_V2=true npm start`. **Enable in prod:**
+`gcloud run services update lone-ranger-app --region us-central1 --update-env-vars PIPELINE_V2=true`.
 
 ---
 
