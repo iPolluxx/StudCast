@@ -162,6 +162,15 @@ export default function App() {
   const [orbState, setOrbState] = useState<'center' | 'rolling' | 'landed'>('center');
   const prevVizSize = useRef<'mini' | 'medium' | 'full'>('mini');
 
+  // AR state — lifted from ThreeVisualizer via callbacks
+  const [arToggle, setArToggle] = useState<(() => void) | null>(null);
+  const [isARActive, setIsARActive] = useState(false);
+
+  // Draggable mini PIP
+  const pipRef = useRef<HTMLDivElement>(null);
+  const [pipPos, setPipPos] = useState<{ x: number; y: number } | null>(null);
+  const pipDragRef = useRef<{ startPX: number; startPY: number; startX: number; startY: number } | null>(null);
+
   // Floating instruments panels
   const [activeInstrument, setActiveInstrument] = useState<"sliders" | "pricing" | "change" | "layers" | null>(null);
   
@@ -284,13 +293,18 @@ export default function App() {
     else if (!isRecording) setActiveStage(3);
   }, [aiProcessing]);
 
-  // Barrel roll animation when transitioning into theater (medium) mode
+  // Barrel roll animation when transitioning into theater (medium) mode — desktop only
   useEffect(() => {
+    if (vizSize !== 'mini') setPipPos(null);
+
     if (vizSize === 'medium' && prevVizSize.current !== 'medium') {
-      setOrbState('rolling');
-      const t = setTimeout(() => setOrbState('landed'), 1580);
-      prevVizSize.current = vizSize;
-      return () => clearTimeout(t);
+      if (window.innerWidth >= 1024) {
+        setOrbState('rolling');
+        const t = setTimeout(() => setOrbState('landed'), 1580);
+        prevVizSize.current = vizSize;
+        return () => clearTimeout(t);
+      }
+      // Mobile: stay centered so the orb never disappears
     }
     if (vizSize !== 'medium') {
       setOrbState('center');
@@ -408,6 +422,27 @@ export default function App() {
     setActiveEstimateId(nextId);
     setProjectDropdownOpen(false);
   };
+
+  // ── Draggable mini PIP handlers ──
+  const handlePipPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).closest('button')) return;
+    const pip = pipRef.current;
+    if (!pip) return;
+    const rect = pip.getBoundingClientRect();
+    pipDragRef.current = { startPX: e.clientX, startPY: e.clientY, startX: rect.left, startY: rect.top };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const handlePipPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!pipDragRef.current) return;
+    const { startPX, startPY, startX, startY } = pipDragRef.current;
+    const pip = pipRef.current!;
+    const newX = Math.max(4, Math.min(window.innerWidth - pip.offsetWidth - 4, startX + e.clientX - startPX));
+    const newY = Math.max(56, Math.min(window.innerHeight - pip.offsetHeight - 4, startY + e.clientY - startPY));
+    setPipPos({ x: newX, y: newY });
+  };
+
+  const handlePipPointerUp = () => { pipDragRef.current = null; };
 
   // Trigger AI extraction — server merges into Firestore, we reload the estimate
   const handleProcessNLP = async (textToParse: string) => {
@@ -738,70 +773,116 @@ export default function App() {
 
       </header>
 
-      {/* ── 2. VISUALIZER FRAME — three-state: mini PIP, medium banner, full ── */}
+      {/* ── 2. VISUALIZER FRAME — three-state: mini PIP (draggable), medium banner, full ── */}
       <div
+        ref={pipRef}
         className={
           vizSize === 'mini'
-            ? 'fixed top-14 right-2 w-[150px] h-[100px] sm:top-16 sm:right-4 sm:w-[240px] sm:h-[160px] rounded-2xl overflow-hidden z-30 shadow-2xl border border-white/15 bg-[#050810]'
+            ? 'fixed z-30 flex flex-col items-end touch-none select-none'
             : vizSize === 'medium'
             ? 'fixed top-12 left-0 right-0 h-[40vh] sm:h-[45vh] z-30 border-b border-white/10 shadow-2xl bg-[#050810]'
-            : /* full */ 'fixed inset-0 z-50 bg-[#050810]'
+            : 'fixed inset-0 z-50 bg-[#050810]'
         }
+        style={vizSize === 'mini' ? (pipPos
+          ? { left: `${pipPos.x}px`, top: `${pipPos.y}px` }
+          : { top: '3.5rem', right: '0.5rem' }
+        ) : undefined}
+        onPointerDown={vizSize === 'mini' ? handlePipPointerDown : undefined}
+        onPointerMove={vizSize === 'mini' ? handlePipPointerMove : undefined}
+        onPointerUp={vizSize === 'mini' ? handlePipPointerUp : undefined}
+        onPointerCancel={vizSize === 'mini' ? handlePipPointerUp : undefined}
       >
-        <ThreeVisualizer
-          mode={visualizerMode}
-          framingIntent={framingIntent}
-          materials={materials}
-          drywallOpacity={drywallOpacity}
-          showOverlay={vizSize !== 'mini'}
-        />
-        {/* Bottom gradient bleed — dissolves the visualizer edge into the content below in theater mode */}
-        {vizSize === 'medium' && (
-          <div
-            className="absolute bottom-0 left-0 right-0 pointer-events-none z-10"
-            style={{ height: '4rem', background: 'linear-gradient(to bottom, transparent 0%, #050810 100%)' }}
+        {/* Canvas container — overflow-hidden clips the Three.js renderer */}
+        <div className={
+          vizSize === 'mini'
+            ? 'relative w-[150px] h-[100px] sm:w-[240px] sm:h-[160px] rounded-2xl overflow-hidden shadow-2xl border border-white/15 bg-[#050810]'
+            : 'relative w-full h-full'
+        }>
+          <ThreeVisualizer
+            mode={visualizerMode}
+            framingIntent={framingIntent}
+            materials={materials}
+            drywallOpacity={drywallOpacity}
+            showOverlay={vizSize !== 'mini'}
+            onARReady={(toggle) => setArToggle(() => toggle)}
+            onARSessionChange={setIsARActive}
           />
-        )}
 
-        {/* Viz state controls */}
-        <div className="absolute top-1.5 right-1.5 flex gap-1 z-40">
-          {vizSize === 'mini' && (
+          {/* Transparent drag-capture layer in mini mode — blocks OrbitControls, enables full-surface drag */}
+          {vizSize === 'mini' && <div className="absolute inset-0 z-20 cursor-move" />}
+
+          {/* Bottom gradient bleed (theater mode) */}
+          {vizSize === 'medium' && (
+            <div
+              className="absolute bottom-0 left-0 right-0 pointer-events-none z-10"
+              style={{ height: '4rem', background: 'linear-gradient(to bottom, transparent 0%, #050810 100%)' }}
+            />
+          )}
+
+          {/* AR button — small circle inside canvas for medium / full modes */}
+          {vizSize !== 'mini' && arToggle && (
             <button
-              onClick={() => setVizSize('medium')}
-              className="h-7 w-7 rounded-full bg-void-black/80 hover:bg-cool-blue/30 text-cool-blue flex items-center justify-center backdrop-blur border border-white/20 cursor-pointer"
-              title="Expand"
+              onClick={arToggle}
+              className="absolute bottom-4 right-4 z-10 h-9 w-9 rounded-full bg-gradient-to-tr from-[#3a1854]/80 to-violet-700/80 hover:from-violet-800 hover:to-violet-500 border border-violet-400/35 text-white text-[9px] font-black flex items-center justify-center backdrop-blur-md shadow-lg transition-colors cursor-pointer"
+              title={isARActive ? 'Exit AR' : 'View in AR'}
             >
-              <Maximize2 className="w-3.5 h-3.5" />
+              AR
             </button>
           )}
-          {vizSize === 'medium' && (
-            <>
+
+          {/* Viz size controls */}
+          <div className="absolute top-1.5 right-1.5 flex gap-1 z-40">
+            {vizSize === 'mini' && (
+              <button
+                onClick={() => setVizSize('medium')}
+                onPointerDown={(e) => e.stopPropagation()}
+                className="h-7 w-7 rounded-full bg-void-black/80 hover:bg-cool-blue/30 text-cool-blue flex items-center justify-center backdrop-blur border border-white/20 cursor-pointer"
+                title="Expand"
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
+              </button>
+            )}
+            {vizSize === 'medium' && (
+              <>
+                <button
+                  onClick={() => setVizSize('mini')}
+                  className="h-9 w-9 rounded-full bg-void-black/80 hover:bg-cool-blue/30 text-cool-blue flex items-center justify-center backdrop-blur border border-white/20 cursor-pointer"
+                  title="Shrink to mini"
+                >
+                  <Minimize2 className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setVizSize('full')}
+                  className="h-9 w-9 rounded-full bg-void-black/80 hover:bg-cool-blue/30 text-cool-blue flex items-center justify-center backdrop-blur border border-white/20 cursor-pointer"
+                  title="Fullscreen"
+                >
+                  <Maximize className="w-4 h-4" />
+                </button>
+              </>
+            )}
+            {vizSize === 'full' && (
               <button
                 onClick={() => setVizSize('mini')}
-                className="h-9 w-9 rounded-full bg-void-black/80 hover:bg-cool-blue/30 text-cool-blue flex items-center justify-center backdrop-blur border border-white/20 cursor-pointer"
-                title="Shrink to mini"
+                className="h-11 w-11 rounded-full bg-void-black/80 hover:bg-rose-500/30 text-cool-blue flex items-center justify-center backdrop-blur border border-white/20 cursor-pointer"
+                title="Close fullscreen"
               >
-                <Minimize2 className="w-4 h-4" />
+                <X className="w-5 h-5" />
               </button>
-              <button
-                onClick={() => setVizSize('full')}
-                className="h-9 w-9 rounded-full bg-void-black/80 hover:bg-cool-blue/30 text-cool-blue flex items-center justify-center backdrop-blur border border-white/20 cursor-pointer"
-                title="Fullscreen"
-              >
-                <Maximize className="w-4 h-4" />
-              </button>
-            </>
-          )}
-          {vizSize === 'full' && (
-            <button
-              onClick={() => setVizSize('mini')}
-              className="h-11 w-11 rounded-full bg-void-black/80 hover:bg-rose-500/30 text-cool-blue flex items-center justify-center backdrop-blur border border-white/20 cursor-pointer"
-              title="Close fullscreen"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          )}
+            )}
+          </div>
         </div>
+
+        {/* AR pill — attached below the mini PIP, outside overflow-hidden */}
+        {vizSize === 'mini' && arToggle && (
+          <button
+            onClick={arToggle}
+            onPointerDown={(e) => e.stopPropagation()}
+            className="mt-1 mr-0.5 h-6 px-2.5 rounded-full bg-gradient-to-r from-[#2d1050]/90 to-violet-700/80 hover:from-violet-900 hover:to-violet-600 border border-violet-500/30 text-white text-[9px] font-black backdrop-blur-md flex items-center gap-1.5 shadow-lg transition-colors cursor-pointer"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-violet-300 animate-pulse" />
+            {isARActive ? 'Exit AR' : 'View in AR'}
+          </button>
+        )}
       </div>
 
       {/* ── MAIN SCROLLABLE CONTENT ── */}

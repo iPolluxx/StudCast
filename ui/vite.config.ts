@@ -10,6 +10,12 @@ export default defineConfig({
   ],
   server: {
     port: 5173,
+    allowedHosts: ['.ngrok-free.dev', '.ngrok.io'],
+    hmr: {
+      host: 'buddy-underwire-thrower.ngrok-free.dev',
+      protocol: 'wss',
+      clientPort: 443,
+    },
     proxy: {
       '/api': {
         target: 'http://localhost:8080',

@@ -9,6 +9,8 @@ interface ThreeVisualizerProps {
   materials: MaterialItem[];
   drywallOpacity: number;
   showOverlay?: boolean;
+  onARReady?: (toggle: () => void) => void;
+  onARSessionChange?: (active: boolean) => void;
 }
 
 export default function ThreeVisualizer({
@@ -17,6 +19,8 @@ export default function ThreeVisualizer({
   materials,
   drywallOpacity,
   showOverlay = true,
+  onARReady,
+  onARSessionChange,
 }: ThreeVisualizerProps) {
   const mountRef = useRef<HTMLDivElement>(null);
   const [tooltipText, setTooltipText] = useState<string | null>(null);
@@ -33,6 +37,11 @@ export default function ThreeVisualizer({
   const wallGroupRef = useRef<THREE.Group | null>(null);
   const raycasterRef = useRef<THREE.Raycaster | null>(null);
   const tooltipMeshesRef = useRef<THREE.Mesh[]>([]);
+  const groundRef = useRef<THREE.Mesh | null>(null);
+  const gridRef = useRef<THREE.GridHelper | null>(null);
+  const xrSessionRef = useRef<XRSession | null>(null);
+  const modeRef = useRef(mode);
+  const toggleARRef = useRef<(() => void) | undefined>(undefined);
 
   // ── Identifiers and Material Constants ──
   const MAT_CONST = {
@@ -197,6 +206,7 @@ export default function ThreeVisualizer({
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFShadowMap;
+    renderer.xr.enabled = true;
     mountRef.current.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
@@ -246,11 +256,13 @@ export default function ThreeVisualizer({
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     scene.add(ground);
+    groundRef.current = ground;
 
     // Fine framing grid overlay
     const grid = new THREE.GridHelper(120, 60, 0x1f2e4d, 0x0c1328);
     grid.position.y = 0.01;
     scene.add(grid);
+    gridRef.current = grid;
 
     // Sub-Groups
     const stackGroup = new THREE.Group();
@@ -282,19 +294,25 @@ export default function ThreeVisualizer({
     });
     resizeObserver.observe(mountRef.current);
 
-    // Game loop
-    let animeFrameId = 0;
-    function thick() {
-      animeFrameId = requestAnimationFrame(thick);
-      if (controlsRef.current) controlsRef.current.update();
-      if (rendererRef.current && sceneRef.current && cameraRef.current) {
-        rendererRef.current.render(sceneRef.current, cameraRef.current);
+    // WebXR-compatible animation loop (setAnimationLoop works for both XR and non-XR)
+    renderer.setAnimationLoop(() => {
+      if (controlsRef.current && !renderer.xr.isPresenting) {
+        controlsRef.current.update();
       }
+      if (sceneRef.current && cameraRef.current) {
+        renderer.render(sceneRef.current, cameraRef.current);
+      }
+    });
+
+    // Check if this device supports immersive-ar; surface the toggle to the parent
+    if (navigator.xr) {
+      navigator.xr.isSessionSupported('immersive-ar')
+        .then(supported => { if (supported) onARReady?.(() => toggleARRef.current?.()); })
+        .catch(() => {});
     }
-    animeFrameId = requestAnimationFrame(thick);
 
     return () => {
-      cancelAnimationFrame(animeFrameId);
+      renderer.setAnimationLoop(null);
       resizeObserver.disconnect();
       if (rendererRef.current && rendererRef.current.domElement) {
         rendererRef.current.domElement.parentNode?.removeChild(
@@ -303,6 +321,9 @@ export default function ThreeVisualizer({
       }
     };
   }, []);
+
+  // Keep modeRef current so the XR session-end handler can read it without stale closure
+  useEffect(() => { modeRef.current = mode; }, [mode]);
 
   // ── Re-render 3D Assets on Mode & Prop Changes ──
   useEffect(() => {
@@ -823,6 +844,64 @@ export default function ThreeVisualizer({
     }
   }
 
+  // ── WebXR AR Session Toggle ──
+  const toggleAR = async () => {
+    const renderer = rendererRef.current;
+    const scene = sceneRef.current;
+    if (!renderer || !scene || !navigator.xr) return;
+
+    if (xrSessionRef.current) {
+      xrSessionRef.current.end();
+      return;
+    }
+
+    try {
+      const session = await navigator.xr.requestSession('immersive-ar', {
+        requiredFeatures: ['local-floor'],
+      });
+
+      await renderer.xr.setSession(session);
+      xrSessionRef.current = session;
+      onARSessionChange?.(true);
+
+      // Clear virtual environment — let real world show through
+      if (groundRef.current) groundRef.current.visible = false;
+      if (gridRef.current) gridRef.current.visible = false;
+      if (vehicleGroupRef.current) vehicleGroupRef.current.visible = false;
+      scene.background = null;
+      scene.fog = null;
+
+      // Scale from Three.js "feet" units to WebXR meters (1 ft = 0.3048 m)
+      const FT_TO_M = 0.3048;
+      if (stackGroupRef.current) stackGroupRef.current.scale.setScalar(FT_TO_M);
+      if (wallGroupRef.current) wallGroupRef.current.scale.setScalar(FT_TO_M);
+
+      session.addEventListener('end', () => {
+        xrSessionRef.current = null;
+        onARSessionChange?.(false);
+
+        if (groundRef.current) groundRef.current.visible = true;
+        if (gridRef.current) gridRef.current.visible = true;
+        if (vehicleGroupRef.current && modeRef.current === 'stack') {
+          vehicleGroupRef.current.visible = true;
+        }
+
+        const s = sceneRef.current;
+        if (s) {
+          s.background = new THREE.Color(0x050810);
+          s.fog = new THREE.FogExp2(0x050810, 0.018);
+        }
+
+        if (stackGroupRef.current) stackGroupRef.current.scale.setScalar(1);
+        if (wallGroupRef.current) wallGroupRef.current.scale.setScalar(1);
+      });
+    } catch (err) {
+      console.error('AR session error:', err);
+    }
+  };
+  // Keep ref current so the async XR-support callback always calls the latest closure
+  toggleARRef.current = toggleAR;
+
   // ── Raycasting Mouse Click/Move Tooltips ──
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (mode !== "stack" || !raycasterRef.current || !cameraRef.current || tooltipMeshesRef.current.length === 0) {
@@ -893,6 +972,7 @@ export default function ThreeVisualizer({
           dangerouslySetInnerHTML={{ __html: tooltipText }}
         />
       )}
+
     </div>
   );
 }
