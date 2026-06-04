@@ -1,7 +1,7 @@
 # Lone Ranger Estimator — Live Project Context
 > **Purpose:** This document is the handoff bridge between Gemini brainstorming sessions and Claude Code
 > implementation sessions. Update it after every meaningful work session.
-> **Last updated:** 2026-06-03 — Sprint 2: deterministic 3-stage pipeline (Estimator → Pricer → Reviewer), flag-gated behind `PIPELINE_V2`
+> **Last updated:** 2026-06-04 — Frontend design-system pass: PRODUCT.md/DESIGN.md + design tokens (type scale + semantic colors), LedgerTable overhaul (critique 24→37), local-dev fixes
 
 ---
 
@@ -11,10 +11,15 @@
 
 1. Contractor speaks or types a job scope (voice, text, or SMS)
 2. Gemini AI extracts structured materials + labor from the transcript
-3. Items are priced via a 3-tier waterfall (user price_book → AI estimate → $0 fallback)
+3. Items are priced via a 3-tier waterfall: **explicit user price (`override`) → per-user `price_book` (`database`) → AI estimate (`ai`)**, plus a 2.5 labor-default tier (see Pricing Engine below)
 4. Contractor reviews/edits an interactive ledger
 5. Clicks "Generate PDF" → Puppeteer renders a professional estimate, emails it to the contractor
 6. Stripe handles subscriptions; Firestore is the database
+
+> **Two extraction/pricing paths (steps 2–3).** `POST /api/process-text` forks on the `PIPELINE_V2` env flag:
+> the **legacy monolith** (one Gemini `EXTRACTION_PROMPT` call → `mergeIntoLedger`) or, when `PIPELINE_V2=true`,
+> the **deterministic 3-stage pipeline** (Estimator → Pricer → Reviewer; `src/lib/pipeline.js` → `createPipeline`).
+> Both share the `persistLedger()` helper. Full detail in **§ Sprint 2** below.
 
 **Primary user:** Small independent contractors (plumbers, framers, roofers, general contractors) who currently
 do estimates by hand or in spreadsheets. The killer feature is voice → bid in under 60 seconds from a job site.
@@ -89,7 +94,7 @@ end-to-end flow and that the Pricer makes zero AI calls when a default labor rat
 | Billing | Stripe (subscriptions, webhooks) |
 | SMS | Twilio (OTP verification, client notifications) |
 | PDF | Puppeteer (headless Chromium) |
-| 3D Frontend | Three.js r128 (browser-native, live) |
+| 3D Frontend | Three.js — live: `three@^0.184` (r184) in the React app (`ui/src/components/ThreeVisualizer.tsx`); r128 in legacy `public/dashboard.html` |
 | Hosting | Google Cloud Run (Docker) |
 
 ---
@@ -292,7 +297,7 @@ From `public/`:
 - `privacy.html`, `terms.html` — legal pages
 
 From `ui/dist/` (built by Dockerfile):
-- React 18 + Vite + TypeScript app served at `/dashboard` and `/dashboard/*`
+- React 19 + Vite + TypeScript + Tailwind v4 app served at `/dashboard` and `/dashboard/*`
 - `privacy.html`, `terms.html` — legal pages
 - `3d_estimator.html`, `3d_framing_visualizer.html` — early 3D UI prototypes
 - *(future)* Unity WebGL build files — `.wasm`, `.data`, `.framework.js`, `.loader.js`
@@ -300,6 +305,62 @@ From `ui/dist/` (built by Dockerfile):
 ---
 
 ## Work Session Log
+
+### Session: 2026-06-04 — Frontend Design System + LedgerTable Overhaul (impeccable)
+**Gemini:** n/a (implementation session).
+**Claude:** Established a documented design system and ran a full quality arc on the estimate ledger via the `impeccable` skill. Critique score for `LedgerTable.tsx` moved **24 → 35 → 36 → 37 / 40** (Good → Excellent) across the passes.
+
+#### 1. Design-system docs (repo root)
+- **`PRODUCT.md`** — strategic: register=`product`, solo-contractor users, "Command Bridge" brand personality, anti-references (clunky legacy contractor software; generic SaaS dashboard), 5 design principles.
+- **`DESIGN.md`** — visual (Google Stitch format): the "Command Bridge" cosmic-glass system. Color, type, elevation (glow-as-depth), component specs, Named Rules (Two-Voice, One Blue Number, Dark-On-Bright, No Hard Shadow, etc.). Machine-readable sidecar at **`.impeccable/design.json`**; live-mode config at `.impeccable/live/config.json`; critique snapshots in `.impeccable/critique/`.
+
+#### 2. Design tokens — `ui/src/index.css` `@theme` (Tailwind v4)
+- **Semantic colors** (were hard-coded): `live-emerald` #34d399 (status/source), `alert-rose` #fb7185 (destructive/error only), `navy-deep`/`navy-violet` (secondary-CTA gradient). Color meaning: `cool-blue`=trust (money/primary), `soft-violet`=AI/intelligence only.
+- **Type scale** — fixed `rem`, ~1.18 ratio, **11px floor**: `text-micro` (0.6875rem) for labels/badges, `text-mini` (0.8125rem) for data/body, below Tailwind's `text-base`/`lg`/`xl`. Replaced all ad-hoc `text-[Npx]`. Applied in `LedgerTable.tsx` + `App.tsx`; `SettingsModal`/`EstimateList`/`ThreeVisualizer` **not yet migrated**.
+- **Ledger keyboard focus** rule (`#estimate-ledger-section :is(input,textarea):focus-visible`) for WCAG 2.4.7.
+
+#### 3. `LedgerTable.tsx` overhaul (the critique arc)
+- **harden:** `clampNum()` replaces `parseInt` → fractional hours/qty now work + negatives clamped; two-step delete confirm; confirm-before-send + disable-when-empty on Publish; durable inline publish-error + Retry (App.tsx `onPublish` now throws on non-OK); empty-section states.
+- **clarify:** plain copy — "Materials/Labor/Role/Total" (was "Extracted … Allocation Sheets" / "Role Designation" / "Grand Valuation"); price-source badges → "Est./Yours/Saved" with hover tooltips; "Src/Del" → "Source/Delete".
+- **colorize:** enforced the Two-Voice rule (decorative violet → cool-blue on non-AI elements).
+- **keyboard nav (desktop tables):** Enter advances down the column / adds + focuses a new row at the bottom; ↑/↓ move between rows (data-attr coordinates + `handleCellKey`). Discoverability tip line.
+- **audit + polish:** AA contrast (muted text → `/70`), focus ring, `<h3>` section headings, `<th scope="col">`, aria-labels; tokenized colors.
+
+#### 4. `App.tsx`
+- Token swaps (emerald/rose/navy → semantic tokens; kept the orb's decorative recording gradient as literal rose — *not* `alert-rose`, which is reserved for errors).
+- Type-scale rollout (50 px sizes → micro/mini; folded off-scale `text-xs`/`text-sm` onto the ladder).
+- **DEV-only auth bypass** in the boot `useEffect`: in `import.meta.env.DEV`, skip the auth/backend dance and render built-in demo estimates (production auth unchanged). Fixes a local reload loop (no token → redirect → re-mount → repeat; and the 401-from-backend variant).
+
+#### 5. Local-dev config — `ui/vite.config.ts`
+- ngrok HMR is now **opt-in** via `NGROK_HOST` env var; plain `npm run dev` uses localhost HMR. Previously the HMR socket was hard-pinned to a `wss` ngrok host, causing a reload loop when run locally.
+
+#### Files created
+```
+PRODUCT.md
+DESIGN.md
+.impeccable/design.json
+.impeccable/live/config.json
+.impeccable/critique/*.md   (critique snapshots)
+```
+#### Files modified
+```
+ui/src/components/LedgerTable.tsx   — full UX/a11y/keyboard overhaul
+ui/src/App.tsx                      — tokens, type scale, DEV auth bypass, onPublish throws
+ui/src/index.css                    — @theme semantic-color + type-scale tokens, ledger focus rule
+ui/vite.config.ts                   — ngrok HMR opt-in (NGROK_HOST)
+DESIGN.md                           — type-scale floor sync
+CLAUDE.md                           — design-system + local-dev sections, React 19 fix
+docs/GEMINI_HANDOFF.md              — this entry
+```
+
+#### Open follow-ups (from this session)
+- **Wire the React demo simulations to their real backend routes:** the voice orb (real mic capture → `/api/process`), the Change Order panel (`/api/change-orders/generate` + `/send`), and the client approval portal (`/approve`). All three are client-side sims today; endpoints already exist. (Documented in `docs/app-features.md` status banner.)
+- **Finish the type-scale migration:** `SettingsModal.tsx`, `EstimateList.tsx`, `ThreeVisualizer.tsx` still use raw `text-[Npx]`; migrate to `text-micro`/`text-mini` (+ semantic color tokens) like `LedgerTable.tsx`/`App.tsx`.
+- **Optional ledger refinements** (critique P3s, non-blocking): duplicate-row / bulk-delete, undo-after-delete, inline markup/tax help.
+- **Dev-only conveniences to be aware of:** `App.tsx` DEV auth bypass and `vite.config.ts` `NGROK_HOST` opt-in — both guarded, no prod impact.
+- **README.md** still says "React 18" and documents a removed "Build Layer" — minor, worth a cleanup pass.
+
+---
 
 ### Session: 2026-06-02 — Service Layer Extraction, Jest Test Suite, GitHub Actions CI
 

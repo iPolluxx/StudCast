@@ -215,6 +215,18 @@ export default function App() {
 
   // Boot: verify auth token, load estimates + settings
   useEffect(() => {
+    // DEV-only: skip the auth/backend dance entirely and render built-in demo data, so the
+    // dashboard is analyzable locally without a login or a running backend. (Hitting /api with
+    // no real token returns 401, whose handler redirects to '/', which loops.) Guarded by
+    // import.meta.env.DEV — compiled out of production builds, where real auth runs below.
+    if (import.meta.env.DEV) {
+      setAuthToken('demo');
+      setEstimates(initialEstimates);
+      setActiveEstimateId(initialEstimates[0].id);
+      setAppLoading(false);
+      return;
+    }
+
     const token = localStorage.getItem('authBearerToken');
     if (!token) {
       window.location.href = '/';
@@ -382,7 +394,7 @@ export default function App() {
     updateEstimateItems(items => [
       ...items,
       type === "material"
-        ? { name: "2x4 SPF SPF Stud standard", quantity: 10, unit: "pcs", trade: "framing", unit_price: priceSheet.stud, total: priceSheet.stud * 10, price_source: "override", type: "material" }
+        ? { name: "2x4 SPF Stud", quantity: 10, unit: "pcs", trade: "framing", unit_price: priceSheet.stud, total: priceSheet.stud * 10, price_source: "override", type: "material" }
         : { role: "Professional carpentry installers", hours: 4, rate: settings.default_labor_rate || 55, total: (settings.default_labor_rate || 55) * 4, type: "labor" }
     ]);
   };
@@ -664,7 +676,7 @@ export default function App() {
         <Starfield />
         <div className="text-center space-y-4 z-10">
           <div className="h-12 w-12 rounded-full border-2 border-cool-blue border-t-transparent animate-spin mx-auto" style={{ borderColor: '#6eb5ff', borderTopColor: 'transparent' }} />
-          <p className="text-[11px] font-mono font-bold tracking-widest text-[#6eb5ff] uppercase">Initializing Orbit...</p>
+          <p className="text-mini font-mono font-bold tracking-widest text-[#6eb5ff] uppercase">Initializing Orbit...</p>
         </div>
       </div>
     );
@@ -697,17 +709,17 @@ export default function App() {
             </div>
             <div>
               <h2 className="text-lg font-black text-white uppercase tracking-wide">Unlock Lone Ranger</h2>
-              <p className="text-xs text-[#e2e8f0]/60 mt-1">Subscribe to access AI estimating, PDF generation, and the 3D material yard.</p>
+              <p className="text-mini text-[#e2e8f0]/60 mt-1">Subscribe to access AI estimating, PDF generation, and the 3D material yard.</p>
             </div>
             <a
               href="/dashboard#subscribe"
-              className="block w-full py-3 bg-gradient-to-r from-cool-blue to-soft-violet text-[#050810] font-black rounded-full text-xs uppercase tracking-widest"
+              className="block w-full py-3 bg-gradient-to-r from-cool-blue to-soft-violet text-[#050810] font-black rounded-full text-mini uppercase tracking-widest"
             >
               Subscribe — $50/mo
             </a>
             <button
               onClick={() => setSubscriptionGate(false)}
-              className="text-[10px] text-[#e2e8f0]/40 hover:text-white font-mono uppercase tracking-wider"
+              className="text-mini text-[#e2e8f0]/40 hover:text-white font-mono uppercase tracking-wider"
             >
               Continue in demo mode
             </button>
@@ -724,10 +736,10 @@ export default function App() {
             onClick={() => setProjectDropdownOpen(!projectDropdownOpen)}
             className="flex items-center gap-2 hover:text-[#ffffff] transition-colors focus:outline-none cursor-pointer"
           >
-            <span className="text-xs font-black tracking-widest text-[#ffffff] uppercase font-mono">
+            <span className="text-mini font-black tracking-widest text-[#ffffff] uppercase font-mono">
               {activeEstimate?.project_name ?? 'No Project'}
             </span>
-            <span className="text-[10px] text-cool-blue/70 font-mono">▼</span>
+            <span className="text-mini text-cool-blue/70 font-mono">▼</span>
           </button>
 
           <EstimateList
@@ -754,8 +766,8 @@ export default function App() {
 
         {/* Live Estimate badge */}
         <div className="flex items-center gap-2">
-          <span className="inline-flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
-          <span className="text-[10px] font-black tracking-widest text-emerald-400 uppercase font-mono">
+          <span className="inline-flex h-2 w-2 rounded-full bg-live-emerald animate-pulse"></span>
+          <span className="text-mini font-black tracking-widest text-live-emerald uppercase font-mono">
             LIVE ESTIMATE
           </span>
         </div>
@@ -823,7 +835,7 @@ export default function App() {
           {vizSize !== 'mini' && arToggle && (
             <button
               onClick={arToggle}
-              className="absolute bottom-4 right-4 z-10 h-9 w-9 rounded-full bg-gradient-to-tr from-[#3a1854]/80 to-violet-700/80 hover:from-violet-800 hover:to-violet-500 border border-violet-400/35 text-white text-[9px] font-black flex items-center justify-center backdrop-blur-md shadow-lg transition-colors cursor-pointer"
+              className="absolute bottom-4 right-4 z-10 h-9 w-9 rounded-full bg-gradient-to-tr from-[#3a1854]/80 to-violet-700/80 hover:from-violet-800 hover:to-violet-500 border border-violet-400/35 text-white text-micro font-black flex items-center justify-center backdrop-blur-md shadow-lg transition-colors cursor-pointer"
               title={isARActive ? 'Exit AR' : 'View in AR'}
             >
               AR
@@ -863,7 +875,7 @@ export default function App() {
             {vizSize === 'full' && (
               <button
                 onClick={() => setVizSize('mini')}
-                className="h-11 w-11 rounded-full bg-void-black/80 hover:bg-rose-500/30 text-cool-blue flex items-center justify-center backdrop-blur border border-white/20 cursor-pointer"
+                className="h-11 w-11 rounded-full bg-void-black/80 hover:bg-alert-rose/30 text-cool-blue flex items-center justify-center backdrop-blur border border-white/20 cursor-pointer"
                 title="Close fullscreen"
               >
                 <X className="w-5 h-5" />
@@ -877,7 +889,7 @@ export default function App() {
           <button
             onClick={arToggle}
             onPointerDown={(e) => e.stopPropagation()}
-            className="mt-1 mr-0.5 h-6 px-2.5 rounded-full bg-gradient-to-r from-[#2d1050]/90 to-violet-700/80 hover:from-violet-900 hover:to-violet-600 border border-violet-500/30 text-white text-[9px] font-black backdrop-blur-md flex items-center gap-1.5 shadow-lg transition-colors cursor-pointer"
+            className="mt-1 mr-0.5 h-6 px-2.5 rounded-full bg-gradient-to-r from-[#2d1050]/90 to-violet-700/80 hover:from-violet-900 hover:to-violet-600 border border-violet-500/30 text-white text-micro font-black backdrop-blur-md flex items-center gap-1.5 shadow-lg transition-colors cursor-pointer"
           >
             <span className="w-1.5 h-1.5 rounded-full bg-violet-300 animate-pulse" />
             {isARActive ? 'Exit AR' : 'View in AR'}
@@ -931,7 +943,7 @@ export default function App() {
                 <item.icon className="w-4 h-4" />
                 
                 {/* Micro tooltip */}
-                <span className="absolute left-[54px] top-1/2 -translate-y-1/2 bg-[#050810]/95 border border-white/10 px-2.5 py-1 text-[8px] font-bold tracking-widest text-starlight uppercase rounded-lg shadow-xl opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity font-mono w-max">
+                <span className="absolute left-[54px] top-1/2 -translate-y-1/2 bg-[#050810]/95 border border-white/10 px-2.5 py-1 text-micro font-bold tracking-widest text-starlight uppercase rounded-lg shadow-xl opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity font-mono w-max">
                   {item.tooltip}
                 </span>
                 
@@ -944,7 +956,7 @@ export default function App() {
         </div>
         
         {/* Help button indicator */}
-        <div className="glass-panel border-white/5 rounded-xl p-1 text-center bg-void-black/80 font-mono text-[8px] font-bold text-cool-blue/60 leading-none">
+        <div className="glass-panel border-white/5 rounded-xl p-1 text-center bg-void-black/80 font-mono text-micro font-bold text-cool-blue/60 leading-none">
           LR
         </div>
       </nav>
@@ -960,7 +972,7 @@ export default function App() {
           <div className="fixed z-50 inset-x-3 bottom-3 max-h-[70vh] md:absolute md:inset-auto md:left-20 md:top-20 md:bottom-auto md:w-80 md:max-h-[70vh] overflow-y-auto glass-panel border-white/15 rounded-2xl p-5 shadow-2xl pointer-events-auto select-none animate-fade-in animate-slide-in">
           
           <div className="flex items-center justify-between border-b border-white/8 pb-3 mb-4">
-            <h3 className="text-[10px] font-black uppercase tracking-widest text-[#ffffff] flex items-center gap-1.5">
+            <h3 className="text-mini font-black uppercase tracking-widest text-[#ffffff] flex items-center gap-1.5">
               {activeInstrument === "pricing" && <DollarSign className="w-3.5 h-3.5 text-cool-blue" />}
               {activeInstrument === "change" && <Receipt className="w-3.5 h-3.5 text-cool-blue" />}
               {activeInstrument === "layers" && <Layers className="w-3.5 h-3.5 text-soft-violet" />}
@@ -972,7 +984,7 @@ export default function App() {
             
             <button
               onClick={() => setActiveInstrument(null)}
-              className="text-starlight/50 hover:text-rose-400 transition-colors p-1"
+              className="text-starlight/50 hover:text-alert-rose transition-colors p-1"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -980,17 +992,17 @@ export default function App() {
 
           {/* PRICES & SUPPLIER SHEET PANEL */}
           {activeInstrument === "pricing" && (
-            <div className="space-y-4 font-mono text-[10px]">
+            <div className="space-y-4 font-mono text-mini">
 
               {/* Supplier CSV upload */}
               <div className="space-y-2">
-                <span className="block text-[8px] font-black uppercase text-soft-violet tracking-wider">
+                <span className="block text-micro font-black uppercase text-soft-violet tracking-wider">
                   Supplier Price Sheet
                 </span>
-                <p className="text-[9px] text-starlight/50 font-sans leading-relaxed">
+                <p className="text-micro text-starlight/50 font-sans leading-relaxed">
                   Upload a CSV from your supplier with <span className="text-starlight/80 font-bold">name</span> and <span className="text-starlight/80 font-bold">price</span> columns. Prices are saved to your account and used automatically in future estimates.
                 </p>
-                <label className="flex items-center justify-center gap-2 w-full py-3 border border-dashed border-cool-blue/30 hover:border-cool-blue/60 rounded-xl cursor-pointer transition-all hover:bg-cool-blue/5 text-cool-blue text-[9px] font-black uppercase tracking-widest">
+                <label className="flex items-center justify-center gap-2 w-full py-3 border border-dashed border-cool-blue/30 hover:border-cool-blue/60 rounded-xl cursor-pointer transition-all hover:bg-cool-blue/5 text-cool-blue text-micro font-black uppercase tracking-widest">
                   <input
                     type="file"
                     accept=".csv"
@@ -1022,7 +1034,7 @@ export default function App() {
               <hr className="border-white/5" />
 
               {/* Manual price overrides */}
-              <span className="block text-[8px] font-black uppercase text-soft-violet tracking-wider">
+              <span className="block text-micro font-black uppercase text-soft-violet tracking-wider">
                 Manual Rate Overrides
               </span>
 
@@ -1054,24 +1066,24 @@ export default function App() {
 
           {/* 3. CHANGE ORDER FORMULATION PANEL */}
           {activeInstrument === "change" && (
-            <div className="space-y-4 font-mono text-[10px]">
+            <div className="space-y-4 font-mono text-mini">
               
               <div className="space-y-1">
-                <span className="block text-[8px] font-black uppercase text-soft-violet tracking-wider">
+                <span className="block text-micro font-black uppercase text-soft-violet tracking-wider">
                   Describe Change Segment
                 </span>
                 <textarea
                   value={changeOrderInput}
                   onChange={(e) => setChangeOrderInput(e.target.value)}
                   placeholder="e.g., Add 12 sheets of OSB and 4 hours of framing labor..."
-                  className="w-full bg-[#050810]/80 h-16 border border-white/10 rounded-xl p-2.5 outline-none focus:border-cool-blue/60 focus:ring-1 focus:ring-cool-blue/10 backdrop-blur-md font-mono text-[11px] text-starlight"
+                  className="w-full bg-[#050810]/80 h-16 border border-white/10 rounded-xl p-2.5 outline-none focus:border-cool-blue/60 focus:ring-1 focus:ring-cool-blue/10 backdrop-blur-md font-mono text-mini text-starlight"
                 />
               </div>
 
               <button
                 onClick={handleGenerateChangeOrder}
                 disabled={!changeOrderInput.trim() || aiProcessing}
-                className="w-full py-2 border border-cool-blue/30 hover:border-cool-blue bg-cool-blue/10 hover:bg-cool-blue/20 transition-all font-black uppercase tracking-widest text-[9px] rounded-full text-cool-blue flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40"
+                className="w-full py-2 border border-cool-blue/30 hover:border-cool-blue bg-cool-blue/10 hover:bg-cool-blue/20 transition-all font-black uppercase tracking-widest text-micro rounded-full text-cool-blue flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40"
               >
                 {aiProcessing ? (
                   <RefreshCw className="w-3 h-3 animate-spin" />
@@ -1083,22 +1095,22 @@ export default function App() {
 
               {derivedChangeOrder && (
                 <div className="border border-white/10 bg-void-black/60 rounded-xl p-3.5 space-y-2 mt-2">
-                  <div className="flex justify-between items-center text-[9px] font-bold uppercase tracking-wider text-soft-violet">
+                  <div className="flex justify-between items-center text-micro font-bold uppercase tracking-wider text-soft-violet">
                     <span>Constructed Addendum</span>
                     <span className="text-cool-blue">{derivedChangeOrder.id}</span>
                   </div>
                   
-                  <div className="text-[11px] leading-relaxed text-starlight">
-                    <strong>Total Added:</strong> <span className="text-cool-blue text-xs font-black">${derivedChangeOrder.change_order_total.toFixed(2)}</span>
+                  <div className="text-mini leading-relaxed text-starlight">
+                    <strong>Total Added:</strong> <span className="text-cool-blue text-mini font-black">${derivedChangeOrder.change_order_total.toFixed(2)}</span>
                   </div>
 
-                  <p className="text-[10px] text-starlight/70 leading-normal italic">
+                  <p className="text-mini text-starlight/70 leading-normal italic">
                     "{derivedChangeOrder.change_summary}"
                   </p>
 
                   <button
                     onClick={handleSendClientSMS}
-                    className="w-full py-2 bg-gradient-to-r from-cool-blue to-soft-violet text-void-black font-black uppercase tracking-widest text-[9px] rounded-full mt-2 transition-transform hover:scale-105 flex items-center justify-center gap-1.5 cursor-pointer"
+                    className="w-full py-2 bg-gradient-to-r from-cool-blue to-soft-violet text-void-black font-black uppercase tracking-widest text-micro rounded-full mt-2 transition-transform hover:scale-105 flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     <Send className="w-3.5 h-3.5" />
                     Dispatch Authorization
@@ -1111,11 +1123,11 @@ export default function App() {
 
           {/* 4. VISUALIZATION SETTINGS PANEL */}
           {activeInstrument === "layers" && (
-            <div className="space-y-4 font-mono text-[10px]">
-              <p className="text-[9px] text-starlight/50 font-sans leading-relaxed">
+            <div className="space-y-4 font-mono text-mini">
+              <p className="text-micro text-starlight/50 font-sans leading-relaxed">
                 Material Yard shows a live 3D digital twin of your lumber drop — lifts, dunnage, and fleet dispatch based on your estimate.
               </p>
-              <div className="text-[9px] text-starlight/40 leading-normal pl-1 space-y-1 font-sans">
+              <div className="text-micro text-starlight/40 leading-normal pl-1 space-y-1 font-sans">
                 <div>• Drag to orbit</div>
                 <div>• Scroll to zoom</div>
                 <div>• Hover materials for weight + quantity</div>
@@ -1143,15 +1155,15 @@ export default function App() {
                   onClick={step.action}
                   className="flex items-center gap-1.5 py-1 px-1.5 rounded-md hover:bg-white/5 transition-all cursor-pointer group"
                 >
-                  <span className="w-4 h-4 rounded-full font-mono text-[9px] font-black flex items-center justify-center border border-white/20 text-starlight/50 group-hover:border-cool-blue group-hover:text-cool-blue transition-colors">
+                  <span className="w-4 h-4 rounded-full font-mono text-micro font-black flex items-center justify-center border border-white/20 text-starlight/50 group-hover:border-cool-blue group-hover:text-cool-blue transition-colors">
                     {i + 1}
                   </span>
                   <span className="hidden sm:flex flex-col items-start leading-none">
-                    <span className="text-[9px] font-mono font-black tracking-widest uppercase text-starlight/70 group-hover:text-cool-blue transition-colors">{step.label}</span>
-                    <span className="text-[8px] text-starlight/30 font-sans mt-0.5">{step.sublabel}</span>
+                    <span className="text-micro font-mono font-black tracking-widest uppercase text-starlight/70 group-hover:text-cool-blue transition-colors">{step.label}</span>
+                    <span className="text-micro text-starlight/30 font-sans mt-0.5">{step.sublabel}</span>
                   </span>
                 </button>
-                {!isLast && <span className="text-white/10 text-[10px] font-mono">→</span>}
+                {!isLast && <span className="text-white/10 text-mini font-mono">→</span>}
               </div>
             );
           })}
@@ -1194,7 +1206,7 @@ export default function App() {
                     : <Mic className={`w-5 h-5 ${isRecording ? "text-starlight" : "text-cool-blue"}`} />}
                 </button>
               </div>
-              <span className="text-[8px] font-black tracking-widest text-starlight/40 uppercase font-mono text-center leading-tight">
+              <span className="text-micro font-black tracking-widest text-starlight/40 uppercase font-mono text-center leading-tight">
                 {isRecording ? "Listening..." : aiProcessing ? "Building..." : "Describe Job"}
               </span>
               <div className="relative w-36">
@@ -1203,7 +1215,7 @@ export default function App() {
                   onChange={(e) => setTextPrompt(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleProcessNLP(textPrompt)}
                   placeholder="Type & enter..."
-                  className="w-full bg-[#050810]/80 border border-white/10 rounded-full py-1.5 px-3 text-[10px] text-starlight placeholder-starlight/30 focus:ring-1 focus:ring-cool-blue focus:outline-none font-mono"
+                  className="w-full bg-[#050810]/80 border border-white/10 rounded-full py-1.5 px-3 text-mini text-starlight placeholder-starlight/30 focus:ring-1 focus:ring-cool-blue focus:outline-none font-mono"
                 />
               </div>
             </div>
@@ -1220,10 +1232,10 @@ export default function App() {
             }}
           >
             <div className="glass-panel border-white/15 rounded-2xl p-5 w-52 space-y-4 pointer-events-auto">
-              <span className="text-[8px] font-black tracking-widest text-soft-violet uppercase font-mono block">
+              <span className="text-micro font-black tracking-widest text-soft-violet uppercase font-mono block">
                 Estimate Snapshot
               </span>
-              <div className="space-y-2.5 font-mono text-[11px]">
+              <div className="space-y-2.5 font-mono text-mini">
                 <div className="flex justify-between items-center text-starlight/70">
                   <span>Materials</span>
                   <span className="text-cool-blue font-bold">{materials.length}</span>
@@ -1234,12 +1246,12 @@ export default function App() {
                 </div>
                 <div className="border-t border-white/5 pt-2.5 flex justify-between items-center">
                   <span className="text-starlight/70">Total</span>
-                  <span className="text-cool-blue font-extrabold text-sm">
+                  <span className="text-cool-blue font-extrabold text-base">
                     ${grandTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 </div>
               </div>
-              <p className="text-[8px] text-starlight/25 font-sans italic leading-relaxed">
+              <p className="text-micro text-starlight/25 font-sans italic leading-relaxed">
                 Tell us what to put here.
               </p>
             </div>
@@ -1254,7 +1266,7 @@ export default function App() {
         
         {/* Status Flash notification popup above orb */}
         {statusFlash && (
-          <div className="bg-cool-blue/15 border border-cool-blue/30 text-cool-blue px-3.5 py-1.5 rounded-full text-[10px] font-mono tracking-wider font-extrabold shadow-lg shadow-cool-blue/10 flex items-center gap-1.5 animate-bounce">
+          <div className="bg-cool-blue/15 border border-cool-blue/30 text-cool-blue px-3.5 py-1.5 rounded-full text-mini font-mono tracking-wider font-extrabold shadow-lg shadow-cool-blue/10 flex items-center gap-1.5 animate-bounce">
             <Sparkles className="w-3.5 h-3.5 animate-spin" />
             + {statusFlash.toUpperCase()}
           </div>
@@ -1310,10 +1322,10 @@ export default function App() {
 
         {/* State Label description text */}
         <div className="bg-[#050810]/75 border border-white/5 px-4 py-1.5 rounded-full shadow-lg backdrop-blur-md">
-          <span className="text-[8px] font-black tracking-widest text-[#ffffff] uppercase font-mono block">
+          <span className="text-micro font-black tracking-widest text-[#ffffff] uppercase font-mono block">
             {isRecording ? "LISTENING..." : aiProcessing ? "BUILDING ESTIMATE..." : "DESCRIBE YOUR JOB"}
           </span>
-          <span className="text-[9px] text-[#e2e8f0]/60 italic font-sans max-w-xs line-clamp-1">
+          <span className="text-micro text-[#e2e8f0]/60 italic font-sans max-w-xs line-clamp-1">
             {isRecording ? "Speak naturally — materials, dimensions, openings..." : aiProcessing ? "Extracting materials and pricing..." : (activeEstimate?.scope_of_work ?? 'Tap orb or type below to start your estimate')}
           </span>
         </div>
@@ -1330,7 +1342,7 @@ export default function App() {
               }
             }}
             placeholder="Describe materials, dimensions, or scope..."
-            className="w-full bg-[#050810]/80 frosted-input border-white/10 rounded-full py-1.5 px-4 text-xs tracking-wide text-starlight placeholder-starlight/40 focus:ring-1 focus:ring-cool-blue focus:outline-none backdrop-blur-md font-mono"
+            className="w-full bg-[#050810]/80 frosted-input border-white/10 rounded-full py-1.5 px-4 text-mini tracking-wide text-starlight placeholder-starlight/40 focus:ring-1 focus:ring-cool-blue focus:outline-none backdrop-blur-md font-mono"
             style={{ paddingRight: "3rem" }}
           />
           {textPrompt.trim() !== "" && (
@@ -1353,13 +1365,13 @@ export default function App() {
         <div className="flex items-center justify-between px-4 sm:px-6 py-3 bg-void-black/40 border-b border-white/5 select-none">
           <div className="flex items-center gap-2">
             <span className="h-1.5 w-1.5 rounded-full bg-cool-blue"></span>
-            <span className="text-[10px] sm:text-[11px] font-black tracking-widest text-starlight/70 uppercase font-mono">
+            <span className="text-mini sm:text-mini font-black tracking-widest text-starlight/70 uppercase font-mono">
               Estimate Ledger
             </span>
           </div>
           <div className="text-right">
-            <span className="text-[8px] text-starlight/40 font-bold tracking-widest uppercase block leading-none mb-0.5">
-              valuation
+            <span className="text-micro text-starlight/40 font-bold tracking-widest uppercase block leading-none mb-0.5">
+              total
             </span>
             <span className="text-base sm:text-lg font-black text-cool-blue font-mono leading-none">
               ${grandTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -1416,13 +1428,13 @@ export default function App() {
                   },
                 }),
               });
-              const data = await resp.json();
+              const data = await resp.json().catch(() => ({}));
               if (resp.ok) {
                 setStatusFlash(`PDF sent to ${settings.contact_email}`);
                 setTimeout(() => setStatusFlash(null), 5000);
               } else {
-                setStatusFlash(`PDF failed: ${data.error || resp.status}`);
-                setTimeout(() => setStatusFlash(null), 5000);
+                // Reject so the ledger can surface a durable inline error + retry
+                throw new Error(data.error || `Server error ${resp.status}`);
               }
             }}
           />
@@ -1450,40 +1462,40 @@ export default function App() {
         <div className="fixed inset-0 z-50 bg-void-black/90 backdrop-blur-lg flex items-center justify-center p-4">
           <div className="glass-panel border-white/15 max-w-md w-full rounded-2xl p-6 shadow-2xl relative space-y-4">
             <div className="flex items-center justify-between border-b border-white/10 pb-3">
-              <span className="text-[10px] font-extrabold px-2.5 py-1 rounded-full bg-cool-blue/20 text-cool-blue border border-cool-blue/30 tracking-widest uppercase font-mono">
+              <span className="text-mini font-extrabold px-2.5 py-1 rounded-full bg-cool-blue/20 text-cool-blue border border-cool-blue/30 tracking-widest uppercase font-mono">
                 Amend Review Auth
               </span>
-              <button onClick={() => setClientPortalCo(null)} className="text-starlight/60 hover:text-rose-400">
+              <button onClick={() => setClientPortalCo(null)} className="text-starlight/60 hover:text-alert-rose">
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             <div className="text-center space-y-1">
               <h2 className="text-lg font-black tracking-tight text-[#ffffff]">Project amendment Order</h2>
-              <p className="text-[10px] font-mono tracking-widest uppercase text-soft-violet">{settings.company_name}</p>
+              <p className="text-mini font-mono tracking-widest uppercase text-soft-violet">{settings.company_name}</p>
             </div>
 
             <div className="p-4 bg-void-black/60 border border-white/8 rounded-xl space-y-3 font-mono">
-              <div className="flex justify-between items-center text-[11px] text-starlight">
+              <div className="flex justify-between items-center text-mini text-starlight">
                 <span>Ref Estimate ID:</span>
                 <span className="font-bold text-cool-blue uppercase">{activeEstimate?.project_name ?? ''}</span>
               </div>
-              <div className="flex justify-between items-center text-[11px] text-starlight border-t border-white/5 pt-2">
+              <div className="flex justify-between items-center text-mini text-starlight border-t border-white/5 pt-2">
                 <span>Contract Addition:</span>
                 <span className="font-extrabold text-cool-blue text-base">
                   ${clientPortalCo.change_order_total.toFixed(2)}
                 </span>
               </div>
-              <p className="text-[10px] italic text-starlight/70 border-t border-white/5 pt-2 text-center font-sans">
+              <p className="text-mini italic text-starlight/70 border-t border-white/5 pt-2 text-center font-sans">
                 Scope: "{clientPortalCo.change_summary}"
               </p>
             </div>
 
             <div className="space-y-2">
-              <p className="text-[10px] font-black uppercase tracking-wider text-soft-violet font-mono">Materials Added Takeoff:</p>
+              <p className="text-mini font-black uppercase tracking-wider text-soft-violet font-mono">Materials Added Takeoff:</p>
               <div className="max-h-28 overflow-y-auto space-y-1 pr-1">
                 {clientPortalCo.added_materials.map((m, i) => (
-                  <div key={i} className="flex justify-between text-[11px] bg-void-black/40 p-2 rounded border border-white/5 font-mono">
+                  <div key={i} className="flex justify-between text-mini bg-void-black/40 p-2 rounded border border-white/5 font-mono">
                     <span className="text-starlight/90">{m.name}</span>
                     <span className="font-bold text-cool-blue">${m.total.toFixed(2)}</span>
                   </div>
@@ -1492,19 +1504,19 @@ export default function App() {
             </div>
 
             {clientPortalCo.exclusions && clientPortalCo.exclusions.length > 0 && (
-              <div className="p-2.5 bg-rose-500/5 border border-rose-500/15 rounded-lg text-[10px] text-starlight/80 font-sans leading-relaxed">
-                <strong className="text-rose-400 font-mono">Exclusions:</strong> {clientPortalCo.exclusions.join("; ")}
+              <div className="p-2.5 bg-alert-rose/5 border border-alert-rose/15 rounded-lg text-mini text-starlight/80 font-sans leading-relaxed">
+                <strong className="text-alert-rose font-mono">Exclusions:</strong> {clientPortalCo.exclusions.join("; ")}
               </div>
             )}
 
             <button
               onClick={handleClientApprove}
-              className="w-full bg-[#1e293b] hover:bg-cool-blue hover:text-void-black border border-cool-blue/40 text-starlight font-extrabold py-3.5 rounded-full transition-all cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-cool-blue/10 uppercase tracking-widest text-[10px]"
+              className="w-full bg-[#1e293b] hover:bg-cool-blue hover:text-void-black border border-cool-blue/40 text-starlight font-extrabold py-3.5 rounded-full transition-all cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-cool-blue/10 uppercase tracking-widest text-mini"
             >
               <CheckCircle className="w-4 h-4" />
               Approve and Digitally Sign Addendum
             </button>
-            <p className="text-[9px] text-center text-starlight/50 font-mono">
+            <p className="text-micro text-center text-starlight/50 font-mono">
               *By signing, you authorize contract price addition to the active estimator telemetry.
             </p>
           </div>
