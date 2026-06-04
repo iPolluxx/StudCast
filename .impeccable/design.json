@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-06-03T00:00:00.000Z",
+  "title": "Design System: StudCast (Lone Ranger Estimator)",
+  "extensions": {
+    "colorMeta": {
+      "void-black": { "role": "neutral", "displayName": "Void Black", "canonical": "#050810", "tonalRamp": ["#03050a", "#050810", "#0a0f1e", "#11182b", "#1b2641", "#2b3a5c", "#465a82", "#6b7fa6"] },
+      "deep-navy": { "role": "neutral", "displayName": "Deep Navy", "canonical": "#0a0f1e", "tonalRamp": ["#060912", "#0a0f1e", "#0f1730", "#162244", "#20315e", "#2f447d", "#4c63a0", "#7184bd"] },
+      "cool-blue": { "role": "primary", "displayName": "Cool Blue", "canonical": "#6eb5ff", "tonalRamp": ["#0a2a4d", "#103e72", "#1a5599", "#2a72c2", "#4593e6", "#6eb5ff", "#9bcdff", "#c8e4ff"] },
+      "soft-violet": { "role": "primary", "displayName": "Soft Violet", "canonical": "#a78bfa", "tonalRamp": ["#2d1d59", "#3f2a7d", "#5538a3", "#6d4cc7", "#8a6ce6", "#a78bfa", "#c3affd", "#e0d4fe"] },
+      "starlight": { "role": "neutral", "displayName": "Starlight", "canonical": "#e2e8f0", "tonalRamp": ["#3a4150", "#4d5566", "#646d80", "#828b9d", "#a3abba", "#c3cad6", "#e2e8f0", "#f4f7fb"] },
+      "live-emerald": { "role": "tertiary", "displayName": "Live Emerald", "canonical": "#34d399", "tonalRamp": ["#0a3a2a", "#0f5640", "#157556", "#1d9a6f", "#28bd88", "#34d399", "#6ee0b8", "#a8eed6"] },
+      "alert-rose": { "role": "tertiary", "displayName": "Alert Rose", "canonical": "#fb7185", "tonalRamp": ["#5a1622", "#7d1f30", "#a32940", "#c73a55", "#e6536e", "#fb7185", "#fda3b1", "#fed4db"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Marquee total/valuation number and modal titles. Tops out ~1.5rem; no hero type in this dense product UI." },
+      "headline": { "displayName": "Headline", "purpose": "Modal headings in Inter, tight tracking." },
+      "body": { "displayName": "Body", "purpose": "Descriptive paragraphs and panel help text in Inter, often at reduced starlight opacity; hints italic." },
+      "label": { "displayName": "Label", "purpose": "The signature voice: JetBrains Mono, uppercase, tracked. Eyebrows, status pills, badges, button text. Capped at ~4 words." },
+      "data": { "displayName": "Data", "purpose": "All numeric content in JetBrains Mono: dollar figures, quantities, rates, table cells. Currency right-aligned." }
+    },
+    "shadows": [
+      { "name": "glass-hover-glow", "value": "0 8px 32px 0 rgba(110,181,255,0.08), 0 0 1px 1px rgba(110,181,255,0.15) inset", "purpose": "Lift a glass panel gets on hover: faint blue bloom plus inner rim light." },
+      { "name": "panel-ambient", "value": "0 8px 32px -4px rgba(110,181,255,0.08), 0 4px 16px -4px rgba(167,139,250,0.06)", "purpose": "Resting dual-hue glow under floating instrument panels (.glass-panel-glow)." },
+      { "name": "focus-glow", "value": "0 0 14px rgba(110,181,255,0.3)", "purpose": "Cool-blue halo a frosted input emits on focus, replacing a hard ring." },
+      { "name": "orb-halo", "value": "0 20px 25px -5px rgba(110,181,255,0.10)", "purpose": "Diffuse blue aura under the resting voice orb." }
+    ],
+    "motion": [
+      { "name": "ease-glass", "value": "cubic-bezier(0.4, 0, 0.2, 1)", "purpose": "Default easing for state transitions on glass surfaces and inputs." },
+      { "name": "ease-out-expo", "value": "cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "Snappy reveal easing: slide-in, panel-right, ring-expand." },
+      { "name": "ease-barrel", "value": "cubic-bezier(0.22, 1, 0.36, 1)", "purpose": "The orb's barrel-roll into theater mode (1.9s)." },
+      { "name": "ease-overshoot", "value": "cubic-bezier(0.34, 1.56, 0.64, 1)", "purpose": "Orb-land bounce: materializes, overshoots, settles (0.65s)." },
+      { "name": "orb-pulse", "value": "orb-pulse 2s infinite ease-in-out", "purpose": "Resting orb breathing glow." },
+      { "name": "duration-state", "value": "300ms", "purpose": "Standard control state transition (hover, scale, brighten)." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Gradient CTA",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Headline action (Subscribe, Dispatch Authorization). Cool-blue to violet gradient, void-black label.",
+      "html": "<button class=\"ds-btn-primary\">Dispatch Authorization</button>",
+      "css": ".ds-btn-primary { display:inline-flex; align-items:center; gap:6px; background:linear-gradient(90deg,#6eb5ff,#a78bfa); color:#050810; font-family:'JetBrains Mono',ui-monospace,monospace; font-size:9px; font-weight:900; letter-spacing:0.15em; text-transform:uppercase; border:none; border-radius:9999px; padding:12px 20px; cursor:pointer; transition:transform 0.2s cubic-bezier(0.4,0,0.2,1), filter 0.2s; } .ds-btn-primary:hover { transform:scale(1.05); filter:brightness(1.08); } .ds-btn-primary:focus-visible { outline:2px solid #6eb5ff; outline-offset:2px; } .ds-btn-primary:disabled { opacity:0.45; cursor:default; }"
+    },
+    {
+      "name": "Publish (Charge-Up Secondary)",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Dark navy gradient that fills with the brand gradient on hover and flips text to void-black.",
+      "html": "<button class=\"ds-btn-publish\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M22 11.08V12a10 10 0 1 1-5.93-9.14\"/><polyline points=\"22 4 12 14.01 9 11.01\"/></svg>Publish &amp; Send PDF</button>",
+      "css": ".ds-btn-publish { display:inline-flex; align-items:center; gap:6px; background:linear-gradient(90deg,#20346a,#2e1d52); color:#e2e8f0; border:1px solid rgba(110,181,255,0.3); font-family:'JetBrains Mono',ui-monospace,monospace; font-size:9px; font-weight:900; letter-spacing:0.15em; text-transform:uppercase; border-radius:9999px; padding:12px 20px; cursor:pointer; box-shadow:0 10px 25px -5px rgba(110,181,255,0.05); transition:background 0.3s cubic-bezier(0.4,0,0.2,1), color 0.3s; } .ds-btn-publish:hover { background:linear-gradient(90deg,#6eb5ff,#a78bfa); color:#050810; } .ds-btn-publish:focus-visible { outline:2px solid #6eb5ff; outline-offset:2px; }"
+    },
+    {
+      "name": "Frosted Conversational Input",
+      "kind": "input",
+      "refersTo": "input-frosted",
+      "description": "Pill text field for 'describe your job'. Glows cool-blue on focus, no hard ring.",
+      "html": "<input class=\"ds-input-frosted\" type=\"text\" placeholder=\"Describe materials, dimensions, or scope...\" />",
+      "css": ".ds-input-frosted { width:100%; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); color:#e2e8f0; font-family:'JetBrains Mono',ui-monospace,monospace; font-size:11px; letter-spacing:0.02em; border-radius:9999px; padding:6px 16px; outline:none; transition:all 0.2s cubic-bezier(0.4,0,0.2,1); } .ds-input-frosted::placeholder { color:rgba(226,232,240,0.4); } .ds-input-frosted:focus { background:rgba(255,255,255,0.06); border-color:#6eb5ff; box-shadow:0 0 14px rgba(110,181,255,0.3); }"
+    },
+    {
+      "name": "Price-Source Badge (AI)",
+      "kind": "chip",
+      "refersTo": "badge-ai",
+      "description": "Tint-on-tint pill marking where a price came from. ai=violet, override=blue, database=emerald.",
+      "html": "<span class=\"ds-badge-ai\">ai</span> <span class=\"ds-badge-override\">override</span> <span class=\"ds-badge-db\">database</span>",
+      "css": ".ds-badge-ai,.ds-badge-override,.ds-badge-db { font-family:'JetBrains Mono',ui-monospace,monospace; font-size:8px; font-weight:800; text-transform:uppercase; letter-spacing:0.1em; padding:1px 6px; border-radius:4px; } .ds-badge-ai { background:rgba(167,139,250,0.2); color:#a78bfa; } .ds-badge-override { background:rgba(110,181,255,0.2); color:#6eb5ff; } .ds-badge-db { background:rgba(52,211,153,0.2); color:#34d399; }"
+    },
+    {
+      "name": "Glass Instrument Panel",
+      "kind": "card",
+      "refersTo": "panel-glass",
+      "description": "Floating frosted panel over the starfield. Glow-as-depth, ghost border, no nesting.",
+      "html": "<div class=\"ds-glass-panel\"><span class=\"ds-panel-eyebrow\">Estimate Snapshot</span><div class=\"ds-panel-row\"><span>Total</span><span class=\"ds-panel-num\">$3,645.50</span></div></div>",
+      "css": ".ds-glass-panel { background:rgba(10,15,30,0.65); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); border:1px solid rgba(255,255,255,0.12); border-radius:16px; padding:20px; color:#e2e8f0; box-shadow:0 8px 32px -4px rgba(110,181,255,0.08), 0 4px 16px -4px rgba(167,139,250,0.06); transition:border-color 0.3s, box-shadow 0.3s; } .ds-glass-panel:hover { border-color:rgba(110,181,255,0.25); box-shadow:0 8px 32px 0 rgba(110,181,255,0.08), 0 0 1px 1px rgba(110,181,255,0.15) inset; } .ds-panel-eyebrow { display:block; font-family:'JetBrains Mono',ui-monospace,monospace; font-size:8px; font-weight:900; letter-spacing:0.15em; text-transform:uppercase; color:#a78bfa; margin-bottom:12px; } .ds-panel-row { display:flex; justify-content:space-between; align-items:center; font-family:'JetBrains Mono',ui-monospace,monospace; font-size:11px; color:rgba(226,232,240,0.7); } .ds-panel-num { color:#6eb5ff; font-weight:800; }"
+    },
+    {
+      "name": "Voice Orb (resting)",
+      "kind": "custom",
+      "refersTo": "voice-orb",
+      "description": "The console you talk to. Pulsing gradient orb with a cool-blue mic; the system's signature object.",
+      "html": "<button class=\"ds-voice-orb\" aria-label=\"Describe your job\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#6eb5ff\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z\"/><path d=\"M19 10v2a7 7 0 0 1-14 0v-2\"/><line x1=\"12\" y1=\"19\" x2=\"12\" y2=\"23\"/></svg></button>",
+      "css": ".ds-voice-orb { height:56px; width:56px; border-radius:9999px; display:flex; align-items:center; justify-content:center; background:linear-gradient(45deg,#121829,#3a2254); border:1px solid #614582; cursor:pointer; box-shadow:0 20px 25px -5px rgba(110,181,255,0.10); animation:ds-orb-pulse 2s infinite ease-in-out; transition:all 0.3s; } .ds-voice-orb:hover { background:linear-gradient(45deg,#1b2641,#4e316d); } @keyframes ds-orb-pulse { 0% { transform:scale(1); box-shadow:0 0 0 0 rgba(110,181,255,0.4), 0 0 0 8px rgba(167,139,250,0.15), 0 0 0 20px rgba(110,181,255,0.1);} 50% { transform:scale(1.06); box-shadow:0 0 18px 6px rgba(110,181,255,0.5), 0 0 0 16px rgba(167,139,250,0.2), 0 0 0 35px rgba(110,181,255,0);} 100% { transform:scale(1); box-shadow:0 0 0 0 rgba(110,181,255,0.4), 0 0 0 0 rgba(167,139,250,0), 0 0 0 0 rgba(110,181,255,0);} } @media (prefers-reduced-motion: reduce) { .ds-voice-orb { animation:none; } }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Command Bridge",
+    "overview": "StudCast is the control deck of a one-person operation. The screen is a void-black hull; the work floats on glass instrument panels lit from within by cool-blue and violet readouts. A solo contractor sits at the helm of something that looks and feels far bigger than one person, which is the entire emotional job: a Lone Ranger should look established to their client and to themselves. The voice orb is the console you talk to; the ledger is the manifest; the 3D material yard is the viewport.\n\nThe system is confident and energetic, not quiet. Gradients run blue into violet, controls scale and brighten on contact, and the orb literally barrel-rolls across the bridge when it moves into theater mode. But spectacle never sits on top of the work: the motion and 3D orbit the ledger; the number the contractor is putting their name on stays still, legible, and trustworthy at the center.\n\nThis system explicitly rejects clunky legacy contractor software (dense gray QuickBooks/Buildertrend-era estimating tools that feel like data entry) and the generic SaaS dashboard (interchangeable indigo-on-white, card-grid, hero-metric Linear/Stripe clones). The cosmic-glass identity exists so this product is never mistaken for another seat-based B2B tool.",
+    "keyCharacteristics": [
+      "Void-black space hull as the canvas; a real Milky Way photo, never a flat dark gray.",
+      "Glass instrument panels with backdrop blur, glowing rather than shadowed.",
+      "A two-voice accent system: cool-blue is trust (money, primary actions), soft-violet is intelligence (AI moments); together they form the brand gradient.",
+      "Monospace, tracked, uppercase micro-labels as the dominant typographic voice.",
+      "Expressive, confident motion (orb pulse, barrel-roll, listening rings) that orbits the work without blocking it.",
+      "The trusted number is always cool-blue, always still, always readable."
+    ],
+    "rules": [
+      { "name": "The Two-Voice Rule", "body": "Cool-blue means trust (money, totals, prices, primary actions, focus); soft-violet means intelligence (anything the AI did or proposes: extraction, change orders, the ai price source, sparkle flourishes). They combine into the brand gradient, but their meanings never blur. A violet total or a blue 'ai' badge is wrong; the color tells the contractor where the value came from.", "section": "colors" },
+      { "name": "The Dark-On-Bright Rule", "body": "Text on any cool-blue/violet gradient surface is void-black (#050810), never white. The gradient is the light source; the label is the silhouette on it. White-on-gradient is forbidden; it muddies the brand color and drops contrast.", "section": "colors" },
+      { "name": "The One Blue Number Rule", "body": "The figure the contractor trusts (grand total, line amounts, prices) is always cool-blue and never wrapped in motion. Money does not animate, gradient-fill, or glow-pulse. Its stillness is what makes it trustworthy.", "section": "colors" },
+      { "name": "The No Flat Black Rule", "body": "The background is the starfield photo over void-black, never a flat #050810 fill on a content screen. Depth comes from the nebula, the aurora pools, and the vignette. A flat dark-gray panel grid is the legacy-software tell and is prohibited.", "section": "colors" },
+      { "name": "The Mono Label Rule", "body": "Every label, status, badge, and number is JetBrains Mono, uppercase, tracked 0.1em-0.15em. Sans-serif is for sentences a human reads; mono is for everything the bridge reports.", "section": "typography" },
+      { "name": "The Tracked-Caps Are Labels, Not Eyebrows Rule", "body": "Uppercase tracked mono is a deliberate brand system here (the console voice), so the 'no eyebrow on every section' ban is satisfied by intent. But caps are capped at ~4 words. Never set a sentence or paragraph in tracked caps.", "section": "typography" },
+      { "name": "The No Hard Shadow Rule", "body": "Drop shadows that read as a panel lifting off a page are forbidden; that is the 2014-app / legacy-tool tell. If a surface needs to feel raised, it glows or it blurs the background. Audit test: if the shadow is dark, tight, and gray, it's wrong; the right one is large, soft, and blue.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do split the accents by meaning: cool-blue for trust (money, prices, primary actions), soft-violet for intelligence (AI moments). They share the gradient, not their meanings.",
+      "Do keep the trusted number cool-blue (#6eb5ff) and motionless. Money is still; stillness is trust.",
+      "Do put void-black text on every cool-blue/violet gradient surface, never white.",
+      "Do set every label, status, badge, and dollar figure in uppercase tracked JetBrains Mono; reserve Inter for sentences.",
+      "Do convey depth with glows, backdrop-blur, and the aurora/vignette starfield, never hard drop shadows.",
+      "Do use the three-color price-source code (violet ai / blue override / emerald database) so the contractor always sees where a price came from.",
+      "Do let the orb and 3D be expressive and energetic, but keep them orbiting the ledger, never on top of the number.",
+      "Do honor prefers-reduced-motion: the barrel-roll, orb pulse, listening rings, and bounce flashes all need a crossfade-or-instant fallback."
+    ],
+    "donts": [
+      "Don't let it feel like clunky legacy contractor software: no dense gray spreadsheet sprawl, no nested menus, no data-entry screens.",
+      "Don't let it become a generic SaaS dashboard: no indigo-on-white, no repeated identical card grids, no hero-metric template, no Linear/Stripe-clone look.",
+      "Don't use a flat #050810 fill as a full-screen content background; the starfield and aurora carry the depth.",
+      "Don't nest glass panels inside glass panels; inner rows are flat void-black/40 tinted strips.",
+      "Don't cast hard, dark, tight drop shadows; if it's not large, soft, and tinted blue, it doesn't belong.",
+      "Don't set sentences or paragraphs in tracked uppercase; caps are for 4-word labels only.",
+      "Don't use alert-rose decoratively; it means destructive or error, nothing else."
+    ]
+  }
+}

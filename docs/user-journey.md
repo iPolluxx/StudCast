@@ -2,6 +2,17 @@
 
 This document details the step-by-step user journey of a residential contractor using the Lone Ranger Estimator, from their initial landing on the website to account activation, estimate creation, customer approvals, and final invoice delivery.
 
+> **Accuracy note (read first).** This describes the **intended end-to-end journey**, which currently spans two
+> surfaces: onboarding (Steps 1–5) runs through the **legacy flow** (`public/index.html` → `/dashboard-legacy`,
+> Google OAuth → phone/OTP → profile wizard), then hands off to the **React dashboard** (`ui/`, at `/dashboard`)
+> for estimating (Steps 6+). Differences in the current build vs. the narrative below:
+> • **OTP** is delivered by **email fallback** while Twilio A2P is in review (`SMS_LIVE=false`).
+> • In the React app the **voice orb is a scripted demo** (the live intake path is typing → `/api/process-text`).
+> • The React app has **no "Contractor vs Average Rates" toggle** and **no unsaved-changes interceptor** (those
+>   are legacy `dashboard.html` only); the publish control is labeled **"Publish & Send PDF"** (not "Scope Job"
+>   / "Approve & Lock Invoice").
+> • Stripe activation is confirmed via `POST /api/billing/verify-session` on return (webhook-independent).
+
 ---
 
 ## Step 1: Landing & Discovery
@@ -78,10 +89,10 @@ This document details the step-by-step user journey of a residential contractor 
 * **Journey Details:**
   * The contractor reviews the generated ledger divided into **Materials** and **Labor** tables.
   * They notice the AI calculated standard pricing. They decide to tweak a line item.
-  * The contractor clicks directly into a cell on the grid—such as the drywall price or the labor hours—and types the new value. The active cell glows purple to show it is in edit mode.
+  * The contractor clicks directly into a cell on the grid—such as the drywall price or the labor hours—and types the new value (fractional quantities/hours are allowed). The active cell glows cool-blue to show it is in edit mode, and on desktop they can drive the grid by keyboard (Enter to advance down / add a row, ↑/↓ to move between rows).
   * The project total, taxes, and subtotals recalculate instantly at the bottom of the ledger.
-  * The contractor can also use a dropdown menu to toggle between **Contractor Rates** and **Average Local Rates** to apply different pricing schedules.
-  * If the contractor accidentally clicks to open a different historic project or log out, the **"Unsaved Changes Interceptor"** modal alerts them, preventing them from losing their modifications. They click **"Save Now"** to commit the changes to the database.
+  * Each line carries a price-source badge — **Est.** (AI), **Yours** (manual), **Saved** (price book) — so it's clear where every number came from. *(The React app does not have a "Contractor vs Average Rates" toggle; pricing comes from the override → price-book → AI waterfall plus the manual rate-override panel.)*
+  * Deleting a line requires a two-step confirm, and the scope field autosaves on a debounce. *(The React app does not implement the legacy "Unsaved Changes Interceptor"; that modal exists only in `public/dashboard.html`.)*
 
 ---
 
@@ -121,7 +132,7 @@ This document details the step-by-step user journey of a residential contractor 
 * **Goal:** Export the completed estimate or invoice as a clean PDF for billing.
 * **Journey Details:**
   * The contractor is ready to deliver the final proposal or invoice.
-  * They click the "Approve & Lock Invoice" button on their dashboard.
+  * They click the **"Publish & Send PDF"** button on their dashboard (after a one-tap confirm summary). *(The legacy `dashboard.html` labels this "Approve & Lock Invoice".)*
   * In the background, the server runs a headless Puppeteer browser that compiles the contractor's business details, uploaded logo, license information, client info, itemized materials/labor grid, approved change orders, and the grand total.
   * The server prints this layout into a pixel-perfect, professional PDF document.
   * The PDF is automatically emailed to the contractor and can be forwarded directly to the client.

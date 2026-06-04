@@ -36,7 +36,7 @@ graph TD
 | Deployment | Google Cloud Run (auto-scaled, containerized) |
 | Database | Cloud Firestore (multi-tenant, serverless) |
 | AI Model | Gemini 3.5 Flash (`@google/genai`) — deterministic 3-stage pipeline |
-| Frontend | React 18 + Vite + TypeScript + Tailwind CSS v4 |
+| Frontend | React 19 + Vite + TypeScript + Tailwind CSS v4 |
 | 3D Engine | Three.js (WebGL) — OrbitControls, raycasting, procedural geometry |
 | Auth | Google OAuth 2.0 ID Tokens |
 | Payments | Stripe Checkout + Webhooks |
@@ -233,7 +233,7 @@ The workflow requires no secrets — the suite is entirely offline. A failing te
 
 ## React Dashboard (New)
 
-The dashboard UI was rebuilt from scratch as a React 18 + TypeScript + Vite application:
+The dashboard UI was rebuilt from scratch as a React 19 + TypeScript + Vite application:
 
 - **Cosmic glass aesthetic** — procedural canvas starfield with parallax inertia, glassmorphism panels, aurora gradient pools
 - **Workflow stage system** — CAPTURE → PROCESS → VISUALIZE → FINALIZE, driven by AI and interaction state
