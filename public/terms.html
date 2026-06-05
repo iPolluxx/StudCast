@@ -6,161 +6,82 @@
   <title>Terms & Conditions | Lone Ranger Estimator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;800;900&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;700;800&display=swap" rel="stylesheet">
   <style>
+    /* Command Bridge — cosmic-glass tokens (mirrors index.html / DESIGN.md) */
     :root {
-      --base-bg: #210936;
-      --card-bg: #2d0f47;
-      --header-bg: #1a0729;
-      --primary-accent: #521880;
-      --accent-hover: #6d28d9;
-      --text-primary: #e9d5ff;
-      --text-muted: #9b59d0;
-      --text-accent: #c084fc;
-      --success: #22c55e;
-      --radius-card: 1.25rem;
-      --radius-btn: 1rem;
+      --void-black: #050810; --deep-navy: #0a0f1e; --cool-blue: #6eb5ff; --soft-violet: #a78bfa;
+      --starlight: #e2e8f0; --live-emerald: #34d399; --alert-rose: #fb7185;
+      --navy-deep: #20346a; --navy-violet: #2e1d52;
+      --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+      --font-display: 'Outfit', 'Inter', sans-serif;
+      --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+      --radius-panel: 16px;
     }
-
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: 'Inter', sans-serif;
-      background-color: var(--base-bg);
-      color: var(--text-primary);
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-    }
-    
-    h1, h2, h3 { font-family: 'Outfit', sans-serif; }
+    body { font-family: var(--font-sans); background-color: var(--void-black); color: var(--starlight); min-height: 100vh; display: flex; flex-direction: column; -webkit-font-smoothing: antialiased; }
+    a { text-decoration: none; }
+    ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: rgba(0,0,0,0.15); }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
 
-    /* Header / Nav */
-    header {
-      background: rgba(26, 7, 41, 0.85);
-      backdrop-filter: blur(12px);
-      border-bottom: 1px solid rgba(82, 24, 128, 0.3);
-      position: sticky;
-      top: 0;
-      z-index: 100;
-    }
-    nav {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 1rem 2rem;
-      max-width: 1152px;
-      margin: 0 auto;
-      width: 100%;
-    }
-    .logo {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      text-decoration: none;
-    }
-    .logo-mark {
-      width: 40px; height: 40px;
-      border-radius: 0.5rem;
-      background: linear-gradient(135deg, var(--accent-hover), var(--primary-accent));
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-    }
-    .logo-mark svg { width: 20px; height: 20px; color: var(--text-primary); }
-    .logo-text {
-      font-family: 'Outfit', sans-serif;
-      font-weight: 700;
-      font-size: 1.1rem;
-      color: var(--text-primary);
-    }
-    .nav-back {
-      padding: 0.625rem 1.25rem;
-      border-radius: 0.75rem;
-      border: 1px solid var(--primary-accent);
-      color: var(--text-accent);
-      font-weight: 500;
-      font-size: 0.95rem;
-      text-decoration: none;
-      transition: all 0.2s ease;
-    }
-    .nav-back:hover { background: rgba(82, 24, 128, 0.2); }
+    /* Starfield hull */
+    .starfield, .aurora, .vignette { position: fixed; inset: 0; z-index: -10; pointer-events: none; }
+    .starfield { background-image: url('/starfield.jpg'); background-size: cover; background-position: 50% 40%; filter: brightness(0.5) contrast(1.35) saturate(1.35) hue-rotate(-8deg); }
+    .aurora-violet { background: radial-gradient(ellipse 55% 45% at 22% 18%, rgba(30,14,60,0.6) 0%, transparent 100%); }
+    .aurora-blue { background: radial-gradient(ellipse 65% 50% at 80% 82%, rgba(8,22,55,0.55) 0%, transparent 100%); }
+    .vignette { background: radial-gradient(ellipse 90% 85% at 50% 40%, transparent 40%, rgba(5,8,16,0.85) 100%); }
 
-    /* Main content */
-    .content-container {
-      max-width: 800px;
-      margin: 3rem auto;
-      padding: 0 1.5rem;
-      flex: 1;
-      width: 100%;
-    }
+    h1, h2, h3 { font-family: var(--font-display); }
+
+    /* Header */
+    header { background: rgba(10,15,30,0.6); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-bottom: 1px solid rgba(255,255,255,0.08); position: sticky; top: 0; z-index: 100; }
+    nav { display: flex; align-items: center; justify-content: space-between; padding: 0.85rem 2rem; max-width: 1152px; margin: 0 auto; width: 100%; }
+    .logo { display: flex; align-items: center; gap: 0.75rem; }
+    .logo-mark { width: 38px; height: 38px; border-radius: 0.6rem; background: linear-gradient(135deg, var(--cool-blue), var(--soft-violet)); display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 0 16px rgba(110,181,255,0.3); }
+    .logo-mark svg { width: 19px; height: 19px; color: var(--void-black); }
+    .logo-text { font-family: var(--font-mono); font-weight: 800; font-size: 0.8125rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--starlight); }
+    .nav-back { padding: 0.55rem 1.2rem; border-radius: 9999px; border: 1px solid rgba(110,181,255,0.3); color: var(--cool-blue); font-family: var(--font-mono); font-weight: 800; font-size: 0.6875rem; letter-spacing: 0.12em; text-transform: uppercase; transition: all 0.2s ease; }
+    .nav-back:hover { background: rgba(110,181,255,0.1); }
+
+    /* Content */
+    .content-container { max-width: 800px; margin: 3.5rem auto; padding: 0 1.5rem; flex: 1; width: 100%; }
     .doc-card {
-      background: var(--card-bg);
-      border: 1px solid var(--primary-accent);
-      border-radius: var(--radius-card);
-      padding: 2.5rem;
-      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+      background: rgba(10, 15, 30, 0.65); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255,255,255,0.12); border-radius: var(--radius-panel);
+      box-shadow: 0 8px 32px -4px rgba(110,181,255,0.08), 0 4px 16px -4px rgba(167,139,250,0.06);
+      padding: 2.75rem;
     }
-    h1 {
-      font-size: 2.25rem;
-      font-weight: 800;
-      color: #ffffff;
-      margin-bottom: 0.5rem;
-    }
-    .meta-date {
-      color: var(--text-muted);
-      font-size: 0.9rem;
-      margin-bottom: 2rem;
-      border-bottom: 1px solid rgba(82, 24, 128, 0.3);
-      padding-bottom: 1rem;
-    }
-    h2 {
-      font-size: 1.35rem;
-      font-weight: 700;
-      color: var(--text-accent);
-      margin-top: 2rem;
-      margin-bottom: 0.75rem;
-    }
-    p {
-      color: var(--text-primary);
-      line-height: 1.7;
-      font-size: 0.95rem;
-      margin-bottom: 1.25rem;
-    }
+    .eyebrow { font-family: var(--font-mono); font-size: 0.6875rem; font-weight: 800; letter-spacing: 0.18em; text-transform: uppercase; color: var(--soft-violet); display: inline-block; margin-bottom: 0.85rem; }
+    h1 { font-size: 2.25rem; font-weight: 900; color: var(--starlight); margin-bottom: 0.6rem; letter-spacing: -0.02em; }
+    .meta-date { font-family: var(--font-mono); color: rgba(226,232,240,0.62); font-size: 0.75rem; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 2rem; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 1.25rem; }
+    h2 { font-size: 1.3rem; font-weight: 700; color: var(--cool-blue); margin-top: 2rem; margin-bottom: 0.75rem; letter-spacing: -0.01em; }
+    p { color: rgba(226,232,240,0.74); line-height: 1.75; font-size: 0.95rem; margin-bottom: 1.25rem; }
 
     /* Footer */
-    footer {
-      background: var(--header-bg);
-      border-top: 1px solid var(--primary-accent);
-      padding: 3rem 2rem;
-      margin-top: auto;
-    }
-    .footer-inner {
-      max-width: 1152px;
-      margin: 0 auto;
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      justify-content: space-between;
-      gap: 1.5rem;
-      width: 100%;
-    }
-    .footer-tagline { color: var(--text-muted); font-size: 0.875rem; }
+    footer { background: rgba(10,15,30,0.7); backdrop-filter: blur(14px); border-top: 1px solid rgba(255,255,255,0.08); padding: 3rem 2rem; margin-top: auto; }
+    .footer-inner { max-width: 1152px; margin: 0 auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1.5rem; width: 100%; }
+    .footer-tagline { color: rgba(226,232,240,0.5); font-size: 0.8125rem; }
     .footer-links { display: flex; gap: 1.5rem; }
-    .footer-links a { color: var(--text-accent); font-size: 0.875rem; text-decoration: none; transition: color 0.2s; }
-    .footer-links a:hover { color: var(--text-primary); }
+    .footer-links a { font-family: var(--font-mono); color: var(--cool-blue); font-size: 0.6875rem; letter-spacing: 0.1em; text-transform: uppercase; transition: color 0.2s; }
+    .footer-links a:hover { color: var(--soft-violet); }
 
     @media (max-width: 640px) {
       .footer-inner { flex-direction: column; align-items: center; text-align: center; }
-      .doc-card { padding: 1.5rem; }
-      h1 { font-size: 1.75rem; }
-      h2 { font-size: 1.2rem; }
+      .doc-card { padding: 1.75rem; }
+      h1 { font-size: 1.85rem; }
+      h2 { font-size: 1.15rem; }
     }
   </style>
 </head>
 <body>
 
-  <!-- Header / Navigation -->
+  <!-- Starfield hull -->
+  <div class="starfield"></div>
+  <div class="aurora aurora-violet"></div>
+  <div class="aurora aurora-blue"></div>
+  <div class="vignette"></div>
+
+  <!-- Header -->
   <header>
     <nav>
       <a href="/" class="logo">
@@ -169,7 +90,7 @@
             <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z"/>
           </svg>
         </div>
-        <span class="logo-text">Lone Ranger Estimator</span>
+        <span class="logo-text">Lone Ranger</span>
       </a>
       <a href="/" class="nav-back">← Back to Home</a>
     </nav>
@@ -178,9 +99,10 @@
   <!-- Main Content -->
   <main class="content-container">
     <div class="doc-card">
-      <h1>Terms & Conditions</h1>
+      <span class="eyebrow">Legal</span>
+      <h1>Terms &amp; Conditions</h1>
       <p class="meta-date"><strong>Last Updated:</strong> May 28, 2026</p>
-      
+
       <p>Welcome to Lone Ranger Estimator. By accessing or using our platform, you agree to comply with and be bound by the following terms and conditions issued by Lone Ranger Contracting LLC.</p>
 
       <h2>1. Workspace Accounts</h2>
@@ -203,11 +125,11 @@
             <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z"/>
           </svg>
         </div>
-        <span class="logo-text">Lone Ranger Estimator</span>
+        <span class="logo-text">Lone Ranger</span>
       </a>
       <p class="footer-tagline">Built by a contractor, for contractors in Northern Wisconsin</p>
       <div class="footer-links">
-        <a href="/dashboard">Dashboard</a>
+        <a href="/dashboard-legacy">Dashboard</a>
         <a href="/privacy.html">Privacy Policy</a>
         <a href="/terms.html">Terms of Service</a>
       </div>

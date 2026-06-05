@@ -12,15 +12,17 @@
     <!-- ─── Phase 2: CSS Variable Premium Palette ────────────────────────── -->
     <style>
         /* ── Design Tokens ──────────────────────────────────────────────── */
+        /* Command Bridge — cosmic-glass palette (token names preserved; values
+           remapped from the old purple theme so the whole gateway re-themes at once) */
         :root {
-            --base-bg:       #210936;
-            --card-bg:       #2d0f47;
-            --header-bg:     #1a0729;
-            --primary-accent:#521880;
-            --accent-hover:  #6d28d9;
-            --text-primary:  #e9d5ff;
-            --text-muted:    #9b59d0;
-            --text-accent:   #c084fc;
+            --base-bg:       #050810;             /* void-black */
+            --card-bg:       rgba(13,19,34,0.9);  /* deep-navy glass */
+            --header-bg:     rgba(10,15,30,0.7);
+            --primary-accent:#6eb5ff;             /* cool-blue (trust) */
+            --accent-hover:  #a78bfa;             /* soft-violet (intelligence) */
+            --text-primary:  #e2e8f0;             /* starlight */
+            --text-muted:    #94a3c8;
+            --text-accent:   #6eb5ff;
         }
 
         h1, h2, h3 { font-family: 'Outfit', sans-serif; }
@@ -35,11 +37,29 @@
             -webkit-font-smoothing: antialiased;
         }
 
+        /* ── Starfield hull (matches the dashboard / landing) ───────────── */
+        .starfield, .aurora, .vignette { position: fixed; inset: 0; z-index: -10; pointer-events: none; }
+        .starfield { background-image: url('/starfield.jpg'); background-size: cover; background-position: 50% 50%; filter: brightness(0.5) contrast(1.35) saturate(1.35) hue-rotate(-8deg); }
+        .aurora-violet { background: radial-gradient(ellipse 55% 45% at 22% 22%, rgba(30,14,60,0.6) 0%, transparent 100%); }
+        .aurora-blue { background: radial-gradient(ellipse 65% 50% at 80% 78%, rgba(8,22,55,0.55) 0%, transparent 100%); }
+        .vignette { background: radial-gradient(ellipse 85% 85% at 50% 50%, transparent 42%, rgba(5,8,16,0.8) 100%); }
+
         /* ── Card glass ─────────────────────────────────────────────────── */
         .card {
             background: var(--card-bg);
-            border: 1px solid var(--primary-accent);
-            border-radius: 1.25rem;
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 1rem;
+            box-shadow: 0 8px 32px -4px rgba(110,181,255,0.08), 0 4px 16px -4px rgba(167,139,250,0.06);
+        }
+
+        /* ── Auth input focus ring (keyboard-visible; auth flow uses focus:outline-none) ── */
+        #loginCompanyName:focus-visible, #loginPhone:focus-visible,
+        #regCompanyName:focus-visible, #regPhone:focus-visible, #otpInput:focus-visible {
+            outline: 2px solid var(--primary-accent);
+            outline-offset: 1px;
+            border-color: var(--primary-accent) !important;
         }
 
         /* ── Scrollbar ──────────────────────────────────────────────────── */
@@ -53,16 +73,16 @@
             min-width: 40px; display: inline-block;
             transition: background-color 0.15s, box-shadow 0.15s;
         }
-        .editable-cell:hover { background-color: rgba(192,132,252,0.10); }
+        .editable-cell:hover { background-color: rgba(110,181,255,0.10); }
         .editable-cell:focus {
-            background-color: rgba(192,132,252,0.15);
-            box-shadow: 0 0 0 2px rgba(192,132,252,0.40);
+            background-color: rgba(110,181,255,0.15);
+            box-shadow: 0 0 0 2px rgba(110,181,255,0.40);
         }
 
         /* ── Project selector ───────────────────────────────────────────── */
         #project-selector {
             appearance: none;
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%239b59d0' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E");
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%2394a3c8' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E");
             background-repeat: no-repeat;
             background-position: right 0.75rem center;
             background-size: 1.25em;
@@ -161,6 +181,12 @@
 </head>
 <body>
 
+    <!-- ─── Starfield hull ────────────────────────────────────────────── -->
+    <div class="starfield"></div>
+    <div class="aurora aurora-violet"></div>
+    <div class="aurora aurora-blue"></div>
+    <div class="vignette"></div>
+
     <!-- ─── Toast Stack (top-right) ───────────────────────────────────── -->
     <div id="toastContainer" class="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
 
@@ -174,7 +200,7 @@
                 You have unsaved changes on this project. What would you like to do?
             </p>
             <div class="flex flex-col sm:flex-row sm:justify-end gap-2.5 pt-2">
-                <button onclick="handleDirtyCancel()" class="px-4 py-2 rounded-xl text-xs font-semibold border border-purple-800/40 hover:bg-purple-950/40 transition-colors" style="color:var(--text-accent)">
+                <button onclick="handleDirtyCancel()" class="px-4 py-2 rounded-xl text-xs font-semibold border border-slate-700/40 hover:bg-slate-950/40 transition-colors" style="color:var(--text-accent)">
                     Cancel
                 </button>
                 <button onclick="handleDirtyDiscard()" class="px-4 py-2 rounded-xl text-xs font-semibold bg-red-950/40 border border-red-700 text-red-200 hover:bg-red-900/60 transition-colors">
@@ -208,20 +234,20 @@
                 <div class="flex flex-col space-y-1">
                     <label class="text-xs font-semibold" style="color:var(--text-muted)">Company Name <span style="opacity:.55">(new accounts)</span></label>
                     <input type="text" id="loginCompanyName" placeholder="e.g. Acme Framing LLC"
-                        class="bg-[#1a0729] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
+                        class="bg-[#0a0f1e] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
                 </div>
                 <div class="flex flex-col space-y-1">
                     <label class="text-xs font-semibold" style="color:var(--text-muted)">Mobile Phone Number <span style="opacity:.55">(new accounts)</span></label>
                     <input type="tel" id="loginPhone" placeholder="(555) 123-4567"
-                        class="bg-[#1a0729] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
+                        class="bg-[#0a0f1e] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
                 </div>
 
                 <div class="flex items-start gap-2">
                     <input type="checkbox" id="loginSmsConsent" class="mt-1 flex-shrink-0" style="accent-color: var(--primary-accent);">
-                    <label for="loginSmsConsent" class="text-[10px] leading-tight" style="color:var(--text-muted)">
+                    <label for="loginSmsConsent" class="text-[11px] leading-snug" style="color:var(--text-muted)">
                         <strong style="color:var(--text-primary)">SMS Consent:</strong> By entering your mobile number and checking this box, you expressly consent to receive text messages (SMS) from <strong style="color:var(--text-primary)">Lone Ranger Estimator</strong> at the number provided, including one-time verification codes and account-related notifications. This consent is not a condition of purchase. Message frequency varies. Standard message and data rates may apply. Reply <strong style="color:var(--text-primary)">STOP</strong> to cancel at any time. Reply <strong style="color:var(--text-primary)">HELP</strong> for assistance.
                         <br><br>
-                        <a href="/privacy.html" target="_blank" class="underline hover:text-purple-300 transition-colors">Privacy Policy</a> &middot; <a href="/terms.html" target="_blank" class="underline hover:text-purple-300 transition-colors">Terms of Service</a>
+                        <a href="/privacy.html" target="_blank" class="underline hover:text-blue-300 transition-colors">Privacy Policy</a> &middot; <a href="/terms.html" target="_blank" class="underline hover:text-blue-300 transition-colors">Terms of Service</a>
                     </label>
                 </div>
 
@@ -280,7 +306,7 @@
                         <span id="phoneBadgeText">…</span>
                     </span>
                     <!-- Settings Gear Icon Button -->
-                    <button id="settingsBtn" class="p-1 rounded-lg hover:bg-purple-900/40 text-lg transition-colors focus:outline-none" style="color:var(--text-accent);border:1px solid transparent;" title="Settings">⚙️</button>
+                    <button id="settingsBtn" class="p-1 rounded-lg hover:bg-slate-900/40 text-lg transition-colors focus:outline-none" style="color:var(--text-accent);border:1px solid transparent;" title="Settings">⚙️</button>
                     <span id="dateText" class="text-[11px] hidden sm:block" style="color:var(--text-muted)"></span>
                     <button id="logoutBtn" class="text-xs transition-colors hover:text-red-400" style="color:var(--text-muted)">↩ Logout</button>
                 </div>
@@ -293,7 +319,7 @@
             <!-- Global Loading Indicator -->
             <div id="loadingIndicator" class="hidden flex-col items-center justify-center py-6 fade-in">
                 <div class="relative h-10 w-10">
-                    <div class="absolute inset-0 rounded-full border-2" style="border-color:rgba(192,132,252,.2)"></div>
+                    <div class="absolute inset-0 rounded-full border-2" style="border-color:rgba(110,181,255,.2)"></div>
                     <div class="absolute inset-0 rounded-full border-2 border-transparent border-t-purple-400 animate-spin"></div>
                 </div>
                 <p id="loadingText" class="mt-3 text-sm font-medium" style="color:var(--text-muted)">Processing with Gemini AI…</p>
@@ -350,7 +376,7 @@
                             <textarea id="textInput" rows="4"
                                 placeholder="e.g. Bathroom remodel: 50 sq ft of tile, grout, 1 plumber for 4 hours..."
                                 class="w-full rounded-xl px-4 py-3 text-sm resize-none focus:outline-none transition-all"
-                                style="background:#1a0729;border:1px solid var(--primary-accent);color:var(--text-primary);"></textarea>
+                                style="background:#0a0f1e;border:1px solid var(--primary-accent);color:var(--text-primary);"></textarea>
                             <button id="textBtn"
                                 class="w-full py-2.5 rounded-xl text-white font-semibold text-sm shadow-lg active:scale-[.98] transition-all focus:outline-none"
                                 style="background:linear-gradient(135deg,var(--primary-accent),var(--accent-hover))">
@@ -404,14 +430,14 @@
                             </div>
                             <div>
                                 <h2 class="text-sm font-semibold" style="color:var(--text-primary)">Bulk Price Upload</h2>
-                                <p class="text-xs mt-0.5" style="color:var(--text-muted)">CSV columns: <code class="px-1 rounded" style="color:var(--text-accent);background:rgba(192,132,252,.1)">name</code> + <code class="px-1 rounded" style="color:var(--text-accent);background:rgba(192,132,252,.1)">price</code></p>
+                                <p class="text-xs mt-0.5" style="color:var(--text-muted)">CSV columns: <code class="px-1 rounded" style="color:var(--text-accent);background:rgba(110,181,255,.1)">name</code> + <code class="px-1 rounded" style="color:var(--text-accent);background:rgba(110,181,255,.1)">price</code></p>
                             </div>
                         </div>
 
                         <!-- Drop zone + file picker -->
                         <label for="csvFileInput"
                             class="flex items-center gap-2 px-4 py-3 rounded-xl cursor-pointer transition-colors group"
-                            style="background:#1a0729;border:1px solid var(--primary-accent)">
+                            style="background:#0a0f1e;border:1px solid var(--primary-accent)">
                             <svg class="w-4 h-4 flex-shrink-0 transition-colors" style="color:var(--text-muted)" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                     d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/>
@@ -457,7 +483,7 @@
                                 <h2 class="text-sm font-semibold" style="color:var(--text-primary)">Saved Projects Switcher</h2>
                                 <span id="projectCount" class="text-xs px-2 py-0.5 rounded-full" style="background:rgba(82,24,128,.4);color:var(--text-muted)">0</span>
                             </div>
-                            <button id="refreshBtn" class="flex items-center gap-1.5 text-xs transition-colors hover:text-purple-300 group" style="color:var(--text-muted)">
+                            <button id="refreshBtn" class="flex items-center gap-1.5 text-xs transition-colors hover:text-blue-300 group" style="color:var(--text-muted)">
                                 <svg class="w-3.5 h-3.5 group-hover:rotate-180 transition-transform duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                                 </svg>
@@ -483,7 +509,7 @@
                             <label for="project-selector" class="text-xs font-medium whitespace-nowrap" style="color:var(--text-muted)">Project:</label>
                             <select id="project-selector"
                                 class="flex-1 rounded-lg px-3 py-2 text-sm focus:outline-none cursor-pointer"
-                                style="background:#1a0729;border:1px solid var(--primary-accent);color:var(--text-primary)">
+                                style="background:#0a0f1e;border:1px solid var(--primary-accent);color:var(--text-primary)">
                             </select>
                             <button id="newProjectBtn" onclick="handleNewProjectClick()"
                                 class="px-4 py-2 rounded-xl text-white font-semibold text-xs shadow-lg active:scale-[.98] transition-all focus:outline-none"
@@ -534,7 +560,7 @@
                             <div class="text-right text-xs space-y-1 sm:ml-auto" style="color:var(--text-muted)">
                                 <p id="invoiceDate"></p>
                                 <input type="text" id="invoiceProject" placeholder="Project Name"
-                                    class="bg-transparent text-sm font-semibold text-right outline-none border border-transparent hover:border-purple-800/40 focus:border-purple-400 focus:ring-1 focus:ring-purple-400 rounded px-2 py-0.5 w-48 text-right"
+                                    class="bg-transparent text-sm font-semibold text-right outline-none border border-transparent hover:border-slate-700/40 focus:border-[#6eb5ff] focus:ring-1 focus:ring-[#6eb5ff] rounded px-2 py-0.5 w-48 text-right"
                                     style="color:var(--text-primary)">
                             </div>
                         </div>
@@ -615,7 +641,7 @@
                                 <div id="deleteConfirmBar" class="hidden flex items-center gap-2.5 bg-red-950/20 border border-red-800/40 p-1.5 rounded-xl">
                                     <span class="text-xs text-red-300 font-semibold px-1">Are you sure?</span>
                                     <button id="confirmDeleteBtn" onclick="deleteActiveEstimate()" class="px-3 py-1.5 rounded-lg text-white font-semibold text-xs bg-red-600 hover:bg-red-700 transition-colors">Yes, Delete It</button>
-                                    <button id="cancelDeleteBtn" onclick="hideDeleteConfirm()" class="px-3 py-1.5 rounded-lg text-purple-300 border border-purple-800/40 hover:bg-purple-950/40 font-semibold text-xs transition-colors">Cancel</button>
+                                    <button id="cancelDeleteBtn" onclick="hideDeleteConfirm()" class="px-3 py-1.5 rounded-lg text-blue-300 border border-slate-700/40 hover:bg-slate-950/40 font-semibold text-xs transition-colors">Cancel</button>
                                 </div>
                             </div>
 
@@ -640,7 +666,7 @@
                 <!-- Header -->
                 <div class="flex items-center justify-between px-6 py-3" style="border-bottom:1px solid var(--primary-accent)">
                     <div class="flex items-center gap-3">
-                        <div class="w-2 h-2 rounded-full bg-violet-400 animate-pulse"></div>
+                        <div class="w-2 h-2 rounded-full bg-[#a78bfa] animate-pulse"></div>
                         <h2 class="text-sm font-semibold" style="color:var(--text-primary)">3D Material Visualizer</h2>
                     </div>
                     <div></div>
@@ -660,7 +686,7 @@
     </div><!-- /#dashboard -->
 
     <!-- Settings Fullscreen Modal -->
-    <div id="settingsModal" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 sm:p-6" style="background: rgba(26,7,41,0.92); backdrop-filter: blur(8px);">
+    <div id="settingsModal" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 sm:p-6" style="background: rgba(5,8,16,0.92); backdrop-filter: blur(8px);">
         <div class="w-full max-w-2xl rounded-2xl p-6 sm:p-8 space-y-6 overflow-y-auto max-h-[90vh] shadow-2xl relative fade-in" 
              style="background:var(--card-bg); border:1px solid var(--primary-accent); color:var(--text-primary);">
             
@@ -680,14 +706,14 @@
                     <div class="flex flex-col space-y-1">
                         <label class="text-xs font-semibold" style="color:var(--text-muted)">Company Name</label>
                         <input type="text" id="settingsCompanyName" required placeholder="e.g. Lone Ranger Estimator"
-                            class="bg-[#1a0729] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
+                            class="bg-[#0a0f1e] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
                     </div>
 
                     <!-- Contact Email -->
                     <div class="flex flex-col space-y-1">
                         <label class="text-xs font-semibold" style="color:var(--text-muted)">Contact Email</label>
                         <input type="email" id="settingsContactEmail" required placeholder="e.g. billing@loneranger.com"
-                            class="bg-[#1a0729] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
+                            class="bg-[#0a0f1e] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
                     </div>
                 </div>
 
@@ -696,19 +722,19 @@
                     <div class="flex flex-col space-y-1">
                         <label class="text-xs font-semibold" style="color:var(--text-muted)">Company Address</label>
                         <input type="text" id="settingsCompanyAddress" placeholder="e.g. Wausau, WI 54401"
-                            class="bg-[#1a0729] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
+                            class="bg-[#0a0f1e] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
                     </div>
 
                     <!-- License Number -->
                     <div class="flex flex-col space-y-1">
                         <label class="text-xs font-semibold" style="color:var(--text-muted)">License Number</label>
                         <input type="text" id="settingsLicenseNumber" placeholder="e.g. Dw-123456"
-                            class="bg-[#1a0729] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
+                            class="bg-[#0a0f1e] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
                     </div>
                 </div>
 
                 <!-- Logo Section -->
-                <div class="border-t pt-4" style="border-color:rgba(192,132,252,0.25)">
+                <div class="border-t pt-4" style="border-color:rgba(110,181,255,0.25)">
                     <label class="text-xs font-semibold" style="color:var(--text-muted)">Company Logo</label>
                     <div class="flex items-center gap-4 mt-2">
                         <!-- Preview Image -->
@@ -718,7 +744,7 @@
                         </div>
                         <!-- Upload Button -->
                         <div class="flex-1">
-                            <label class="px-4 py-2 border rounded-xl text-xs font-semibold cursor-pointer hover:bg-purple-900/20 transition-all inline-block" style="border-color:var(--primary-accent); color:var(--text-accent);">
+                            <label class="px-4 py-2 border rounded-xl text-xs font-semibold cursor-pointer hover:bg-slate-900/20 transition-all inline-block" style="border-color:var(--primary-accent); color:var(--text-accent);">
                                 Choose Image...
                                 <input type="file" id="settingsLogoFileInput" accept="image/*" class="hidden" onchange="uploadLogoFile()">
                             </label>
@@ -728,32 +754,32 @@
                 </div>
 
                 <!-- Numerical Settings Section -->
-                <div class="border-t pt-4 grid grid-cols-1 sm:grid-cols-3 gap-4" style="border-color:rgba(192,132,252,0.25)">
+                <div class="border-t pt-4 grid grid-cols-1 sm:grid-cols-3 gap-4" style="border-color:rgba(110,181,255,0.25)">
                     <!-- Default Labor Rate -->
                     <div class="flex flex-col space-y-1">
                         <label class="text-xs font-semibold" style="color:var(--text-muted)">Default Labor Rate ($/hr)</label>
                         <input type="number" id="settingsLaborRate" required min="0" step="0.1"
-                            class="bg-[#1a0729] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
+                            class="bg-[#0a0f1e] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
                     </div>
 
                     <!-- Global Markup Percent -->
                     <div class="flex flex-col space-y-1">
                         <label class="text-xs font-semibold" style="color:var(--text-muted)">Global Markup (%)</label>
                         <input type="number" id="settingsMarkupPercent" required min="0" step="0.1"
-                            class="bg-[#1a0729] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
+                            class="bg-[#0a0f1e] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
                     </div>
 
                     <!-- Sales Tax Rate -->
                     <div class="flex flex-col space-y-1">
                         <label class="text-xs font-semibold" style="color:var(--text-muted)">Sales Tax Rate (%)</label>
                         <input type="number" id="settingsTaxRate" required min="0" step="0.1"
-                            class="bg-[#1a0729] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
+                            class="bg-[#0a0f1e] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
                     </div>
                 </div>
 
                 <!-- Footer Actions -->
-                <div class="border-t pt-4 flex justify-end gap-3" style="border-color:rgba(192,132,252,0.25)">
-                    <button type="button" onclick="closeSettingsModal()" class="px-4 py-2 border rounded-xl text-xs font-semibold hover:bg-purple-900/20 transition-all" style="border-color:var(--primary-accent); color:var(--text-muted);">
+                <div class="border-t pt-4 flex justify-end gap-3" style="border-color:rgba(110,181,255,0.25)">
+                    <button type="button" onclick="closeSettingsModal()" class="px-4 py-2 border rounded-xl text-xs font-semibold hover:bg-slate-900/20 transition-all" style="border-color:var(--primary-accent); color:var(--text-muted);">
                         Cancel
                     </button>
                     <button type="submit" id="settingsSaveBtn" class="px-6 py-2 rounded-xl text-white font-semibold text-xs shadow-lg active:scale-[.98] transition-all flex items-center gap-1.5" style="background:linear-gradient(135deg,var(--primary-accent),var(--accent-hover))">
@@ -765,7 +791,7 @@
     </div>
 
     <!-- Contractor Setup Wizard Modal Overlay -->
-    <div id="onboardWizardModal" class="fixed inset-0 z-[9999] hidden items-center justify-center p-4 sm:p-6" style="background: rgba(26,7,41,0.95); backdrop-filter: blur(12px);">
+    <div id="onboardWizardModal" class="fixed inset-0 z-[9999] hidden items-center justify-center p-4 sm:p-6" style="background: rgba(5,8,16,0.95); backdrop-filter: blur(12px);">
         <div class="w-full max-w-lg rounded-2xl p-6 sm:p-8 space-y-6 overflow-y-auto max-h-[90vh] shadow-2xl relative fade-in" 
              style="background:var(--card-bg); border:1px solid var(--primary-accent); color:var(--text-primary);">
             
@@ -782,14 +808,14 @@
                 <div class="flex flex-col space-y-1">
                     <label class="text-xs font-semibold" style="color:var(--text-muted)">Business Email Address</label>
                     <input type="email" id="onboardContactEmail" required placeholder="contractor@company.com"
-                        class="bg-[#1a0729] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
+                        class="bg-[#0a0f1e] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
                 </div>
 
                 <!-- Shop/Field Address -->
                 <div class="flex flex-col space-y-1">
                     <label class="text-xs font-semibold" style="color:var(--text-muted)">Shop / Field Address</label>
                     <input type="text" id="onboardCompanyAddress" required placeholder="1230 Nantasket St, Antigo, WI"
-                        class="bg-[#1a0729] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
+                        class="bg-[#0a0f1e] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
                 </div>
 
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -797,19 +823,19 @@
                     <div class="flex flex-col space-y-1">
                         <label class="text-xs font-semibold" style="color:var(--text-muted)">Standard Hourly Labor Rate ($/hr)</label>
                         <input type="number" id="onboardLaborRate" required value="55" min="0" step="1"
-                            class="bg-[#1a0729] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
+                            class="bg-[#0a0f1e] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
                     </div>
 
                     <!-- License Number Field (Optional) -->
                     <div class="flex flex-col space-y-1">
                         <label class="text-xs font-semibold" style="color:var(--text-muted)">License Number (Optional)</label>
                         <input type="text" id="onboardLicenseNumber" placeholder="WI Contractor License # (optional)"
-                            class="bg-[#1a0729] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
+                            class="bg-[#0a0f1e] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
                     </div>
                 </div>
 
                 <!-- Footer Actions -->
-                <div class="border-t pt-4 flex justify-end" style="border-color:rgba(192,132,252,0.25)">
+                <div class="border-t pt-4 flex justify-end" style="border-color:rgba(110,181,255,0.25)">
                     <button type="submit" id="onboardSubmitBtn" class="w-full py-2.5 rounded-xl text-white font-semibold text-xs shadow-lg active:scale-[.98] transition-all flex items-center justify-center gap-1.5" style="background:linear-gradient(135deg,var(--primary-accent),var(--accent-hover))">
                         <span id="onboardSubmitBtnText">Complete Profile & Launch</span>
                     </button>
@@ -819,7 +845,7 @@
     </div>
 
     <!-- ─── Self-Serve Onboarding Engine ─────────────────────────────────── -->
-    <div id="onboardingModal" class="fixed inset-0 z-[9999] hidden items-center justify-center p-4 sm:p-6" style="background: rgba(26,7,41,0.95); backdrop-filter: blur(12px);">
+    <div id="onboardingModal" class="fixed inset-0 z-[9999] hidden items-center justify-center p-4 sm:p-6" style="background: rgba(5,8,16,0.95); backdrop-filter: blur(12px);">
         <div class="w-full max-w-md rounded-2xl p-6 sm:p-8 space-y-6 shadow-2xl relative fade-in text-center" 
              style="background:var(--card-bg); border:1px solid var(--primary-accent); color:var(--text-primary);">
             
@@ -840,20 +866,20 @@
                 <div class="flex flex-col space-y-1">
                     <label class="text-xs font-semibold" style="color:var(--text-muted)">Company Name</label>
                     <input type="text" id="regCompanyName" required placeholder="e.g. Lone Ranger Estimator"
-                        class="bg-[#1a0729] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
+                        class="bg-[#0a0f1e] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
                 </div>
                 <div class="flex flex-col space-y-1">
                     <label class="text-xs font-semibold" style="color:var(--text-muted)">Mobile Phone Number</label>
                     <input type="tel" id="regPhone" required placeholder="(555) 123-4567"
-                        class="bg-[#1a0729] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
+                        class="bg-[#0a0f1e] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
                 </div>
 
                 <div class="flex items-start gap-2 mt-2">
                     <input type="checkbox" id="regSmsConsent" required class="mt-1 flex-shrink-0" style="accent-color: var(--primary-accent);">
-                    <label for="regSmsConsent" class="text-[10px] leading-tight" style="color:var(--text-muted)">
+                    <label for="regSmsConsent" class="text-[11px] leading-snug" style="color:var(--text-muted)">
                         <strong style="color:var(--text-primary)">SMS Consent:</strong> By entering your mobile number and checking this box, you expressly consent to receive text messages (SMS) from <strong style="color:var(--text-primary)">Lone Ranger Estimator</strong> at the number provided, including one-time verification codes and account-related notifications. This consent is not a condition of purchase. Message frequency varies. Standard message and data rates may apply. Reply <strong style="color:var(--text-primary)">STOP</strong> to cancel at any time. Reply <strong style="color:var(--text-primary)">HELP</strong> for assistance.
                         <br><br>
-                        <a href="/privacy.html" target="_blank" class="underline hover:text-purple-300 transition-colors">Privacy Policy</a> &middot; <a href="/terms.html" target="_blank" class="underline hover:text-purple-300 transition-colors">Terms of Service</a>
+                        <a href="/privacy.html" target="_blank" class="underline hover:text-blue-300 transition-colors">Privacy Policy</a> &middot; <a href="/terms.html" target="_blank" class="underline hover:text-blue-300 transition-colors">Terms of Service</a>
                     </label>
                 </div>
 
@@ -865,7 +891,7 @@
     </div>
 
     <!-- ─── OTP Verification Modal ─────────────────────────────────────── -->
-    <div id="otpModal" class="fixed inset-0 z-[9999] hidden flex items-center justify-center p-4 sm:p-6" style="background: rgba(26,7,41,0.95); backdrop-filter: blur(12px);">
+    <div id="otpModal" class="fixed inset-0 z-[9999] hidden flex items-center justify-center p-4 sm:p-6" style="background: rgba(5,8,16,0.95); backdrop-filter: blur(12px);">
         <div class="w-full max-w-md rounded-2xl p-6 sm:p-8 space-y-6 shadow-2xl relative fade-in text-center" 
              style="background:var(--card-bg); border:1px solid var(--primary-accent); color:var(--text-primary);">
             
@@ -878,18 +904,26 @@
                 <div class="flex flex-col space-y-1">
                     <label class="text-xs font-semibold" style="color:var(--text-muted)">Verification Code</label>
                     <input type="text" id="otpInput" required placeholder="123456" maxlength="6"
-                        class="bg-[#1a0729] border rounded-xl px-3 py-2 text-sm focus:outline-none text-center tracking-[0.5em] font-mono text-lg" style="border-color:var(--primary-accent); color:var(--text-primary);">
+                        class="bg-[#0a0f1e] border rounded-xl px-3 py-2 text-sm focus:outline-none text-center tracking-[0.5em] font-mono text-lg" style="border-color:var(--primary-accent); color:var(--text-primary);">
                 </div>
 
                 <button type="submit" id="otpSubmitBtn" class="w-full py-3 mt-2 rounded-xl text-white font-semibold text-sm shadow-lg active:scale-[.98] transition-all flex items-center justify-center gap-2" style="background:linear-gradient(135deg,var(--primary-accent),var(--accent-hover))">
                     <span id="otpSubmitBtnText">Verify Phone Number</span>
                 </button>
             </form>
+
+            <div class="flex flex-col items-center gap-2 pt-1">
+                <button type="button" id="otpResendBtn" onclick="resendOTP()"
+                    class="text-xs font-semibold transition-colors hover:text-blue-300 disabled:opacity-40 disabled:cursor-not-allowed"
+                    style="color:var(--text-accent)">Resend code</button>
+                <button type="button" onclick="otpUseDifferentNumber()"
+                    class="text-xs transition-colors hover:text-blue-300" style="color:var(--text-muted)">← Use a different number</button>
+            </div>
         </div>
     </div>
 
     <!-- ─── Stripe Subscription Gatekeeper Modal ───────────────────────── -->
-    <div id="subscriptionGateModal" class="fixed inset-0 z-[9999] hidden flex items-center justify-center p-4 sm:p-6" style="background: rgba(26,7,41,0.95); backdrop-filter: blur(12px);">
+    <div id="subscriptionGateModal" class="fixed inset-0 z-[9999] hidden flex items-center justify-center p-4 sm:p-6" style="background: rgba(5,8,16,0.95); backdrop-filter: blur(12px);">
         <div class="w-full max-w-md rounded-2xl p-6 sm:p-8 space-y-6 shadow-2xl relative fade-in text-center" 
              style="background:var(--card-bg); border:1px solid var(--primary-accent); color:var(--text-primary);">
             
@@ -901,27 +935,27 @@
 
             <!-- Content -->
             <div class="space-y-2">
-                <h2 class="text-xl font-bold" style="color:var(--text-primary); font-family: 'Outfit', sans-serif;">Unlock Premium Estimating</h2>
-                <p class="text-sm" style="color:var(--text-muted)">Your free trial has ended. Subscribe to continue generating estimates.</p>
+                <h2 class="text-xl font-bold" style="color:var(--text-primary); font-family: 'Outfit', sans-serif;">Subscribe to Start Estimating</h2>
+                <p class="text-sm" style="color:var(--text-muted)">Lone Ranger Estimator is $49 a month, flat. No contract, cancel anytime.</p>
             </div>
 
             <!-- Subscribe Action -->
             <button id="subscribeBtn" onclick="handleSubscribeClick()"
                 class="w-full py-3 rounded-xl text-white font-semibold text-sm shadow-lg active:scale-[.98] transition-all flex items-center justify-center gap-2"
                 style="background:linear-gradient(135deg,var(--primary-accent),var(--accent-hover))">
-                <span id="subscribeBtnText">Subscribe Now — $49/month</span>
+                <span id="subscribeBtnText">Subscribe · $49/month</span>
             </button>
         </div>
     </div>
 
     <!-- ─── Change Order Modal ───────────────────────────────────────────── -->
-    <div id="changeOrderModal" class="fixed inset-0 z-[9990] hidden flex items-center justify-center p-4" style="background:rgba(26,7,41,0.92);backdrop-filter:blur(10px);">
+    <div id="changeOrderModal" class="fixed inset-0 z-[9990] hidden flex items-center justify-center p-4" style="background:rgba(5,8,16,0.92);backdrop-filter:blur(10px);">
         <div class="w-full max-w-lg rounded-2xl shadow-2xl fade-in" style="background:var(--card-bg);border:1px solid var(--primary-accent);max-height:90vh;overflow-y:auto;">
             
             <!-- Header -->
             <div class="flex items-center justify-between p-5 border-b" style="border-color:var(--primary-accent);">
                 <div class="flex items-center gap-3">
-                    <div class="w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-sm" style="background:linear-gradient(135deg,#7c3aed,#521880)">📋</div>
+                    <div class="w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-sm" style="background:linear-gradient(135deg,#a78bfa,#6eb5ff)">📋</div>
                     <div>
                         <h2 class="font-bold text-sm" style="color:var(--text-primary)">New Change Order</h2>
                         <p class="text-xs" style="color:var(--text-muted)">Estimate: <span id="coParentEstimateLabel">—</span></p>
@@ -937,11 +971,11 @@
                 <!-- Textarea -->
                 <textarea id="coTextInput" rows="5" placeholder="e.g. Add 12 sheets of 3/4 inch ACX plywood, 6 hours of additional framing labor at $65/hr. Does not include painting."
                     class="w-full rounded-xl px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2"
-                    style="background:rgba(255,255,255,0.05);border:1px solid rgba(124,58,237,0.4);color:var(--text-primary);--tw-ring-color:#7c3aed;"></textarea>
+                    style="background:rgba(255,255,255,0.05);border:1px solid rgba(124,58,237,0.4);color:var(--text-primary);--tw-ring-color:#a78bfa;"></textarea>
 
                 <!-- Voice Dictation Row -->
                 <div class="flex items-center gap-3">
-                    <button id="coRecordBtn" onclick="toggleCoRecording()" class="flex items-center gap-2 px-4 py-2.5 rounded-xl text-white text-xs font-semibold transition-all" style="background:linear-gradient(135deg,#7c3aed,#521880);">
+                    <button id="coRecordBtn" onclick="toggleCoRecording()" class="flex items-center gap-2 px-4 py-2.5 rounded-xl text-white text-xs font-semibold transition-all" style="background:linear-gradient(135deg,#a78bfa,#6eb5ff);">
                         <svg id="coMicIcon" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 016 0v6a3 3 0 01-3 3z"/></svg>
                         <svg id="coStopIcon" class="w-4 h-4 hidden" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
                         <span id="coMicStatus">Dictate Change</span>
@@ -950,7 +984,7 @@
                 </div>
 
                 <!-- Generate Button -->
-                <button id="coGenerateBtn" onclick="generateChangeOrder()" class="w-full py-3 rounded-xl text-white font-bold text-sm transition-all flex items-center justify-center gap-2" style="background:linear-gradient(135deg,#521880,#7c3aed);">
+                <button id="coGenerateBtn" onclick="generateChangeOrder()" class="w-full py-3 rounded-xl text-white font-bold text-sm transition-all flex items-center justify-center gap-2" style="background:linear-gradient(135deg,#6eb5ff,#a78bfa);">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
                     <span id="coGenerateBtnText">Generate Change Order with AI</span>
                 </button>
@@ -958,10 +992,10 @@
 
             <!-- Result Section (revealed after successful generation) -->
             <div id="coResultSection" class="hidden p-5 pt-0 space-y-4">
-                <div class="rounded-xl p-4" style="background:linear-gradient(135deg,#521880,#7c3aed);">
-                    <div class="text-xs text-purple-200 uppercase tracking-wider font-semibold mb-1">Change Order Total</div>
+                <div class="rounded-xl p-4" style="background:linear-gradient(135deg,#6eb5ff,#a78bfa);">
+                    <div class="text-xs text-blue-200 uppercase tracking-wider font-semibold mb-1">Change Order Total</div>
                     <div id="coTotalDisplay" class="text-2xl font-black text-white">$0.00</div>
-                    <div id="coSummaryDisplay" class="text-xs text-purple-300 mt-1"></div>
+                    <div id="coSummaryDisplay" class="text-xs text-blue-300 mt-1"></div>
                 </div>
 
                 <!-- Items Preview -->
@@ -975,11 +1009,11 @@
                 </div>
 
                 <!-- SMS Dispatch Section -->
-                <div class="flex flex-col space-y-2.5 pt-3" style="border-top:1px solid rgba(192,132,252,0.2)">
+                <div class="flex flex-col space-y-2.5 pt-3" style="border-top:1px solid rgba(110,181,255,0.2)">
                     <p class="text-xs font-semibold" style="color:var(--text-primary)">📲 Send to Client via SMS</p>
                     <div class="flex items-center gap-2">
                         <input type="tel" id="coClientPhone" placeholder="(555) 123-4567"
-                            class="flex-1 bg-[#1a0729] border rounded-lg px-3 py-1.5 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
+                            class="flex-1 bg-[#0a0f1e] border rounded-lg px-3 py-1.5 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
                         <button id="coSendBtn" onclick="sendChangeOrderSMS()" class="px-4 py-2 rounded-lg text-white text-xs font-bold transition-all flex items-center gap-1.5" style="background:linear-gradient(135deg,#065f46,#059669);">
                             <span id="coSendBtnText">Send</span>
                         </button>
@@ -1100,7 +1134,7 @@
             const styles = {
                 success: { bg: '#14532d', border: '#22c55e',  text: '#86efac', icon: '✓' },
                 error:   { bg: '#450a0a', border: '#ef4444',  text: '#fca5a5', icon: '✕' },
-                info:    { bg: '#2e1065', border: '#7c3aed',  text: '#c4b5fd', icon: 'ℹ' },
+                info:    { bg: '#2e1065', border: '#a78bfa',  text: '#c4b5fd', icon: 'ℹ' },
             };
             const s = styles[type] || styles.info;
 
@@ -1209,6 +1243,63 @@
             } finally {
                 btnText.textContent = 'Verify Phone Number';
             }
+        }
+
+        // ── OTP recovery: resend (with cooldown) + go back to edit the number ──
+        let otpResendTimer = null;
+        async function resendOTP() {
+            const btn = document.getElementById('otpResendBtn');
+            if (!btn || btn.disabled) return;
+            const companyName = (document.getElementById('regCompanyName').value || '').trim();
+            const phone = pendingRegistrationPhone || (document.getElementById('regPhone').value || '').trim();
+            if (!phone || !authBearerToken) {
+                showToast('Could not resend. Go back and re-enter your number.', 'error');
+                return;
+            }
+            btn.disabled = true;
+            btn.textContent = 'Sending...';
+            try {
+                const resp = await fetch('/api/auth/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authBearerToken}` },
+                    body: JSON.stringify({ company_name: companyName, phone: phone })
+                });
+                const data = await resp.json();
+                if (resp.status === 202 || resp.ok) {
+                    pendingRegistrationPhone = phone;
+                    const viaEmail = (data.channel || 'sms') === 'email';
+                    showToast(viaEmail ? 'New code sent to your email.' : 'New code sent to your phone.', 'success');
+                } else {
+                    showToast(data.error || 'Could not resend code.', 'error');
+                }
+            } catch (err) {
+                showToast('Network error. Try again.', 'error');
+            }
+            // Cool down regardless, so a stuck user can retry but not hammer the endpoint.
+            let remaining = 45;
+            btn.textContent = 'Resend in ' + remaining + 's';
+            otpResendTimer = setInterval(() => {
+                remaining -= 1;
+                if (remaining <= 0) {
+                    clearInterval(otpResendTimer);
+                    otpResendTimer = null;
+                    btn.disabled = false;
+                    btn.textContent = 'Resend code';
+                } else {
+                    btn.textContent = 'Resend in ' + remaining + 's';
+                }
+            }, 1000);
+        }
+
+        function otpUseDifferentNumber() {
+            if (otpResendTimer) { clearInterval(otpResendTimer); otpResendTimer = null; }
+            const rb = document.getElementById('otpResendBtn');
+            if (rb) { rb.disabled = false; rb.textContent = 'Resend code'; }
+            document.getElementById('otpInput').value = '';
+            document.getElementById('otpModal').classList.add('hidden');
+            document.getElementById('otpModal').classList.remove('flex');
+            document.getElementById('onboardingModal').classList.remove('hidden');
+            document.getElementById('onboardingModal').classList.add('flex');
         }
 
         async function handleGoogleLogin(response) {
@@ -2689,7 +2780,7 @@
             bar.innerHTML = `
                 <button onclick="openChangeOrderModal('${estimateId}','${safePhone}')"
                     class="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-xs font-bold transition-all active:scale-[.98]"
-                    style="background:linear-gradient(135deg,#7c3aed,#521880);box-shadow:0 4px 15px rgba(124,58,237,0.3);">
+                    style="background:linear-gradient(135deg,#a78bfa,#6eb5ff);box-shadow:0 4px 15px rgba(124,58,237,0.3);">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
                     New Change Order
                 </button>
@@ -2733,7 +2824,7 @@
             document.getElementById('coMicStatus').textContent = 'Dictate Change';
             document.getElementById('coMicIcon').classList.remove('hidden');
             document.getElementById('coStopIcon').classList.add('hidden');
-            document.getElementById('coRecordBtn').style.background = 'linear-gradient(135deg,#7c3aed,#521880)';
+            document.getElementById('coRecordBtn').style.background = 'linear-gradient(135deg,#a78bfa,#6eb5ff)';
         }
 
         async function toggleCoRecording() {
@@ -2782,7 +2873,7 @@
                 micIcon.classList.remove('hidden');
                 stopIcon.classList.add('hidden');
                 micStatus.textContent = 'Dictate Change';
-                recBtn.style.background = 'linear-gradient(135deg,#7c3aed,#521880)';
+                recBtn.style.background = 'linear-gradient(135deg,#a78bfa,#6eb5ff)';
             }
         }
 
@@ -3110,7 +3201,7 @@
             // ── Tooltip overlay ───────────────────────────────────────────
             function _initTooltip() {
                 _tooltipEl = document.createElement('div');
-                _tooltipEl.style.cssText = 'position:absolute;display:none;background:rgba(10,5,20,0.92);color:#e9d5ff;padding:9px 14px;border-radius:8px;font-size:12px;font-family:Inter,sans-serif;pointer-events:none;z-index:300;border:1px solid rgba(192,132,252,0.45);line-height:1.75;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,0.5);';
+                _tooltipEl.style.cssText = 'position:absolute;display:none;background:rgba(10,5,20,0.92);color:#e2e8f0;padding:9px 14px;border-radius:8px;font-size:12px;font-family:Inter,sans-serif;pointer-events:none;z-index:300;border:1px solid rgba(110,181,255,0.45);line-height:1.75;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,0.5);';
                 const mount = document.getElementById('viz-canvas-mount');
                 if (mount && mount.parentElement) { mount.parentElement.style.position='relative'; mount.parentElement.appendChild(_tooltipEl); }
             }
@@ -3251,7 +3342,7 @@
                 const ctx = canvas.getContext('2d');
                 ctx.clearRect(0, 0, 300, 72);
                 ctx.font = 'bold 18px Inter, sans-serif';
-                ctx.fillStyle = '#e9d5ff';
+                ctx.fillStyle = '#e2e8f0';
                 ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
                 ctx.fillText(text, 150, 36);
                 const tex = new THREE.CanvasTexture(canvas);

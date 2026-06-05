@@ -7,64 +7,98 @@
   <meta name="description" content="AI-powered estimating tool for solo residential contractors. Text or speak your job scope. Get a professional PDF estimate in 60 seconds.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;800;900&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet">
   <style>
     /* ============================================
-       CSS CUSTOM PROPERTIES — DESIGN TOKENS
+       COMMAND BRIDGE — cosmic-glass design tokens
+       (mirrors ui/src/index.css @theme + DESIGN.md)
     ============================================ */
     :root {
-      --base-bg: #210936;
-      --card-bg: #2d0f47;
-      --header-bg: #1a0729;
-      --primary-accent: #521880;
-      --accent-hover: #6d28d9;
-      --text-primary: #e9d5ff;
-      --text-muted: #9b59d0;
-      --text-accent: #c084fc;
-      --success: #22c55e;
-      --success-bg: #14532d;
-      --success-text: #86efac;
-      --radius-card: 1.25rem;
-      --radius-btn: 1rem;
+      --void-black: #050810;
+      --deep-navy: #0a0f1e;
+      --cool-blue: #6eb5ff;   /* trust: money, totals, primary actions, focus */
+      --soft-violet: #a78bfa; /* intelligence: AI moments, eyebrows */
+      --starlight: #e2e8f0;   /* default text */
+      --live-emerald: #34d399;/* status / "from the source" */
+      --alert-rose: #fb7185;  /* destructive / error only */
+      --navy-deep: #20346a;   /* secondary-CTA gradient start */
+      --navy-violet: #2e1d52; /* secondary-CTA gradient end */
+
+      --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+      --font-display: 'Outfit', 'Inter', sans-serif;
+      --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+
+      --radius-panel: 16px;
+      --radius-inner: 12px;
     }
 
     /* ============================================
        RESET & BASE
-     ============================================ */
+    ============================================ */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html { scroll-behavior: smooth; }
     body {
-      font-family: 'Inter', sans-serif;
-      background-color: var(--base-bg);
-      color: var(--text-primary);
+      font-family: var(--font-sans);
+      background-color: var(--void-black);
+      color: var(--starlight);
       min-height: 100vh;
       overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
     }
     a { text-decoration: none; color: inherit; }
     ul { list-style: none; }
 
-    /* Custom scrollbar */
     ::-webkit-scrollbar { width: 6px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: var(--primary-accent); border-radius: 3px; }
+    ::-webkit-scrollbar-track { background: rgba(0,0,0,0.15); }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(110,181,255,0.3); }
+
+    /* ============================================
+       STARFIELD HULL — photo + dual aurora + vignette
+       (matches the dashboard Starfield component)
+    ============================================ */
+    .starfield, .aurora, .vignette {
+      position: fixed; inset: 0; z-index: -10; pointer-events: none;
+    }
+    .starfield {
+      background-image: url('/starfield.jpg');
+      background-size: cover;
+      background-position: 50% 52%;
+      filter: brightness(0.55) contrast(1.35) saturate(1.35) hue-rotate(-8deg);
+      will-change: background-position;
+    }
+    .aurora-violet { background: radial-gradient(ellipse 55% 45% at 22% 22%, rgba(30,14,60,0.6) 0%, transparent 100%); }
+    .aurora-blue   { background: radial-gradient(ellipse 65% 50% at 80% 78%, rgba(8,22,55,0.55) 0%, transparent 100%); }
+    .vignette      { background: radial-gradient(ellipse 85% 85% at 50% 45%, transparent 42%, rgba(5,8,16,0.82) 100%); }
 
     /* ============================================
        TYPOGRAPHY
     ============================================ */
-    h1, h2, h3 { font-family: 'Outfit', sans-serif; }
+    h1, h2, h3 { font-family: var(--font-display); }
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.6875rem;
+      font-weight: 800;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--soft-violet);
+      display: inline-block;
+      margin-bottom: 1.1rem;
+    }
+    .eyebrow.blue { color: var(--cool-blue); }
+    .eyebrow.emerald { color: var(--live-emerald); }
 
     /* ============================================
-       SCROLL ANIMATIONS
+       SCROLL ANIMATIONS  (enhancement only — content
+       is visible by default; opacity gating is scoped
+       to .js so no-JS / crawlers never ship blank)
     ============================================ */
-    .scroll-animate {
+    .js .scroll-animate {
       opacity: 0;
       transform: translateY(24px);
       transition: opacity 0.6s ease-out, transform 0.6s ease-out;
     }
-    .scroll-animate.visible {
-      opacity: 1;
-      transform: translateY(0);
-    }
+    .js .scroll-animate.visible { opacity: 1; transform: translateY(0); }
     .scroll-animate.delay-1 { transition-delay: 75ms; }
     .scroll-animate.delay-2 { transition-delay: 150ms; }
     .scroll-animate.delay-3 { transition-delay: 225ms; }
@@ -72,478 +106,257 @@
     .scroll-animate.delay-5 { transition-delay: 375ms; }
     .scroll-animate.delay-6 { transition-delay: 450ms; }
 
-    @keyframes fadeInUp {
-      from { opacity: 0; transform: translateY(20px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-    @keyframes fadeIn {
-      from { opacity: 0; }
-      to { opacity: 1; }
-    }
+    @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
 
     /* ============================================
-       LAYOUT UTILITIES
+       LAYOUT
     ============================================ */
     .container { max-width: 1152px; margin: 0 auto; padding: 0 1.5rem; }
     .container-sm { max-width: 640px; margin: 0 auto; padding: 0 1.5rem; }
-    .section { padding: 6rem 1.5rem; }
-    .section-alt { padding: 6rem 1.5rem; background: rgba(26, 7, 41, 0.5); }
+    .section { padding: 6rem 1.5rem; position: relative; }
     .text-center { text-align: center; }
 
     /* ============================================
-       BUTTONS
+       GLASS PANELS — glow-as-depth, never hard shadow
+    ============================================ */
+    .glass-panel {
+      background: rgba(10, 15, 30, 0.65);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: var(--radius-panel);
+      box-shadow: 0 8px 32px -4px rgba(110,181,255,0.08), 0 4px 16px -4px rgba(167,139,250,0.06);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .glass-panel:hover {
+      border-color: rgba(110, 181, 255, 0.25);
+      box-shadow: 0 8px 32px 0 rgba(110,181,255,0.12), 0 0 1px 1px rgba(110,181,255,0.15) inset;
+      transform: translateY(-2px);
+    }
+
+    /* ============================================
+       BUTTONS — pill, mono tracked-caps labels
     ============================================ */
     .btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      padding: 1rem 2rem;
-      border-radius: var(--radius-btn);
-      font-family: 'Inter', sans-serif;
-      font-weight: 600;
-      font-size: 1.05rem;
+      display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+      padding: 0.95rem 1.85rem;
+      border-radius: 9999px;
+      font-family: var(--font-mono);
+      font-weight: 800;
+      font-size: 0.8125rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
       cursor: pointer;
       transition: all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
       border: none;
-      text-decoration: none;
     }
+    /* Primary: cool-blue→violet gradient, void-black text (Dark-On-Bright) */
     .btn-primary {
-      background: var(--primary-accent);
-      color: var(--text-primary);
-      box-shadow: 0 4px 24px rgba(82, 24, 128, 0.3);
+      background: linear-gradient(135deg, var(--cool-blue), var(--soft-violet));
+      color: var(--void-black);
+      box-shadow: 0 6px 24px rgba(110, 181, 255, 0.22);
     }
-    .btn-primary:hover {
-      background: var(--accent-hover);
-      box-shadow: 0 8px 32px rgba(109, 40, 217, 0.4);
-      transform: translateY(-1px);
+    .btn-primary:hover { filter: brightness(1.08); transform: translateY(-2px); box-shadow: 0 10px 30px rgba(110, 181, 255, 0.38); }
+    /* Secondary: navy gradient that charges up to the brand gradient on hover */
+    .btn-secondary {
+      background: linear-gradient(135deg, var(--navy-deep), var(--navy-violet));
+      color: var(--starlight);
+      border: 1px solid rgba(110, 181, 255, 0.3);
     }
-    .btn-ghost {
-      background: transparent;
-      color: var(--text-accent);
-      border: 1px solid var(--primary-accent);
+    .btn-secondary:hover {
+      background: linear-gradient(135deg, var(--cool-blue), var(--soft-violet));
+      color: var(--void-black);
+      transform: translateY(-2px);
     }
-    .btn-ghost:hover {
-      background: rgba(82, 24, 128, 0.2);
-      transform: translateY(-1px);
-    }
-    .btn-sm {
-      padding: 0.625rem 1.25rem;
-      font-size: 0.95rem;
-    }
-
-    /* ============================================
-       CARDS
-    ============================================ */
-    .card {
-      background: var(--card-bg);
-      border: 1px solid var(--primary-accent);
-      border-radius: var(--radius-card);
-      padding: 1.5rem;
-      transition: border-color 0.3s ease;
-    }
-    .card:hover { border-color: var(--accent-hover); }
-
-    /* ============================================
-       DECORATIVE ORBS
-    ============================================ */
-    .orb {
-      position: absolute;
-      border-radius: 50%;
-      background: radial-gradient(circle, rgba(109, 40, 217, 0.15) 0%, rgba(33, 9, 54, 0) 70%);
-      pointer-events: none;
-    }
+    /* Dark: void-black pill on a bright gradient banner */
+    .btn-dark { background: var(--void-black); color: var(--starlight); border: 1px solid rgba(255,255,255,0.12); }
+    .btn-dark:hover { background: #0d1322; transform: translateY(-2px); }
 
     /* ============================================
        HEADER / NAV
     ============================================ */
     header {
-      position: fixed;
-      top: 0; left: 0; right: 0;
-      z-index: 100;
-      background: rgba(26, 7, 41, 0.85);
-      backdrop-filter: blur(12px);
-      border-bottom: 1px solid rgba(82, 24, 128, 0.3);
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      background: rgba(10, 15, 30, 0.6);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
       transition: background 0.3s ease, box-shadow 0.3s ease;
     }
-    header.scrolled {
-      background: rgba(26, 7, 41, 0.97);
-      box-shadow: 0 4px 32px rgba(0,0,0,0.4);
-    }
-    nav {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 1rem 2rem;
-      max-width: 1152px;
-      margin: 0 auto;
-    }
-    .logo {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      text-decoration: none;
-    }
+    header.scrolled { background: rgba(10, 15, 30, 0.85); box-shadow: 0 4px 32px rgba(0,0,0,0.4); }
+    nav { display: flex; align-items: center; justify-content: space-between; padding: 0.85rem 2rem; max-width: 1152px; margin: 0 auto; }
+    .logo { display: flex; align-items: center; gap: 0.75rem; }
     .logo-mark {
-      width: 40px; height: 40px;
-      border-radius: 0.5rem;
-      background: linear-gradient(135deg, var(--accent-hover), var(--primary-accent));
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
+      width: 38px; height: 38px; border-radius: 0.6rem;
+      background: linear-gradient(135deg, var(--cool-blue), var(--soft-violet));
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+      box-shadow: 0 0 16px rgba(110, 181, 255, 0.3);
     }
-    .logo-mark svg { width: 20px; height: 20px; color: var(--text-primary); }
-    .logo-text {
-      font-family: 'Outfit', sans-serif;
-      font-weight: 700;
-      font-size: 1.1rem;
-      color: var(--text-primary);
-    }
+    .logo-mark svg { width: 19px; height: 19px; color: var(--void-black); }
+    .logo-text { font-family: var(--font-mono); font-weight: 800; font-size: 0.8125rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--starlight); }
     .nav-signin {
-      padding: 0.625rem 1.25rem;
-      border-radius: 0.75rem;
-      border: 1px solid var(--primary-accent);
-      color: var(--text-accent);
-      font-weight: 500;
-      font-size: 0.95rem;
-      transition: all 0.2s ease;
+      padding: 0.55rem 1.2rem; border-radius: 9999px;
+      border: 1px solid rgba(110, 181, 255, 0.3);
+      font-family: var(--font-mono); font-weight: 800; font-size: 0.6875rem; letter-spacing: 0.12em; text-transform: uppercase;
+      color: var(--cool-blue); transition: all 0.2s ease;
     }
-    .nav-signin:hover { background: rgba(82, 24, 128, 0.2); }
+    .nav-signin:hover { background: rgba(110, 181, 255, 0.1); }
 
-    /* Mobile nav */
-    .hamburger {
-      display: none;
-      background: none;
-      border: none;
-      color: var(--text-primary);
-      cursor: pointer;
-      padding: 0.25rem;
-    }
-    .mobile-menu {
-      display: none;
-      background: var(--header-bg);
-      border-top: 1px solid var(--primary-accent);
-      padding: 1rem 1.5rem;
-    }
+    .hamburger { display: none; background: none; border: none; color: var(--starlight); cursor: pointer; padding: 0.25rem; }
+    .mobile-menu { display: none; background: rgba(10,15,30,0.95); border-top: 1px solid rgba(255,255,255,0.08); padding: 1rem 1.5rem; }
     .mobile-menu.open { display: block; }
     .mobile-menu a {
-      display: block;
-      text-align: center;
-      padding: 0.75rem;
-      border-radius: 0.75rem;
-      border: 1px solid var(--primary-accent);
-      color: var(--text-accent);
-      font-weight: 500;
+      display: block; text-align: center; padding: 0.75rem; border-radius: 9999px;
+      border: 1px solid rgba(110,181,255,0.3); color: var(--cool-blue);
+      font-family: var(--font-mono); font-weight: 800; font-size: 0.75rem; letter-spacing: 0.1em; text-transform: uppercase;
     }
-
-    @media (max-width: 768px) {
-      .hamburger { display: block; }
-      .nav-signin { display: none; }
-    }
+    @media (max-width: 768px) { .hamburger { display: block; } .nav-signin { display: none; } }
 
     /* ============================================
        HERO
     ============================================ */
-    .hero {
-      position: relative;
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding-top: 5rem;
-      overflow: hidden;
-    }
-    .hero-content {
-      position: relative;
-      z-index: 10;
-      max-width: 860px;
-      margin: 0 auto;
-      padding: 5rem 1.5rem;
-      text-align: center;
-    }
+    .hero { position: relative; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding-top: 5rem; overflow: hidden; }
+    .hero-content { position: relative; z-index: 10; max-width: 880px; margin: 0 auto; padding: 5rem 1.5rem; text-align: center; }
     .hero h1 {
-      font-size: clamp(2.25rem, 6vw, 3.75rem);
-      font-weight: 900;
-      line-height: 1.08;
-      letter-spacing: -0.03em;
-      color: var(--text-primary);
+      font-size: clamp(2.25rem, 6vw, 3.85rem);
+      font-weight: 900; line-height: 1.06; letter-spacing: -0.03em;
+      color: var(--starlight); text-wrap: balance;
       animation: fadeInUp 0.6s ease-out forwards;
     }
+    .hero h1 .accent { color: var(--cool-blue); }
     .hero p {
-      margin-top: 1.5rem;
-      font-size: clamp(1rem, 2.5vw, 1.2rem);
-      color: var(--text-muted);
-      max-width: 600px;
-      margin-left: auto;
-      margin-right: auto;
-      line-height: 1.7;
+      margin: 1.5rem auto 0; font-size: clamp(1rem, 2.5vw, 1.18rem);
+      color: rgba(226, 232, 240, 0.72); max-width: 620px; line-height: 1.7;
       animation: fadeInUp 0.6s ease-out 0.1s both;
     }
-    .hero-btns {
-      margin-top: 2.5rem;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 1rem;
-      align-items: center;
-      justify-content: center;
-      animation: fadeInUp 0.6s ease-out 0.2s both;
-    }
-    .hero-btns .btn { min-width: 220px; }
+    .hero-btns { margin-top: 2.5rem; display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; justify-content: center; animation: fadeInUp 0.6s ease-out 0.2s both; }
+    .hero-btns .btn { min-width: 230px; }
+    .hero-meta { margin-top: 2.25rem; display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: center; justify-content: center;
+      font-family: var(--font-mono); font-size: 0.6875rem; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(226,232,240,0.45);
+      animation: fadeInUp 0.6s ease-out 0.3s both; }
+    .hero-meta .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--live-emerald); display: inline-block; margin-right: 0.5rem; box-shadow: 0 0 8px var(--live-emerald); vertical-align: middle; }
 
-    .hero .orb-1 { width: 600px; height: 600px; top: -200px; left: -200px; }
-    .hero .orb-2 { width: 400px; height: 400px; top: 30%; right: -120px; }
-    .hero .orb-3 { width: 300px; height: 300px; bottom: 80px; left: 25%; }
+    /* ============================================
+       SECTION HEADINGS
+    ============================================ */
+    .section-title { font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 800; color: var(--starlight); letter-spacing: -0.02em; text-wrap: balance; }
+    .section-head { margin-bottom: 4rem; }
 
     /* ============================================
        HOW IT WORKS
     ============================================ */
-    .section-title {
-      font-size: clamp(1.75rem, 4vw, 2.5rem);
-      font-weight: 700;
-      color: var(--text-primary);
-      margin-bottom: 4rem;
-    }
-    .steps-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 2rem;
-    }
-    .step-card {
-      text-align: center;
-    }
+    .steps-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; }
+    .step-card { text-align: center; padding: 2rem 1.5rem; }
+    .step-num { font-family: var(--font-mono); font-size: 0.6875rem; font-weight: 800; letter-spacing: 0.2em; color: var(--cool-blue); margin-bottom: 1rem; }
     .step-icon {
-      width: 64px; height: 64px;
-      border-radius: 50%;
-      background: linear-gradient(135deg, var(--accent-hover), var(--primary-accent));
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin: 0 auto 1.5rem;
-      font-size: 1.75rem;
+      width: 60px; height: 60px; border-radius: 9999px;
+      background: rgba(110, 181, 255, 0.08); border: 1px solid rgba(110,181,255,0.2);
+      display: flex; align-items: center; justify-content: center; margin: 0 auto 1.25rem; font-size: 1.6rem;
     }
-    .step-card h3 {
-      font-size: 1.15rem;
-      font-weight: 700;
-      color: var(--text-primary);
-      margin-bottom: 0.75rem;
-    }
-    .step-card p {
-      color: var(--text-muted);
-      line-height: 1.7;
-      font-size: 0.95rem;
-    }
-
-    @media (max-width: 768px) {
-      .steps-grid { grid-template-columns: 1fr; gap: 1.25rem; }
-    }
+    .step-card h3 { font-size: 1.1rem; font-weight: 700; color: var(--starlight); margin-bottom: 0.6rem; }
+    .step-card p { color: rgba(226,232,240,0.68); line-height: 1.7; font-size: 0.95rem; }
+    @media (max-width: 768px) { .steps-grid { grid-template-columns: 1fr; } }
 
     /* ============================================
-       FEATURES
+       FEATURES — one featured core card, rest flow
     ============================================ */
-    .features-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 1.5rem;
-    }
-    .feature-card h3 {
-      font-size: 1.05rem;
-      font-weight: 700;
-      color: var(--text-primary);
-      margin-bottom: 0.5rem;
-    }
-    .feature-card p {
-      color: var(--text-muted);
-      font-size: 0.9rem;
-      line-height: 1.7;
-    }
-
-    @media (max-width: 768px) {
-      .features-grid { grid-template-columns: 1fr; }
-    }
+    .feature-card { padding: 1.6rem; }
+    .feature-tag { font-family: var(--font-mono); font-size: 0.625rem; font-weight: 800; letter-spacing: 0.15em; text-transform: uppercase; margin-bottom: 0.75rem; display: inline-block; }
+    .feature-card h3 { font-size: 1.05rem; font-weight: 700; color: var(--starlight); margin-bottom: 0.5rem; }
+    .feature-card p { color: rgba(226,232,240,0.66); font-size: 0.9rem; line-height: 1.7; }
+    .feature-card.featured { display: grid; grid-template-columns: 1fr 1.25fr; gap: 2rem; align-items: center; padding: 2.25rem; margin-bottom: 1.25rem; }
+    .feature-card.featured h3 { font-size: 1.4rem; margin-bottom: 0; }
+    .feature-card.featured p { font-size: 0.97rem; color: rgba(226,232,240,0.72); }
+    .features-grid-secondary { display: grid; grid-template-columns: repeat(auto-fit, minmax(258px, 1fr)); gap: 1.25rem; }
+    @media (max-width: 768px) { .feature-card.featured { grid-template-columns: 1fr; gap: 1rem; padding: 1.6rem; } }
 
     /* ============================================
-       PDF PREVIEW
+       PDF PREVIEW — the white deliverable against the hull
     ============================================ */
-    .pdf-section-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 3rem;
-      align-items: center;
-    }
-    .pdf-section-grid h2 {
-      font-size: clamp(1.75rem, 4vw, 2.25rem);
-      font-weight: 700;
-      color: var(--text-primary);
-      margin-bottom: 1.25rem;
-    }
-    .pdf-section-grid p {
-      color: var(--text-muted);
-      font-size: 1rem;
-      line-height: 1.8;
-    }
-    .pdf-mockup {
-      background: #ffffff;
-      border-radius: 0.75rem;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
-      padding: 1.5rem;
-      transform: rotate(1deg);
-      transition: transform 0.3s ease;
-    }
+    .pdf-section-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 3rem; align-items: center; }
+    .pdf-section-grid h2 { font-size: clamp(1.6rem, 4vw, 2.25rem); font-weight: 800; color: var(--starlight); margin-bottom: 1.25rem; letter-spacing: -0.02em; }
+    .pdf-section-grid p { color: rgba(226,232,240,0.7); font-size: 1rem; line-height: 1.8; }
+    .pdf-frame { padding: 1.25rem; border-radius: var(--radius-panel); }
+    .pdf-mockup { background: #ffffff; border-radius: 0.6rem; box-shadow: 0 24px 70px rgba(110,181,255,0.18); padding: 1.5rem; transform: rotate(1.2deg); transition: transform 0.35s ease; }
     .pdf-mockup:hover { transform: rotate(0deg); }
-    .pdf-header {
-      border-bottom: 2px solid #521880;
-      padding-bottom: 1rem;
-      margin-bottom: 1rem;
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-    }
-    .pdf-logo-placeholder {
-      width: 48px; height: 48px;
-      border-radius: 0.5rem;
-      background: linear-gradient(135deg, #6d28d9, #521880);
-    }
+    .pdf-header { border-bottom: 2px solid var(--cool-blue); padding-bottom: 1rem; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: flex-start; }
+    .pdf-logo-placeholder { width: 48px; height: 48px; border-radius: 0.5rem; background: linear-gradient(135deg, var(--cool-blue), var(--soft-violet)); }
     .pdf-line { height: 8px; border-radius: 4px; background: #e5e7eb; margin-bottom: 6px; }
     .pdf-line-dark { background: #374151; }
-    .pdf-line-accent { background: #521880; }
-    .pdf-table-header { background: rgba(82, 24, 128, 0.1); padding: 0.5rem 0.75rem; }
-    .pdf-table-row {
-      display: flex;
-      justify-content: space-between;
-      padding: 0.5rem 0.75rem;
-      border-top: 1px solid #f3f4f6;
-    }
-    .pdf-total-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding-top: 1rem;
-      margin-top: 0.5rem;
-      border-top: 1px solid #e5e7eb;
-    }
-
-    @media (max-width: 900px) {
-      .pdf-section-grid { grid-template-columns: 1fr; }
-    }
+    .pdf-line-accent { background: var(--cool-blue); }
+    .pdf-table-header { background: rgba(110, 181, 255, 0.1); padding: 0.5rem 0.75rem; }
+    .pdf-table-row { display: flex; justify-content: space-between; padding: 0.5rem 0.75rem; border-top: 1px solid #f3f4f6; }
+    .pdf-total-row { display: flex; justify-content: space-between; align-items: center; padding-top: 1rem; margin-top: 0.5rem; border-top: 1px solid #e5e7eb; }
+    @media (max-width: 900px) { .pdf-section-grid { grid-template-columns: 1fr; } }
 
     /* ============================================
        PRICING
     ============================================ */
-    .pricing-card {
-      background: var(--card-bg);
-      border: 1px solid var(--primary-accent);
-      border-radius: var(--radius-card);
-      padding: 2.5rem;
-      max-width: 460px;
-      margin: 0 auto;
-    }
-    .price-amount {
-      font-family: 'Outfit', sans-serif;
-      font-size: 3.5rem;
-      font-weight: 900;
-      color: var(--text-primary);
-    }
-    .price-period { color: var(--text-muted); font-size: 1.1rem; }
-    .price-note { color: var(--text-muted); margin-bottom: 2rem; margin-top: 0.5rem; }
+    .pricing-card { padding: 2.75rem; max-width: 460px; margin: 0 auto; text-align: left; }
+    .price-amount { font-family: var(--font-display); font-size: 3.5rem; font-weight: 900; color: var(--cool-blue); letter-spacing: -0.02em; }
+    .price-period { font-family: var(--font-mono); color: rgba(226,232,240,0.55); font-size: 0.9rem; letter-spacing: 0.08em; text-transform: uppercase; }
+    .price-note { color: rgba(226,232,240,0.55); margin: 0.5rem 0 2rem; font-size: 0.9rem; }
     .feature-list { margin-bottom: 2rem; }
-    .feature-list li {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      color: var(--text-primary);
-      padding: 0.5rem 0;
-      font-size: 0.95rem;
-    }
-    .check-icon {
-      width: 20px; height: 20px;
-      color: var(--success);
-      flex-shrink: 0;
+    .feature-list li { display: flex; align-items: center; gap: 0.75rem; color: var(--starlight); padding: 0.5rem 0; font-size: 0.95rem; }
+    .check-icon { width: 18px; height: 18px; color: var(--live-emerald); flex-shrink: 0; }
+
+    /* ============================================
+       FAQ — native details, stacked glass rows
+    ============================================ */
+    .faq-list { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 0.85rem; }
+    .faq-item { padding: 0; overflow: hidden; }
+    .faq-item summary { list-style: none; cursor: pointer; padding: 1.25rem 1.5rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; font-family: var(--font-display); font-weight: 700; font-size: 1.02rem; color: var(--starlight); }
+    .faq-item summary::-webkit-details-marker { display: none; }
+    .faq-item summary::after { content: '+'; font-family: var(--font-mono); font-size: 1.5rem; line-height: 1; color: var(--cool-blue); transition: transform 0.25s ease; flex-shrink: 0; }
+    .faq-item[open] summary::after { transform: rotate(45deg); }
+    .faq-item .faq-body { padding: 0 1.5rem 1.4rem; color: rgba(226,232,240,0.7); font-size: 0.95rem; line-height: 1.75; }
+
+    /* Keyboard focus — visible ring on every interactive surface */
+    .btn:focus-visible, .nav-signin:focus-visible, .mobile-menu a:focus-visible, .faq-item summary:focus-visible, .footer-links a:focus-visible {
+      outline: 2px solid var(--cool-blue); outline-offset: 3px;
     }
 
     /* ============================================
-       TESTIMONIALS
+       CTA BANNER — bright brand gradient, void-black text
     ============================================ */
-    .testimonials-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 1.5rem;
-    }
-    .testimonial-card { padding: 1.5rem; }
-    .stars { display: flex; gap: 0.25rem; margin-bottom: 1rem; }
-    .star { color: var(--text-accent); font-size: 0.9rem; }
-    .testimonial-quote {
-      color: var(--text-primary);
-      line-height: 1.7;
-      margin-bottom: 1rem;
-      font-size: 0.95rem;
-    }
-    .testimonial-author { color: var(--text-muted); font-size: 0.85rem; }
-
-    @media (max-width: 768px) {
-      .testimonials-grid { grid-template-columns: 1fr; }
-    }
-
-    /* ============================================
-       CTA BANNER
-    ============================================ */
-    .cta-banner {
-      background: linear-gradient(135deg, var(--primary-accent), var(--accent-hover));
-      border-radius: var(--radius-card);
-      padding: 4rem 2rem;
-      text-align: center;
-      max-width: 860px;
-      margin: 0 auto;
-    }
-    .cta-banner h2 {
-      font-size: clamp(1.75rem, 4vw, 2.5rem);
-      font-weight: 700;
-      color: var(--text-primary);
-      margin-bottom: 1rem;
-    }
-    .cta-banner p {
-      color: var(--text-accent);
-      font-size: 1.1rem;
-      margin-bottom: 2rem;
-    }
-    .btn-dark {
-      background: var(--base-bg);
-      color: var(--text-primary);
-      border: none;
-    }
-    .btn-dark:hover {
-      background: var(--header-bg);
-      transform: translateY(-1px);
-    }
+    .cta-banner { background: linear-gradient(135deg, var(--cool-blue), var(--soft-violet)); border-radius: var(--radius-panel); padding: 4rem 2rem; text-align: center; max-width: 860px; margin: 0 auto; box-shadow: 0 20px 60px rgba(110,181,255,0.25); }
+    .cta-banner h2 { font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 900; color: var(--void-black); margin-bottom: 0.75rem; letter-spacing: -0.02em; }
+    .cta-banner p { font-family: var(--font-mono); color: rgba(5,8,16,0.7); font-size: 0.8125rem; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 2rem; }
 
     /* ============================================
        FOOTER
     ============================================ */
-    footer {
-      background: var(--header-bg);
-      border-top: 1px solid var(--primary-accent);
-      padding: 3rem 2rem;
-    }
-    .footer-inner {
-      max-width: 1152px;
-      margin: 0 auto;
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      justify-content: space-between;
-      gap: 1.5rem;
-    }
-    .footer-tagline { color: var(--text-muted); font-size: 0.875rem; text-align: center; }
+    footer { background: rgba(10,15,30,0.7); backdrop-filter: blur(14px); border-top: 1px solid rgba(255,255,255,0.08); padding: 3rem 2rem; position: relative; }
+    .footer-inner { max-width: 1152px; margin: 0 auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1.5rem; }
+    .footer-tagline { color: rgba(226,232,240,0.5); font-size: 0.8125rem; text-align: center; }
     .footer-links { display: flex; gap: 1.5rem; flex-wrap: wrap; }
-    .footer-links a { color: var(--text-accent); font-size: 0.875rem; transition: color 0.2s; }
-    .footer-links a:hover { color: var(--text-primary); }
+    .footer-links a { font-family: var(--font-mono); color: var(--cool-blue); font-size: 0.6875rem; letter-spacing: 0.1em; text-transform: uppercase; transition: color 0.2s; }
+    .footer-links a:hover { color: var(--soft-violet); }
+    .footer-legal { font-size: 11px; color: rgba(226,232,240,0.4); margin-top: 1.5rem; max-width: 600px; line-height: 1.6; text-align: center; }
+    .footer-legal strong { color: rgba(226,232,240,0.65); }
+    .footer-legal a { color: var(--cool-blue); text-decoration: underline; }
 
     @media (max-width: 640px) {
       .footer-inner { flex-direction: column; align-items: center; text-align: center; }
       .hero-btns .btn { width: 100%; }
     }
+
+    /* ============================================
+       REDUCED MOTION
+    ============================================ */
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important; }
+      .js .scroll-animate { opacity: 1 !important; transform: none !important; }
+    }
   </style>
 </head>
 <body>
+
+  <!-- Starfield hull -->
+  <div class="starfield" id="starfield"></div>
+  <div class="aurora aurora-violet"></div>
+  <div class="aurora aurora-blue"></div>
+  <div class="vignette"></div>
 
   <!-- ============================================
        HEADER
@@ -556,7 +369,7 @@
             <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z"/>
           </svg>
         </div>
-        <span class="logo-text">Lone Ranger Estimator</span>
+        <span class="logo-text">Lone Ranger</span>
       </a>
       <a href="/dashboard-legacy" class="nav-signin">Sign In</a>
       <button class="hamburger" id="hamburger-btn" aria-label="Toggle menu">
@@ -577,15 +390,18 @@
        HERO
   ============================================ -->
   <section class="hero">
-    <div class="orb orb-1"></div>
-    <div class="orb orb-2"></div>
-    <div class="orb orb-3"></div>
     <div class="hero-content">
-      <h1>Bid Jobs From Your Truck in 60 Seconds</h1>
+      <span class="eyebrow">AI Estimating Console</span>
+      <h1>Bid Jobs From Your Truck in <span class="accent">60 Seconds</span></h1>
       <p>Text or speak your materials and labor. Get a professional PDF estimate instantly. Send it to your client before you leave the driveway.</p>
       <div class="hero-btns">
-        <a href="/dashboard-legacy" class="btn btn-primary">Start Free Trial — $49/mo</a>
-        <a href="#how-it-works" class="btn btn-ghost">See How It Works</a>
+        <a href="/dashboard-legacy" class="btn btn-primary">Get Started · $49/mo</a>
+        <a href="#how-it-works" class="btn btn-secondary">See How It Works</a>
+      </div>
+      <div class="hero-meta">
+        <span><span class="dot"></span>Voice &amp; text intake</span>
+        <span><span class="dot"></span>Your private pricing</span>
+        <span><span class="dot"></span>Branded PDF, emailed</span>
       </div>
     </div>
   </section>
@@ -595,19 +411,24 @@
   ============================================ -->
   <section class="section" id="how-it-works">
     <div class="container">
-      <h2 class="section-title text-center scroll-animate">From Job Site to Invoice in Three Steps</h2>
+      <div class="section-head text-center scroll-animate">
+        <h2 class="section-title">From Job Site to Invoice in Three Steps</h2>
+      </div>
       <div class="steps-grid">
-        <div class="card step-card scroll-animate delay-1">
+        <div class="glass-panel step-card scroll-animate delay-1">
+          <div class="step-num">STEP 01</div>
           <div class="step-icon">🎙️</div>
           <h3>Speak or Type Your Scope</h3>
-          <p>Standing on a job site or sitting in your truck, describe the work naturally. Materials, labor, quantities — just talk.</p>
+          <p>Standing on a job site or sitting in your truck, describe the work naturally. Materials, labor, quantities. Just talk.</p>
         </div>
-        <div class="card step-card scroll-animate delay-2">
+        <div class="glass-panel step-card scroll-animate delay-2">
+          <div class="step-num">STEP 02</div>
           <div class="step-icon">⚡</div>
           <h3>AI Prices It Instantly</h3>
           <p>Gemini AI extracts every line item and prices it against your private supplier catalog. Your rates, your prices, nobody else's.</p>
         </div>
-        <div class="card step-card scroll-animate delay-3">
+        <div class="glass-panel step-card scroll-animate delay-3">
+          <div class="step-num">STEP 03</div>
           <div class="step-icon">📄</div>
           <h3>Professional PDF, Emailed Instantly</h3>
           <p>Your branded estimate lands in your inbox with your logo, license number, itemized tables, Wisconsin tax, and signature lines. Ready to forward to your client.</p>
@@ -619,31 +440,41 @@
   <!-- ============================================
        FEATURES
   ============================================ -->
-  <section class="section-alt" id="features">
+  <section class="section" id="features">
     <div class="container">
-      <h2 class="section-title text-center scroll-animate">Everything You Need to Bid Like a Pro</h2>
-      <div class="features-grid">
-        <div class="card feature-card scroll-animate delay-1">
-          <h3>AI Voice &amp; Text Parser</h3>
-          <p>Speak naturally or type your job scope. Gemini AI automatically identifies materials, labor tasks, and pricing — turning your field notes into professional estimates in seconds.</p>
+      <div class="section-head text-center scroll-animate">
+        <h2 class="section-title">Everything You Need to Bid Like a Pro</h2>
+      </div>
+      <div class="glass-panel feature-card featured scroll-animate">
+        <div>
+          <span class="feature-tag" style="color:var(--soft-violet)">AI · The Core</span>
+          <h3>Voice &amp; Text Parser</h3>
         </div>
-        <div class="card feature-card scroll-animate delay-2">
+        <p>Speak naturally or type your job scope. Gemini AI identifies the materials, labor tasks, and quantities and turns your field notes into a priced estimate in seconds. It is the engine the rest of the workflow runs on.</p>
+      </div>
+      <div class="features-grid-secondary">
+        <div class="glass-panel feature-card scroll-animate delay-1">
+          <span class="feature-tag" style="color:var(--live-emerald)">From the source</span>
           <h3>Private Pricing Database</h3>
           <p>Upload your own CSV pricing catalog with your supplier rates. The AI references your custom prices first, falling back to regional averages only for items not in your list.</p>
         </div>
-        <div class="card feature-card scroll-animate delay-3">
+        <div class="glass-panel feature-card scroll-animate delay-2">
+          <span class="feature-tag" style="color:var(--cool-blue)">Ledger</span>
           <h3>Interactive Ledger Editor</h3>
-          <p>Review and fine-tune every line item in an editable grid. Quantities, prices, and descriptions update in real-time with automatic tax and total recalculations.</p>
+          <p>Review and fine-tune every line item in an editable grid. Quantities, prices, and descriptions update in real time with automatic tax and total recalculations.</p>
         </div>
-        <div class="card feature-card scroll-animate delay-4">
+        <div class="glass-panel feature-card scroll-animate delay-3">
+          <span class="feature-tag" style="color:var(--soft-violet)">AI</span>
           <h3>Change Order Engine</h3>
           <p>When scope changes mid-project, dictate the changes and let AI calculate the delta cost. Document price adjustments instantly to prevent scope creep disputes.</p>
         </div>
-        <div class="card feature-card scroll-animate delay-5">
+        <div class="glass-panel feature-card scroll-animate delay-4">
+          <span class="feature-tag" style="color:var(--cool-blue)">Dispatch</span>
           <h3>SMS Client Approval Portal</h3>
-          <p>Send change orders directly to your client via text message. They tap a secure link, review the changes, and approve with one click — no hunting for signatures.</p>
+          <p>Send change orders directly to your client via text message. They tap a secure link, review the changes, and approve with one click. No hunting for signatures.</p>
         </div>
-        <div class="card feature-card scroll-animate delay-6">
+        <div class="glass-panel feature-card scroll-animate delay-5">
+          <span class="feature-tag" style="color:var(--cool-blue)">Workspace</span>
           <h3>Multi-Project Workspace</h3>
           <p>Store all your estimates and change orders in one digital filing cabinet. Search, reload, and reference any historical project from anywhere.</p>
         </div>
@@ -662,45 +493,47 @@
           <p>Your logo, your license number, your address. Itemized materials and labor tables. Wisconsin sales tax calculated automatically. 30-day validity clause. Dual signature lines. Sequential estimate numbers. This is what your client receives.</p>
         </div>
         <div class="scroll-animate delay-2">
-          <div class="pdf-mockup">
-            <div class="pdf-header">
-              <div style="display:flex;align-items:center;gap:12px;">
-                <div class="pdf-logo-placeholder"></div>
-                <div>
-                  <div class="pdf-line pdf-line-dark" style="width:140px;"></div>
-                  <div class="pdf-line" style="width:100px;margin-top:6px;"></div>
+          <div class="glass-panel pdf-frame">
+            <div class="pdf-mockup">
+              <div class="pdf-header">
+                <div style="display:flex;align-items:center;gap:12px;">
+                  <div class="pdf-logo-placeholder"></div>
+                  <div>
+                    <div class="pdf-line pdf-line-dark" style="width:140px;"></div>
+                    <div class="pdf-line" style="width:100px;margin-top:6px;"></div>
+                  </div>
+                </div>
+                <div style="text-align:right;">
+                  <div class="pdf-line" style="width:80px;margin-left:auto;"></div>
+                  <div class="pdf-line pdf-line-accent" style="width:60px;margin-left:auto;margin-top:6px;height:12px;"></div>
                 </div>
               </div>
-              <div style="text-align:right;">
-                <div class="pdf-line" style="width:80px;margin-left:auto;"></div>
-                <div class="pdf-line pdf-line-accent" style="width:60px;margin-left:auto;margin-top:6px;height:12px;"></div>
+              <div style="margin-bottom:1rem;">
+                <div class="pdf-line" style="width:96px;"></div>
+                <div class="pdf-line" style="width:180px;margin-top:6px;height:10px;"></div>
+                <div class="pdf-line" style="width:140px;margin-top:4px;"></div>
               </div>
-            </div>
-            <div style="margin-bottom:1rem;">
-              <div class="pdf-line" style="width:96px;"></div>
-              <div class="pdf-line" style="width:180px;margin-top:6px;height:10px;"></div>
-              <div class="pdf-line" style="width:140px;margin-top:4px;"></div>
-            </div>
-            <div style="border:1px solid #e5e7eb;border-radius:0.5rem;overflow:hidden;margin-bottom:1rem;">
-              <div class="pdf-table-header">
-                <div class="pdf-line pdf-line-accent" style="width:64px;height:6px;"></div>
+              <div style="border:1px solid #e5e7eb;border-radius:0.5rem;overflow:hidden;margin-bottom:1rem;">
+                <div class="pdf-table-header">
+                  <div class="pdf-line pdf-line-accent" style="width:64px;height:6px;"></div>
+                </div>
+                <div class="pdf-table-row">
+                  <div class="pdf-line" style="width:120px;"></div>
+                  <div class="pdf-line" style="width:48px;"></div>
+                </div>
+                <div class="pdf-table-row">
+                  <div class="pdf-line" style="width:100px;"></div>
+                  <div class="pdf-line" style="width:40px;"></div>
+                </div>
+                <div class="pdf-table-row">
+                  <div class="pdf-line" style="width:110px;"></div>
+                  <div class="pdf-line" style="width:44px;"></div>
+                </div>
               </div>
-              <div class="pdf-table-row">
-                <div class="pdf-line" style="width:120px;"></div>
-                <div class="pdf-line" style="width:48px;"></div>
+              <div class="pdf-total-row">
+                <div class="pdf-line" style="width:80px;"></div>
+                <div class="pdf-line pdf-line-accent" style="width:96px;height:14px;"></div>
               </div>
-              <div class="pdf-table-row">
-                <div class="pdf-line" style="width:100px;"></div>
-                <div class="pdf-line" style="width:40px;"></div>
-              </div>
-              <div class="pdf-table-row">
-                <div class="pdf-line" style="width:110px;"></div>
-                <div class="pdf-line" style="width:44px;"></div>
-              </div>
-            </div>
-            <div class="pdf-total-row">
-              <div class="pdf-line" style="width:80px;"></div>
-              <div class="pdf-line pdf-line-accent" style="width:96px;height:14px;"></div>
             </div>
           </div>
         </div>
@@ -711,82 +544,62 @@
   <!-- ============================================
        PRICING
   ============================================ -->
-  <section class="section-alt" id="pricing">
+  <section class="section" id="pricing">
     <div class="container-sm">
-      <h2 class="section-title text-center scroll-animate">One Plan. Everything Included.</h2>
-      <div class="pricing-card scroll-animate delay-1">
-        <div style="margin-bottom:0.5rem;">
+      <div class="section-head text-center scroll-animate">
+        <span class="eyebrow blue">One Plan</span>
+        <h2 class="section-title">Everything Included.</h2>
+      </div>
+      <div class="glass-panel pricing-card scroll-animate delay-1">
+        <div style="margin-bottom:0.25rem;">
           <span class="price-amount">$49</span>
           <span class="price-period">/month</span>
         </div>
         <p class="price-note">No contracts. Cancel anytime.</p>
         <ul class="feature-list">
-          <li>
-            <svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-            Unlimited estimates
-          </li>
-          <li>
-            <svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-            AI voice and text parsing
-          </li>
-          <li>
-            <svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-            Private supplier price book
-          </li>
-          <li>
-            <svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-            Professional PDF generation
-          </li>
-          <li>
-            <svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-            Change order engine
-          </li>
-          <li>
-            <svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-            SMS client approval
-          </li>
-          <li>
-            <svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-            Multi-project workspace
-          </li>
-          <li>
-            <svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-            Your branding on every document
-          </li>
+          <li><svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>Unlimited estimates</li>
+          <li><svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>AI voice and text parsing</li>
+          <li><svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>Private supplier price book</li>
+          <li><svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>Professional PDF generation</li>
+          <li><svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>Change order engine</li>
+          <li><svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>SMS client approval</li>
+          <li><svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>Multi-project workspace</li>
+          <li><svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>Your branding on every document</li>
         </ul>
-        <a href="/dashboard-legacy" class="btn btn-primary" style="width:100%;display:block;text-align:center;">Start Free Trial</a>
+        <a href="/dashboard-legacy" class="btn btn-primary" style="width:100%;">Get Started</a>
       </div>
     </div>
   </section>
 
   <!-- ============================================
-       TESTIMONIALS
+       FAQ — honest answers, fills the objection gap
   ============================================ -->
-  <section class="section">
+  <section class="section" id="faq">
     <div class="container">
-      <h2 class="section-title text-center scroll-animate">Built for Wisconsin Contractors</h2>
-      <div class="testimonials-grid">
-        <div class="card testimonial-card scroll-animate delay-1">
-          <div class="stars">
-            <span class="star">★</span><span class="star">★</span><span class="star">★</span><span class="star">★</span><span class="star">★</span>
-          </div>
-          <p class="testimonial-quote">"I sent my first estimate from my truck before I even started the job. Game changer."</p>
-          <p class="testimonial-author">— Mike R., Rhinelander WI</p>
-        </div>
-        <div class="card testimonial-card scroll-animate delay-2">
-          <div class="stars">
-            <span class="star">★</span><span class="star">★</span><span class="star">★</span><span class="star">★</span><span class="star">★</span>
-          </div>
-          <p class="testimonial-quote">"My clients think I have an office staff. It's just me and this app."</p>
-          <p class="testimonial-author">— Dave K., Wausau WI</p>
-        </div>
-        <div class="card testimonial-card scroll-animate delay-3">
-          <div class="stars">
-            <span class="star">★</span><span class="star">★</span><span class="star">★</span><span class="star">★</span><span class="star">★</span>
-          </div>
-          <p class="testimonial-quote">"The change order feature alone is worth the subscription. No more verbal agreements."</p>
-          <p class="testimonial-author">— Tom S., Eagle River WI</p>
-        </div>
+      <div class="section-head text-center scroll-animate">
+        <h2 class="section-title">Questions Contractors Ask</h2>
+      </div>
+      <div class="faq-list">
+        <details class="glass-panel faq-item scroll-animate delay-1">
+          <summary>How accurate are the prices?</summary>
+          <div class="faq-body">Every line is priced against your own supplier catalog first. Upload your CSV and the AI uses your real rates; only items you haven't priced fall back to a regional estimate, which you can edit before sending. You set the final number on every line.</div>
+        </details>
+        <details class="glass-panel faq-item scroll-animate delay-2">
+          <summary>Is my pricing data private?</summary>
+          <div class="faq-body">Yes. Your price book is scoped to your account alone. Your supplier rates are never shared, pooled, or shown to other contractors.</div>
+        </details>
+        <details class="glass-panel faq-item scroll-animate delay-3">
+          <summary>What does my client actually receive?</summary>
+          <div class="faq-body">A branded PDF with your logo, license number, and address; itemized material and labor tables; Wisconsin sales tax calculated automatically; a 30-day validity clause; and dual signature lines. It emails straight to your inbox to forward on.</div>
+        </details>
+        <details class="glass-panel faq-item scroll-animate delay-4">
+          <summary>Do I need to be good with computers?</summary>
+          <div class="faq-body">No. Speak or type the job the way you'd describe it to a buddy. There are no forms to fill out. Review the ledger, adjust anything that needs it, and send.</div>
+        </details>
+        <details class="glass-panel faq-item scroll-animate delay-5">
+          <summary>What does it cost, and can I cancel?</summary>
+          <div class="faq-body">$49 a month, flat. No contract, no setup fee, no per-estimate charge. Cancel anytime from your workspace.</div>
+        </details>
       </div>
     </div>
   </section>
@@ -799,7 +612,7 @@
       <div class="cta-banner scroll-animate">
         <h2>Your Next Estimate is 60 Seconds Away</h2>
         <p>Solo contractor. Professional estimates.</p>
-        <a href="/dashboard-legacy" class="btn btn-dark">Launch Free Workspace →</a>
+        <a href="/dashboard-legacy" class="btn btn-dark">Create Your Workspace →</a>
       </div>
     </div>
   </section>
@@ -815,7 +628,7 @@
             <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z"/>
           </svg>
         </div>
-        <span class="logo-text">Lone Ranger Estimator</span>
+        <span class="logo-text">Lone Ranger</span>
       </a>
       <p class="footer-tagline">Built by a contractor, for contractors in Northern Wisconsin</p>
       <div class="footer-links">
@@ -823,8 +636,8 @@
         <a href="/privacy.html">Privacy Policy</a>
         <a href="/terms.html">Terms of Service</a>
       </div>
-      <p style="font-size:11px; color:#888; margin-top:1.5rem; max-width:560px; line-height:1.6; text-align:center;">
-        <strong style="color:#aaa;">SMS Disclosure:</strong> When you create an account, you consent to receive SMS text messages from Lone Ranger Estimator including one-time verification codes and account notifications. This consent is not a condition of purchase. Message frequency varies. Msg &amp; data rates may apply. Reply <strong style="color:#aaa;">STOP</strong> to cancel or <strong style="color:#aaa;">HELP</strong> for support. View our <a href="/privacy.html" style="color:#a78bfa; text-decoration:underline;">Privacy Policy</a> and <a href="/terms.html" style="color:#a78bfa; text-decoration:underline;">Terms of Service</a>.
+      <p class="footer-legal">
+        <strong>SMS Disclosure:</strong> When you create an account, you consent to receive SMS text messages from Lone Ranger Estimator including one-time verification codes and account notifications. This consent is not a condition of purchase. Message frequency varies. Msg &amp; data rates may apply. Reply <strong>STOP</strong> to cancel or <strong>HELP</strong> for support. View our <a href="/privacy.html">Privacy Policy</a> and <a href="/terms.html">Terms of Service</a>.
       </p>
     </div>
   </footer>
@@ -833,6 +646,9 @@
        JAVASCRIPT
   ============================================ -->
   <script>
+    // Mark JS available so scroll-animate opacity gating only applies with JS
+    document.documentElement.classList.add('js');
+
     // Sticky header on scroll
     const header = document.getElementById('site-header');
     window.addEventListener('scroll', () => {
@@ -844,24 +660,19 @@
     const mobileMenu = document.getElementById('mobile-menu');
     const iconMenu = document.getElementById('icon-menu');
     const iconClose = document.getElementById('icon-close');
-
     hamburgerBtn.addEventListener('click', () => {
       const isOpen = mobileMenu.classList.toggle('open');
       iconMenu.style.display = isOpen ? 'none' : 'block';
       iconClose.style.display = isOpen ? 'block' : 'none';
     });
 
-    // Scroll-triggered animations using IntersectionObserver
+    // Scroll-triggered reveals
     const animatedEls = document.querySelectorAll('.scroll-animate');
     const observer = new IntersectionObserver((entries) => {
       entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          entry.target.classList.add('visible');
-          observer.unobserve(entry.target);
-        }
+        if (entry.isIntersecting) { entry.target.classList.add('visible'); observer.unobserve(entry.target); }
       });
     }, { threshold: 0.12 });
-
     animatedEls.forEach(el => observer.observe(el));
 
     // Smooth scroll for anchor links
@@ -871,13 +682,30 @@
         if (target) {
           e.preventDefault();
           target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          // Close mobile menu if open
           mobileMenu.classList.remove('open');
           iconMenu.style.display = 'block';
           iconClose.style.display = 'none';
         }
       });
     });
+
+    // Subtle starfield parallax (skips when user prefers reduced motion)
+    const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const starfield = document.getElementById('starfield');
+    if (starfield && !prefersReduced) {
+      let curX = 50, curY = 52, tgtX = 50, tgtY = 52;
+      window.addEventListener('mousemove', (e) => {
+        tgtX = 49 + (e.clientX / window.innerWidth) * 2;
+        tgtY = 50 + (e.clientY / window.innerHeight) * 4;
+      });
+      const tick = () => {
+        curX += (tgtX - curX) * 0.04;
+        curY += (tgtY - curY) * 0.04;
+        starfield.style.backgroundPosition = curX + '% ' + curY + '%';
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    }
   </script>
 
 </body>
