@@ -199,25 +199,57 @@
                 <p class="text-xs tracking-wide uppercase" style="color:var(--text-muted)">Multi-Project Voice Ledger</p>
             </div>
 
-            <div class="space-y-2 flex flex-col items-center justify-center">
-                <div id="g_id_onload"
-                     data-client_id="879716207624-tcne5h4j8d80nule4389ecudkjo18fev.apps.googleusercontent.com"
-                     data-context="signin"
-                     data-ux_mode="popup"
-                     data-callback="handleGoogleLogin"
-                     data-auto_prompt="false">
+            <div class="space-y-4 text-left">
+                <p class="text-[11px] text-center" style="color:var(--text-muted)">
+                    <strong style="color:var(--text-primary)">New here?</strong> Enter your details and opt in below, then continue with Google.
+                    Returning? Just continue with Google.
+                </p>
+
+                <div class="flex flex-col space-y-1">
+                    <label class="text-xs font-semibold" style="color:var(--text-muted)">Company Name <span style="opacity:.55">(new accounts)</span></label>
+                    <input type="text" id="loginCompanyName" placeholder="e.g. Acme Framing LLC"
+                        class="bg-[#1a0729] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
                 </div>
-                <div class="g_id_signin"
-                     data-type="standard"
-                     data-shape="rectangular"
-                     data-theme="outline"
-                     data-text="signin_with"
-                     data-size="large"
-                     data-logo_alignment="left">
+                <div class="flex flex-col space-y-1">
+                    <label class="text-xs font-semibold" style="color:var(--text-muted)">Mobile Phone Number <span style="opacity:.55">(new accounts)</span></label>
+                    <input type="tel" id="loginPhone" placeholder="(555) 123-4567"
+                        class="bg-[#1a0729] border rounded-xl px-3 py-2 text-sm focus:outline-none" style="border-color:var(--primary-accent); color:var(--text-primary);">
                 </div>
-                <p id="loginError" class="hidden text-xs text-red-400 mt-1"></p>
+
+                <div class="flex items-start gap-2">
+                    <input type="checkbox" id="loginSmsConsent" class="mt-1 flex-shrink-0" style="accent-color: var(--primary-accent);">
+                    <label for="loginSmsConsent" class="text-[10px] leading-tight" style="color:var(--text-muted)">
+                        <strong style="color:var(--text-primary)">SMS Consent:</strong> By entering your mobile number and checking this box, you expressly consent to receive text messages (SMS) from <strong style="color:var(--text-primary)">Lone Ranger Estimator</strong> at the number provided, including one-time verification codes and account-related notifications. This consent is not a condition of purchase. Message frequency varies. Standard message and data rates may apply. Reply <strong style="color:var(--text-primary)">STOP</strong> to cancel at any time. Reply <strong style="color:var(--text-primary)">HELP</strong> for assistance.
+                        <br><br>
+                        <a href="/privacy.html" target="_blank" class="underline hover:text-purple-300 transition-colors">Privacy Policy</a> &middot; <a href="/terms.html" target="_blank" class="underline hover:text-purple-300 transition-colors">Terms of Service</a>
+                    </label>
+                </div>
+
+                <div class="flex items-center gap-2 pt-1">
+                    <div class="flex-1 h-px" style="background:var(--primary-accent);opacity:.25"></div>
+                    <span class="text-[10px] uppercase tracking-wide" style="color:var(--text-muted)">then continue with</span>
+                    <div class="flex-1 h-px" style="background:var(--primary-accent);opacity:.25"></div>
+                </div>
+
+                <div class="space-y-2 flex flex-col items-center justify-center">
+                    <div id="g_id_onload"
+                         data-client_id="879716207624-tcne5h4j8d80nule4389ecudkjo18fev.apps.googleusercontent.com"
+                         data-context="signin"
+                         data-ux_mode="popup"
+                         data-callback="handleGoogleLogin"
+                         data-auto_prompt="false">
+                    </div>
+                    <div class="g_id_signin"
+                         data-type="standard"
+                         data-shape="rectangular"
+                         data-theme="outline"
+                         data-text="signin_with"
+                         data-size="large"
+                         data-logo_alignment="left">
+                    </div>
+                    <p id="loginError" class="hidden text-xs text-red-400 mt-1"></p>
+                </div>
             </div>
-            <p class="text-[11px] text-center" style="color:var(--text-muted)">Access is restricted to authorized contractors.</p>
         </div>
     </div>
 
@@ -1187,6 +1219,11 @@
             clearLoginError();
             authBearerToken = response.credential;
             localStorage.setItem('authBearerToken', authBearerToken);
+            // Capture the public sign-up card values so they survive the OAuth popup
+            // and flow into registration (new accounts only; blank for returning users).
+            window.signupCompany = (document.getElementById('loginCompanyName')?.value || '').trim();
+            window.signupPhone   = (document.getElementById('loginPhone')?.value || '').trim();
+            window.signupConsent = !!document.getElementById('loginSmsConsent')?.checked;
             try {
                 await activateDashboard();
             } catch (err) { showLoginError('Could not reach server: ' + err.message); }
@@ -1203,8 +1240,19 @@
             }
             if (profileStatus === 'unonboarded' || !profileStatus) {
                 dashboard.classList.add('hidden');
-                document.getElementById('onboardingModal').classList.remove('hidden');
-                document.getElementById('onboardingModal').classList.add('flex');
+                // Carry the public sign-up card values into the registration step.
+                if (window.signupCompany) document.getElementById('regCompanyName').value = window.signupCompany;
+                if (window.signupPhone)   document.getElementById('regPhone').value = window.signupPhone;
+                if (window.signupConsent) document.getElementById('regSmsConsent').checked = true;
+                // If the contractor already opted in on the public login screen, skip the
+                // redundant modal and register straight away (→ OTP). Otherwise show the
+                // onboarding modal (now pre-filled) as the fallback.
+                if (window.signupCompany && window.signupPhone && window.signupConsent) {
+                    submitRegistration(new Event('submit'));
+                } else {
+                    document.getElementById('onboardingModal').classList.remove('hidden');
+                    document.getElementById('onboardingModal').classList.add('flex');
+                }
                 return;
             }
 
