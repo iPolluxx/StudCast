@@ -35,10 +35,26 @@ const clampNum = (v: string) => {
 // (ai / override / database) are internal jargon; contractors see human words,
 // with the full meaning on hover.
 const SOURCE_META: Record<string, { label: string; title: string }> = {
-  ai: { label: "Est.", title: "AI-estimated price" },
-  override: { label: "Yours", title: "Your manual price" },
-  database: { label: "Saved", title: "From your saved price book" },
+  ai:       { label: "Est.",    title: "AI-estimated price" },
+  override: { label: "Yours",  title: "Your manual price" },
+  database: { label: "Saved",  title: "From your saved price book" },
+  market:   { label: "Menards", title: "Live Menards price (Wausau, WI)" },
 };
+
+function sourceLabel(item: MaterialItem) {
+  if (item.price_source === "market") {
+    const age = (item as any).market_age_h;
+    return age != null ? `Menards · ${age}h` : "Menards";
+  }
+  return SOURCE_META[item.price_source]?.label ?? item.price_source;
+}
+
+function sourceClass(priceSource: string) {
+  if (priceSource === "ai")       return "bg-soft-violet/20 text-soft-violet";
+  if (priceSource === "override") return "bg-cool-blue/20 text-cool-blue";
+  if (priceSource === "market")   return "bg-live-emerald/20 text-live-emerald";
+  return "bg-live-emerald/20 text-live-emerald"; // database
+}
 
 export default function LedgerTable({
   materials, labor, allItems,
@@ -216,12 +232,8 @@ export default function LedgerTable({
                   <div className="flex justify-between items-center pt-1 border-t border-white/5">
                     <span
                       title={SOURCE_META[item.price_source]?.title}
-                      className={`text-micro font-extrabold px-2 py-0.5 rounded uppercase font-mono ${
-                      item.price_source === "ai" ? "bg-soft-violet/20 text-soft-violet"
-                      : item.price_source === "override" ? "bg-cool-blue/20 text-cool-blue"
-                      : "bg-live-emerald/20 text-live-emerald"
-                    }`}>
-                      {SOURCE_META[item.price_source]?.label ?? item.price_source}
+                      className={`text-micro font-extrabold px-2 py-0.5 rounded uppercase font-mono ${sourceClass(item.price_source)}`}>
+                      {sourceLabel(item)}
                     </span>
                     <div className="flex items-center gap-3">
                       <span className="font-mono font-extrabold text-base text-starlight">${fmt(item.total)}</span>
@@ -287,14 +299,8 @@ export default function LedgerTable({
                       <td className="py-1.5 px-3 text-center">
                         <span
                           title={SOURCE_META[item.price_source]?.title}
-                          className={`text-micro font-extrabold px-1 rounded uppercase font-mono ${
-                          item.price_source === "ai"
-                            ? "bg-soft-violet/20 text-soft-violet"
-                            : item.price_source === "override"
-                            ? "bg-cool-blue/20 text-cool-blue"
-                            : "bg-live-emerald/20 text-live-emerald"
-                        }`}>
-                          {SOURCE_META[item.price_source]?.label ?? item.price_source}
+                          className={`text-micro font-extrabold px-1 rounded uppercase font-mono ${sourceClass(item.price_source)}`}>
+                          {sourceLabel(item)}
                         </span>
                       </td>
                       <td className="py-1.5 px-3">

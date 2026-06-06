@@ -1,6 +1,7 @@
 'use strict';
 
 const { sanitizeItemId, parseGeminiJSON } = require('./sanitize');
+const { findMarketKey } = require('./menardsScraper');
 
 /**
  * Factory that creates the pricing engine bound to specific db and ai instances.
@@ -59,7 +60,27 @@ function createPricingEngine({ db, ai }) {
             console.error(`[price_book] Firestore error for "${item.name}":`, err.message);
         }
 
-        // ── Priority 2.5: Default labor rate for labor items ─────────────
+        // ── Priority 2.5: Menards market price (shared global cache) ─────
+        try {
+            const marketKey = findMarketKey(item.name);
+            if (marketKey) {
+                const snap = await db.collection('market_prices').doc('menards')
+                                     .collection('items').doc(marketKey).get();
+                if (snap.exists && snap.data().price && !snap.data().stale) {
+                    const d = snap.data();
+                    item.unit_price    = Number(d.price);
+                    item.price_source  = 'market';
+                    item.market_source = 'menards';
+                    item.market_age_h  = Math.round((Date.now() - d.scraped_at.toDate()) / 36e5);
+                    item.total         = Math.round((item.quantity || 0) * item.unit_price * 100) / 100;
+                    return item;
+                }
+            }
+        } catch (err) {
+            console.error(`[market_prices] lookup error for "${item.name}":`, err.message);
+        }
+
+        // ── Priority 4: Default labor rate for labor items ───────────────
         if (item.trade === 'labor-general' || item.type === 'labor') {
             let defaultLaborRate = 55;
             try {
@@ -79,7 +100,7 @@ function createPricingEngine({ db, ai }) {
             return item;
         }
 
-        // ── Priority 3: AI-estimated fallback ────────────────────────────
+        // ── Priority 5: AI-estimated fallback ────────────────────────────
         item.unit_price   = Number(item.estimated_unit_cost) || 0;
         item.price_source = 'ai';
         item.total        = Math.round((item.quantity || 0) * item.unit_price * 100) / 100;

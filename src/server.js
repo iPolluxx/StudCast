@@ -1679,6 +1679,27 @@ app.post(
 );
 
 // ══════════════════════════════════════════════════════════════════════
+//  ADMIN: MENARDS PRICE SYNC
+//  Protected by X-Api-Key header (ADMIN_API_KEY env var).
+//  Triggered weekly by Cloud Scheduler; can also be called manually.
+// ══════════════════════════════════════════════════════════════════════
+
+app.post('/api/admin/sync-prices', async (req, res) => {
+    const key = req.headers['x-api-key'];
+    if (!key || key !== process.env.ADMIN_API_KEY) {
+        return res.status(403).json({ error: 'Forbidden' });
+    }
+    try {
+        const { scrapeMenardsPrices } = require('./lib/menardsScraper');
+        const result = await scrapeMenardsPrices(db);
+        res.json({ ok: true, ...result });
+    } catch (e) {
+        console.error('[sync-prices] error:', e.message);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// ══════════════════════════════════════════════════════════════════════
 //  ESTIMATES STORAGE API
 // ══════════════════════════════════════════════════════════════════════
 
