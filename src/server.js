@@ -28,7 +28,7 @@ const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_A
 
 
 const app = express();
-app.use(cors({ origin: 'http://localhost:5174' }));
+app.use(cors({ origin: ['http://localhost:5173', 'http://localhost:5174'] }));
 const port = process.env.PORT || 8080;   // Cloud Run requires 8080
 
 // ── Firestore client ──────────────────────────────────────────────────
@@ -736,23 +736,44 @@ app.post('/api/webhook', async (req, res) => {
     let transcript = `User: ${text}`;
 
     try {
-        console.log(`Twilio Webhook: extracting items from text sent by ${from} (${user.companyName})...`);
-        const response = await ai.models.generateContent({
-            model: 'gemini-3.5-flash',
-            contents: { role: 'user', parts: [{ text: text + '\n\n' + EXTRACTION_PROMPT }] },
-        });
-        const usage = response.usageMetadata || {};
-        const promptTokens = usage.promptTokenCount || 0;
-        const outputTokens = usage.candidatesTokenCount || 0;
-        llmTokens = usage.totalTokenCount || (promptTokens + outputTokens);
-        cost = (promptTokens * 1.50 + outputTokens * 9.00) / 1000000;
+        let responseMsg;
 
-        const extracted = parseGeminiJSON(response.text);
-        const result    = await mergeIntoLedger(extracted, from, user.zipCode);
+        if (process.env.PIPELINE_V2 === 'true') {
+            console.log(`[${from}] webhook: running PIPELINE_V2 (Estimator → Pricer → Reviewer)...`);
+            const reviewed = await pipeline.runPipeline(
+                { type: 'text', payload: text },
+                { userPhone: from, zipCode: user.zipCode }
+            );
+            const result = await persistLedger({
+                projectName:     reviewed.projectName,
+                scope_of_work:   reviewed.scope_of_work,
+                pricedMaterials: reviewed.materials,
+                pricedLabor:     reviewed.labor,
+            }, from, null);
 
-        status = 'Completed';
-        const responseMsg = `Added ${result.itemCount} item(s) to "${result.projectName}". Ledger updated.`;
-        transcript = `User: ${text}\nAI: ${responseMsg}`;
+            status = 'Completed';
+            responseMsg = `Added ${result.itemCount} item(s) to "${result.projectName}". Ledger updated.`;
+            transcript = `User: ${text}\nAI: [v2] ${responseMsg} (${reviewed.warnings.length} warning(s))`;
+        } else {
+            // ── LEGACY monolithic path (delete after V2 validated in prod) ──
+            console.log(`Twilio Webhook: extracting items from text sent by ${from} (${user.companyName})...`);
+            const response = await ai.models.generateContent({
+                model: 'gemini-3.5-flash',
+                contents: { role: 'user', parts: [{ text: text + '\n\n' + EXTRACTION_PROMPT }] },
+            });
+            const usage = response.usageMetadata || {};
+            const promptTokens = usage.promptTokenCount || 0;
+            const outputTokens = usage.candidatesTokenCount || 0;
+            llmTokens = usage.totalTokenCount || (promptTokens + outputTokens);
+            cost = (promptTokens * 1.50 + outputTokens * 9.00) / 1000000;
+
+            const extracted = parseGeminiJSON(response.text);
+            const result    = await mergeIntoLedger(extracted, from, user.zipCode);
+
+            status = 'Completed';
+            responseMsg = `Added ${result.itemCount} item(s) to "${result.projectName}". Ledger updated.`;
+            transcript = `User: ${text}\nAI: ${responseMsg}`;
+        }
 
         const twiml = new MessagingResponse();
         twiml.message(responseMsg);
