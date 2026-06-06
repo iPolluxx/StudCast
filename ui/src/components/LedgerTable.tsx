@@ -19,6 +19,7 @@ interface Props {
   scopeOfWork: string;
   onScopeChange: (val: string) => void;
   onPublish: () => Promise<void>;
+  onPreview?: () => void;
 }
 
 const fmt = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -43,7 +44,7 @@ export default function LedgerTable({
   materials, labor, allItems,
   onCellEdit, onDeleteItem, onAddItem,
   materialsSubtotal, laborSubtotal, markupAmount, taxAmount, grandTotal,
-  markupPercent, taxRate, scopeOfWork, onScopeChange, onPublish,
+  markupPercent, taxRate, scopeOfWork, onScopeChange, onPublish, onPreview,
 }: Props) {
   const [publishing, setPublishing] = useState(false);
   const [confirmingPublish, setConfirmingPublish] = useState(false);
@@ -468,13 +469,20 @@ export default function LedgerTable({
           ) : (
             <button
               id="publish-btn"
-              onClick={() => { setPublishError(null); setConfirmingPublish(true); }}
+              onClick={() => {
+                setPublishError(null);
+                if (onPreview) {
+                  onPreview();
+                } else {
+                  setConfirmingPublish(true);
+                }
+              }}
               disabled={isEmpty}
               title={isEmpty ? "Add line items before sending" : undefined}
               className="bg-gradient-to-r from-navy-deep to-navy-violet hover:from-cool-blue hover:to-soft-violet hover:text-void-black text-starlight border border-cool-blue/30 font-black tracking-widest text-micro px-5 py-3 rounded-full transition-all cursor-pointer flex items-center gap-1.5 shadow-lg shadow-cool-blue/5 uppercase disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:from-navy-deep disabled:hover:to-navy-violet disabled:hover:text-starlight"
             >
               <CheckCircle className="w-3.5 h-3.5" />
-              Publish &amp; Send PDF
+              Preview &amp; Send
             </button>
           )}
         </div>

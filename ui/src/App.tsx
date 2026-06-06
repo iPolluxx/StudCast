@@ -22,6 +22,7 @@ import ThreeVisualizer from "./components/ThreeVisualizer";
 import SettingsModal from "./components/SettingsModal";
 import EstimateList from "./components/EstimateList";
 import LedgerTable from "./components/LedgerTable";
+import PDFPreviewModal from "./components/PDFPreviewModal";
 
 // ── CUSTOM PROCEDURAL STARFIELD BACKGROUND COMPONENT ──
 export function Starfield() {
@@ -157,6 +158,7 @@ export default function App() {
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [aiProcessing, setAiProcessing] = useState<boolean>(false);
   const [statusFlash, setStatusFlash] = useState<string | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const setActiveStage = (_: number) => {};
   const [vizSize, setVizSize] = useState<'mini' | 'medium' | 'full'>('mini');
   const [orbState, setOrbState] = useState<'center' | 'rolling' | 'landed'>('center');
@@ -1412,6 +1414,7 @@ export default function App() {
                 }, 1200);
               }
             }}
+            onPreview={() => setPreviewOpen(true)}
             onPublish={async () => {
               if (!authToken || !activeEstimate) return;
               const resp = await fetch('/api/generate-pdf', {
@@ -1538,6 +1541,43 @@ export default function App() {
               body: JSON.stringify(settings),
             });
           }
+        }}
+        authToken={authToken}
+        onLogoUploaded={(url) => setSettings(s => ({ ...s, company_logo_url: url }))}
+      />
+
+      <PDFPreviewModal
+        open={previewOpen}
+        authToken={authToken ?? ''}
+        projectName={activeEstimate?.id ?? ''}
+        project={{
+          materials,
+          labor,
+          client_name:    activeEstimate?.client_name    ?? '',
+          client_address: activeEstimate?.client_address ?? '',
+          scope_of_work:  activeEstimate?.scope_of_work  ?? '',
+        }}
+        onClose={() => setPreviewOpen(false)}
+        onConfirmSend={async () => {
+          if (!authToken || !activeEstimate) return;
+          const resp = await fetch('/api/generate-pdf', {
+            method: 'POST',
+            headers: apiHeaders(authToken),
+            body: JSON.stringify({
+              projectName: activeEstimate.id,
+              project: {
+                materials,
+                labor,
+                client_name:    activeEstimate.client_name,
+                client_address: activeEstimate.client_address,
+                scope_of_work:  activeEstimate.scope_of_work,
+              },
+            }),
+          });
+          const data = await resp.json().catch(() => ({}));
+          if (!resp.ok) throw new Error(data.error || `Server error ${resp.status}`);
+          setStatusFlash(`PDF sent to ${settings.contact_email}`);
+          setTimeout(() => setStatusFlash(null), 5000);
         }}
       />
 

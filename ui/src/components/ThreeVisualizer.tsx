@@ -201,7 +201,12 @@ export default function ThreeVisualizer({
     cameraRef.current = camera;
 
     // Create Renderer
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+    } catch {
+      return; // WebGL unavailable (headless / unsupported GPU) — render nothing
+    }
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;

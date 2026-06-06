@@ -994,134 +994,15 @@ function escapeHtml(str) {
         .replace(/'/g, '&#039;');
 }
 
-app.post('/api/generate-pdf', requireAuth, requireSubscription, async (req, res) => {
-    const phone = req.userPhone;
-    const projectName   = req.body.projectName;
-    const clientProject = req.body.project;
-
-    if (!projectName) {
-        return res.status(400).json({ error: 'Missing projectName' });
-    }
-
-    const user = req.authedUser;
-
-    // Load dynamic user settings/profile config
-    let profile = {
-        company_name: '',
-        company_address: '',
-        company_logo_url: '',
-        license_number: '',
-        contact_email: '',
-        default_labor_rate: 55,
-        global_markup_percent: 0,
-        tax_rate: 5.5
-    };
-    try {
-        const configSnap = await db.collection('users').doc(phone).collection('settings').doc('config').get();
-        if (configSnap.exists) {
-            profile = { ...profile, ...configSnap.data() };
-        }
-    } catch (err) {
-        console.warn(`[${phone}] generate-pdf: failed to load config profile settings. using defaults.`, err.message);
-    }
-
-    // Email MUST come from Firestore — never trust the client payload.
-    const contractorEmail = (profile.contact_email || user.email || '').trim();
-    if (!contractorEmail) {
-        console.error(`[${phone}] generate-pdf: no email address on file in Firestore for this user.`);
-        return res.status(400).json({ error: 'No email address on file for this user' });
-    }
-
-    // ── Phase 1: Fetch and Segment Project Data ──────────────────────
-    let items = [];
-    let clientName = null;
-    let clientAddress = null;
-    let scopeOfWork = null;
-
-    if (clientProject) {
-        // From client payload
-        const mats = (clientProject.materials || []).map(m => ({ ...m, type: 'material' }));
-        const lab = (clientProject.labor || []).map(l => ({ ...l, type: 'labor' }));
-        items = [...mats, ...lab];
-        clientName = clientProject.client_name || null;
-        clientAddress = clientProject.client_address || null;
-        scopeOfWork = clientProject.scope_of_work || null;
-    } else {
-        // Load from estimates subcollection (using projectName as the estimate ID)
-        const estimateSnap = await db.collection('users').doc(phone).collection('estimates').doc(projectName).get();
-        if (estimateSnap.exists) {
-            const data = estimateSnap.data();
-            items = data.items || [];
-            clientName = data.client_name || null;
-            clientAddress = data.client_address || null;
-            scopeOfWork = data.scope_of_work || null;
-        } else {
-            // Check legacy ledger
-            const legacyLedger = await loadLedger(phone);
-            const legacyProj = legacyLedger[projectName];
-            if (legacyProj) {
-                const mats = (legacyProj.materials || []).map(m => ({ ...m, type: 'material' }));
-                const lab = (legacyProj.labor || []).map(l => ({ ...l, type: 'labor' }));
-                items = [...mats, ...lab];
-            }
-        }
-    }
-
-    const materialsArray = items.filter(i => i.type === 'material' || !i.role);
-    const laborArray     = items.filter(i => i.type === 'labor' || i.role);
-
-    // Financial calculations with Settings configuration overrides
-    const materialsSubtotal = materialsArray.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
-    const laborSubtotal     = laborArray.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
-    
-    // Apply global markup percentage to materials subtotal
-    const markedUpMaterials = materialsSubtotal * (1 + (profile.global_markup_percent || 0) / 100);
-    
-    // Determine dynamic tax rate (fallback to 5.5%)
-    const taxRate = profile.tax_rate !== undefined && profile.tax_rate !== null ? Number(profile.tax_rate) : 5.5;
-    
-    // Calculate sales tax on marked up materials
-    const wiSalesTax = Math.round(markedUpMaterials * (taxRate / 100) * 100) / 100;
-    
-    // Grand total includes marked up materials, labor, and tax
-    const grandTotal = Math.round((markedUpMaterials + laborSubtotal + wiSalesTax) * 100) / 100;
-
-    // ── Phase 2: Sequential ID Counter Transaction ──────────────────
-    let estimateNo = '';
-    try {
-        const counterRef = db.collection('users').doc(phone).collection('settings').doc('config');
-        const nextCount = await db.runTransaction(async (transaction) => {
-            const doc = await transaction.get(counterRef);
-            let count = 0;
-            if (doc.exists) {
-                count = doc.data().estimateCount || 0;
-            }
-            count += 1;
-            transaction.set(counterRef, { estimateCount: count }, { merge: true });
-            return count;
-        });
-        const year = new Date().getFullYear();
-        estimateNo = `EST-${year}-${String(nextCount).padStart(4, '0')}`;
-    } catch (counterErr) {
-        console.error(`[${phone}] Failed to increment estimate counter, using timestamp fallback:`, counterErr.message);
-        estimateNo = `EST-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`;
-    }
-
-    // Self-teaching price_book updates for materials
-    const materialsToLearn = materialsArray.filter(m => m.name && m.unit_price != null);
-    if (materialsToLearn.length > 0) {
-        console.log(`[price_book] Learning ${materialsToLearn.length} price(s) from PDF generation...`);
-        await Promise.all(
-            materialsToLearn.map(m =>
-                db.collection('users').doc(phone)
-                  .collection('price_book').doc(sanitizeItemId(m.name))
-                  .set({ name: m.name, price: Number(m.unit_price) }, { merge: true })
-                  .catch(err => console.warn(`[price_book] Write failed for "${m.name}":`, err.message))
-            )
-        );
-    }
-
-    // ── Phase 3 & 4: HTML compilation and print templates ───────────
+// Shared HTML builder — called by both generate-pdf and preview-pdf.
+// Receives pre-computed financial values so generate-pdf can reuse grandTotal for the email body.
+function buildEstimateHtml({
+    profile, user, phone,
+    materialsArray, laborArray,
+    markedUpMaterials, laborSubtotal, wiSalesTax, grandTotal, taxRate,
+    clientName, clientAddress, scopeOfWork,
+    projectName, estimateNo,
+}) {
     const formattedDate = new Date().toLocaleDateString('en-US', {
         year: 'numeric', month: 'long', day: 'numeric',
     });
@@ -1168,7 +1049,7 @@ app.post('/api/generate-pdf', requireAuth, requireSubscription, async (req, res)
         `).join('')
         : `<tr><td colspan="5" class="text-center italic" style="padding: 12px; border-bottom: 1px solid #e9d5ff; color:#6b7280; font-size: 9.5pt;">No labor listed</td></tr>`;
 
-    const htmlContent = `
+    return `
 <!DOCTYPE html>
 <html>
 <head>
@@ -1419,6 +1300,143 @@ app.post('/api/generate-pdf', requireAuth, requireSubscription, async (req, res)
 </body>
 </html>
 `;
+}
+
+app.post('/api/generate-pdf', requireAuth, requireSubscription, async (req, res) => {
+    const phone = req.userPhone;
+    const projectName   = req.body.projectName;
+    const clientProject = req.body.project;
+
+    if (!projectName) {
+        return res.status(400).json({ error: 'Missing projectName' });
+    }
+
+    const user = req.authedUser;
+
+    // Load dynamic user settings/profile config
+    let profile = {
+        company_name: '',
+        company_address: '',
+        company_logo_url: '',
+        license_number: '',
+        contact_email: '',
+        default_labor_rate: 55,
+        global_markup_percent: 0,
+        tax_rate: 5.5
+    };
+    try {
+        const configSnap = await db.collection('users').doc(phone).collection('settings').doc('config').get();
+        if (configSnap.exists) {
+            profile = { ...profile, ...configSnap.data() };
+        }
+    } catch (err) {
+        console.warn(`[${phone}] generate-pdf: failed to load config profile settings. using defaults.`, err.message);
+    }
+
+    // Email MUST come from Firestore — never trust the client payload.
+    const contractorEmail = (profile.contact_email || user.email || '').trim();
+    if (!contractorEmail) {
+        console.error(`[${phone}] generate-pdf: no email address on file in Firestore for this user.`);
+        return res.status(400).json({ error: 'No email address on file for this user' });
+    }
+
+    // ── Phase 1: Fetch and Segment Project Data ──────────────────────
+    let items = [];
+    let clientName = null;
+    let clientAddress = null;
+    let scopeOfWork = null;
+
+    if (clientProject) {
+        // From client payload
+        const mats = (clientProject.materials || []).map(m => ({ ...m, type: 'material' }));
+        const lab = (clientProject.labor || []).map(l => ({ ...l, type: 'labor' }));
+        items = [...mats, ...lab];
+        clientName = clientProject.client_name || null;
+        clientAddress = clientProject.client_address || null;
+        scopeOfWork = clientProject.scope_of_work || null;
+    } else {
+        // Load from estimates subcollection (using projectName as the estimate ID)
+        const estimateSnap = await db.collection('users').doc(phone).collection('estimates').doc(projectName).get();
+        if (estimateSnap.exists) {
+            const data = estimateSnap.data();
+            items = data.items || [];
+            clientName = data.client_name || null;
+            clientAddress = data.client_address || null;
+            scopeOfWork = data.scope_of_work || null;
+        } else {
+            // Check legacy ledger
+            const legacyLedger = await loadLedger(phone);
+            const legacyProj = legacyLedger[projectName];
+            if (legacyProj) {
+                const mats = (legacyProj.materials || []).map(m => ({ ...m, type: 'material' }));
+                const lab = (legacyProj.labor || []).map(l => ({ ...l, type: 'labor' }));
+                items = [...mats, ...lab];
+            }
+        }
+    }
+
+    const materialsArray = items.filter(i => i.type === 'material' || !i.role);
+    const laborArray     = items.filter(i => i.type === 'labor' || i.role);
+
+    // Financial calculations with Settings configuration overrides
+    const materialsSubtotal = materialsArray.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
+    const laborSubtotal     = laborArray.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
+    
+    // Apply global markup percentage to materials subtotal
+    const markedUpMaterials = materialsSubtotal * (1 + (profile.global_markup_percent || 0) / 100);
+    
+    // Determine dynamic tax rate (fallback to 5.5%)
+    const taxRate = profile.tax_rate !== undefined && profile.tax_rate !== null ? Number(profile.tax_rate) : 5.5;
+    
+    // Calculate sales tax on marked up materials
+    const wiSalesTax = Math.round(markedUpMaterials * (taxRate / 100) * 100) / 100;
+    
+    // Grand total includes marked up materials, labor, and tax
+    const grandTotal = Math.round((markedUpMaterials + laborSubtotal + wiSalesTax) * 100) / 100;
+
+    // ── Phase 2: Sequential ID Counter Transaction ──────────────────
+    let estimateNo = '';
+    try {
+        const counterRef = db.collection('users').doc(phone).collection('settings').doc('config');
+        const nextCount = await db.runTransaction(async (transaction) => {
+            const doc = await transaction.get(counterRef);
+            let count = 0;
+            if (doc.exists) {
+                count = doc.data().estimateCount || 0;
+            }
+            count += 1;
+            transaction.set(counterRef, { estimateCount: count }, { merge: true });
+            return count;
+        });
+        const year = new Date().getFullYear();
+        estimateNo = `EST-${year}-${String(nextCount).padStart(4, '0')}`;
+    } catch (counterErr) {
+        console.error(`[${phone}] Failed to increment estimate counter, using timestamp fallback:`, counterErr.message);
+        estimateNo = `EST-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`;
+    }
+
+    // Self-teaching price_book updates for materials
+    const materialsToLearn = materialsArray.filter(m => m.name && m.unit_price != null);
+    if (materialsToLearn.length > 0) {
+        console.log(`[price_book] Learning ${materialsToLearn.length} price(s) from PDF generation...`);
+        await Promise.all(
+            materialsToLearn.map(m =>
+                db.collection('users').doc(phone)
+                  .collection('price_book').doc(sanitizeItemId(m.name))
+                  .set({ name: m.name, price: Number(m.unit_price) }, { merge: true })
+                  .catch(err => console.warn(`[price_book] Write failed for "${m.name}":`, err.message))
+            )
+        );
+    }
+
+    // ── Phase 3 & 4: Build HTML via shared helper ──────────────────
+    const htmlContent = buildEstimateHtml({
+        profile, user, phone,
+        materialsArray, laborArray,
+        markedUpMaterials, laborSubtotal, wiSalesTax, grandTotal, taxRate,
+        clientName, clientAddress, scopeOfWork,
+        projectName, estimateNo,
+    });
 
     // ── Phase 5: Render PDF via Puppeteer to /tmp/ ────────────────────
     const estimateIdClean = projectName.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -1496,6 +1514,65 @@ app.post('/api/generate-pdf', requireAuth, requireSubscription, async (req, res)
         if (pdfPath && fs.existsSync(pdfPath)) {
             try { fs.unlinkSync(pdfPath); console.log(`Deleted temp PDF file: ${pdfPath}`); } catch (_) {}
         }
+    }
+});
+
+// ══════════════════════════════════════════════════════════════════════
+//  ENDPOINT: POST /api/preview-pdf
+//  Returns the estimate HTML (no Puppeteer, no email, no counter increment).
+//  Same auth + subscription guards as generate-pdf.
+// ══════════════════════════════════════════════════════════════════════
+app.post('/api/preview-pdf', requireAuth, requireSubscription, async (req, res) => {
+    const phone = req.userPhone;
+    const { projectName, project: clientProject } = req.body;
+    if (!projectName) return res.status(400).json({ error: 'Missing projectName' });
+
+    const user = req.authedUser;
+
+    let profile = {
+        company_name: '', company_address: '', company_logo_url: '',
+        license_number: '', contact_email: '',
+        default_labor_rate: 55, global_markup_percent: 0, tax_rate: 5.5,
+    };
+    try {
+        const snap = await db.collection('users').doc(phone).collection('settings').doc('config').get();
+        if (snap.exists) profile = { ...profile, ...snap.data() };
+    } catch (err) {
+        console.warn(`[${phone}] preview-pdf: failed to load profile, using defaults.`, err.message);
+    }
+
+    let items = [], clientName = null, clientAddress = null, scopeOfWork = null;
+    if (clientProject) {
+        const mats = (clientProject.materials || []).map(m => ({ ...m, type: 'material' }));
+        const lab  = (clientProject.labor     || []).map(l => ({ ...l, type: 'labor'    }));
+        items = [...mats, ...lab];
+        clientName    = clientProject.client_name    || null;
+        clientAddress = clientProject.client_address || null;
+        scopeOfWork   = clientProject.scope_of_work  || null;
+    }
+
+    const materialsArray     = items.filter(i => i.type === 'material' || !i.role);
+    const laborArray         = items.filter(i => i.type === 'labor'    || i.role);
+    const materialsSubtotal  = materialsArray.reduce((s, m) => s + (Number(m.total) || 0), 0);
+    const laborSubtotal      = laborArray.reduce((s, l)     => s + (Number(l.total) || 0), 0);
+    const markedUpMaterials  = materialsSubtotal * (1 + (profile.global_markup_percent || 0) / 100);
+    const taxRate            = profile.tax_rate != null ? Number(profile.tax_rate) : 5.5;
+    const wiSalesTax         = Math.round(markedUpMaterials * (taxRate / 100) * 100) / 100;
+    const grandTotal         = Math.round((markedUpMaterials + laborSubtotal + wiSalesTax) * 100) / 100;
+
+    try {
+        const html = buildEstimateHtml({
+            profile, user, phone,
+            materialsArray, laborArray,
+            markedUpMaterials, laborSubtotal, wiSalesTax, grandTotal, taxRate,
+            clientName, clientAddress, scopeOfWork,
+            projectName, estimateNo: 'PREVIEW',
+        });
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.send(html);
+    } catch (err) {
+        console.error(`[${phone}] preview-pdf error:`, err.message);
+        res.status(500).json({ error: 'Failed to generate preview' });
     }
 });
 

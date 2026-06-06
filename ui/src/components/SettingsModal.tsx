@@ -1,4 +1,5 @@
-import { X, Building } from "lucide-react";
+import { useState } from "react";
+import { X, Building, ImagePlus, RefreshCw } from "lucide-react";
 import type { ContractorUserSettings } from "../types";
 
 interface Props {
@@ -7,9 +8,14 @@ interface Props {
   onSettingsChange: (s: ContractorUserSettings) => void;
   onClose: () => void;
   onSave: () => void;
+  authToken: string | null;
+  onLogoUploaded: (url: string) => void;
 }
 
-export default function SettingsModal({ open, settings, onSettingsChange, onClose, onSave }: Props) {
+export default function SettingsModal({ open, settings, onSettingsChange, onClose, onSave, authToken, onLogoUploaded }: Props) {
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [logoError, setLogoError] = useState<string | null>(null);
+
   if (!open) return null;
 
   const field = (label: string, key: keyof ContractorUserSettings, type = "text", step?: string) => (
@@ -53,6 +59,68 @@ export default function SettingsModal({ open, settings, onSettingsChange, onClos
         </div>
 
         <div className="grid grid-cols-2 gap-4 font-mono text-[10px]">
+
+          {/* ── Logo upload ── */}
+          <div className="col-span-2 flex items-center gap-4 pb-2 border-b border-white/10">
+            <div className="shrink-0">
+              {settings.company_logo_url ? (
+                <img
+                  src={settings.company_logo_url}
+                  alt="Company logo"
+                  className="h-14 w-14 rounded-xl object-contain bg-white/5 border border-white/10 p-1"
+                />
+              ) : (
+                <div className="h-14 w-14 rounded-xl bg-gradient-to-br from-navy-deep to-navy-violet border border-white/10 flex items-center justify-center select-none">
+                  <span className="text-base font-black text-starlight">
+                    {(settings.company_name || 'CO').substring(0, 2).toUpperCase()}
+                  </span>
+                </div>
+              )}
+            </div>
+            <div className="flex flex-col gap-1.5 min-w-0">
+              <label className="uppercase font-bold text-starlight/60 text-[10px]">Company Logo</label>
+              <label className={`inline-flex items-center gap-1.5 px-3 py-1.5 border border-cool-blue/30 hover:border-cool-blue/60 rounded-xl cursor-pointer transition-all hover:bg-cool-blue/5 text-cool-blue text-[10px] font-black uppercase tracking-widest ${logoUploading ? 'opacity-50 pointer-events-none' : ''}`}>
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file || !authToken) return;
+                    setLogoUploading(true);
+                    setLogoError(null);
+                    const form = new FormData();
+                    form.append('logo', file);
+                    try {
+                      const r = await fetch('/api/settings/logo', {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${authToken}` },
+                        body: form,
+                      });
+                      const d = await r.json();
+                      if (r.ok && d.company_logo_url) {
+                        onLogoUploaded(d.company_logo_url);
+                      } else {
+                        setLogoError(d.error || 'Upload failed');
+                      }
+                    } catch {
+                      setLogoError('Network error');
+                    } finally {
+                      setLogoUploading(false);
+                      e.target.value = '';
+                    }
+                  }}
+                />
+                {logoUploading ? <RefreshCw className="w-3 h-3 animate-spin" /> : <ImagePlus className="w-3 h-3" />}
+                {logoUploading ? 'Uploading…' : 'Upload Logo'}
+              </label>
+              {logoError && <span className="text-[10px] text-alert-rose font-mono">{logoError}</span>}
+              {settings.company_logo_url && !logoError && (
+                <span className="text-[10px] text-live-emerald font-mono">Logo saved</span>
+              )}
+            </div>
+          </div>
+
           {field("Company Name", "company_name")}
           {field("Bids Dispatch Email", "contact_email", "email")}
           <div className="col-span-2">
