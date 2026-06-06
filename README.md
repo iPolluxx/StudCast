@@ -1,7 +1,7 @@
-# StudCast (Lone Ranger Estimator)
+# Lone Ranger Estimator
 ### Cloud-Native, Multi-Tenant AI Systems Architecture & 3D Logistics Engine
 
-StudCast is an enterprise-grade vertical SaaS infrastructure built for solo residential contractors. The platform orchestrates nondeterministic Large Language Models (LLMs) with strict, real-world building physics and deterministic business rules, serving a real-time 3D logistics spatial engine and automated cloud pipelines.
+Lone Ranger Estimator is an enterprise-grade vertical SaaS infrastructure built for solo residential contractors. The platform orchestrates nondeterministic Large Language Models (LLMs) with strict, real-world building physics and deterministic business rules, serving a real-time 3D logistics spatial engine and automated cloud pipelines.
 
 Live production: `https://lone-ranger-app-879716207624.us-central1.run.app`
 

@@ -1,7 +1,7 @@
 # Lone Ranger Estimator — Live Project Context
 > **Purpose:** This document is the handoff bridge between Gemini brainstorming sessions and Claude Code
 > implementation sessions. Update it after every meaningful work session.
-> **Last updated:** 2026-06-04 — Frontend design-system pass: PRODUCT.md/DESIGN.md + design tokens (type scale + semantic colors), LedgerTable overhaul (critique 24→37), local-dev fixes
+> **Last updated:** 2026-06-06 — PIPELINE_V2 wired into SMS webhook; CORS fix for gateway dashboard; gateway dashboard refactored to manual-refresh (no auto-poll); name finalized as Lone Ranger Estimator (StudCast retired)
 
 ---
 
@@ -306,6 +306,96 @@ From `ui/dist/` (built by Dockerfile):
 
 ## Work Session Log
 
+### Session: 2026-06-06 — PIPELINE_V2 SMS Webhook, CORS Fix, Gateway Dashboard Overhaul
+
+#### 1. PIPELINE_V2 wired into `/api/webhook` (SMS bridge)
+Previously the inbound Twilio SMS handler always used the legacy monolith extraction path regardless of the `PIPELINE_V2` flag. Added the same fork pattern used in `POST /api/process-text`:
+- `PIPELINE_V2=true` → `pipeline.runPipeline({ type: 'text', payload: text }, { userPhone: from, zipCode })` → `persistLedger()`
+- Legacy path kept as fallback (fenced with the `// LEGACY` comment, same as `process-text`)
+- Both paths produce the same TwiML reply to the contractor
+
+**Note:** The V2 path doesn't accumulate `llmTokens`/`cost` in `logInteraction` (the pipeline manages its own internal Gemini calls and doesn't surface token metadata to the caller). Same gap exists in `process-text`. Fix requires instrumenting pipeline stages to return aggregate token counts.
+
+#### 2. CORS fix — gateway dashboard access
+CORS origin was hard-pinned to `http://localhost:5174`, but Vite's default port is `5173`. Every fetch from the gateway dashboard was blocked by the browser. Fixed by expanding to an array:
+```js
+app.use(cors({ origin: ['http://localhost:5173', 'http://localhost:5174'] }));
+```
+Port 5174 retained (StudCast React UI uses it); 5173 added for the gateway dashboard.
+
+#### 3. Gateway dashboard refactored (`scratch/gateway-dashboard/`)
+The gateway dashboard is a separate React/Vite app that reads from the backend's `GET /api/metrics`, `GET /api/interactions`, and `GET /api/interactions/stream` (SSE) endpoints. It was auto-polling metrics every 5 seconds and keeping a persistent SSE/Firestore `onSnapshot` open — together these would blow the Firestore 50K free-read daily limit in minutes with the dashboard open.
+
+Changes made to `gateway-dashboard/src/App.tsx`:
+- Removed `refetchInterval: 5000` from the metrics query
+- Added `refetchOnWindowFocus: false` to both queries
+- Removed the SSE `EventSource` `useEffect` entirely
+- Added a **Refresh button** in the header (spins while loading, shows "Last updated HH:MM:SS")
+
+Result: opening the dashboard costs 2 Firestore reads; refreshing costs 2 more. The backend's SSE endpoint and `onSnapshot` listener are still wired and functional — they just aren't used by default anymore.
+
+Gateway dashboard README rewritten to accurately describe its role, the on-demand data model, and the cost implications (previously described the SSE architecture that was just removed).
+
+#### 4. Name finalized: Lone Ranger Estimator
+"StudCast" retired as the product name. All new references in README and this handoff use "Lone Ranger Estimator." GitHub repo slug (`iPolluxx/StudCast`) unchanged for now.
+
+#### Files modified
+```
+src/server.js                              — PIPELINE_V2 fork in /api/webhook; CORS origin expanded
+README.md                                  — title/branding updated to Lone Ranger Estimator
+docs/GEMINI_HANDOFF.md                     — this entry + open items updated
+
+(gateway-dashboard repo — separate git history)
+gateway-dashboard/src/App.tsx              — manual refresh, SSE removed, refetchInterval removed
+gateway-dashboard/README.md               — rewritten for accuracy
+```
+
+---
+
+### Session: 2026-06-04 (Evening) — Cosmic-Glass Reskin of Public Pages + Impeccable Critique Fixes
+**Claude:** Applied the "Command Bridge" cosmic-glass system to all static marketing/auth pages, then ran three `impeccable` critique passes and applied the findings.
+
+#### 1. Pages reskinned to cosmic-glass system
+- **`public/index.html`** (landing) — Full reskin: starfield hull photo background, glass panel sections, two-voice (cool-blue/violet) accents. Replaced fabricated testimonials with an honest FAQ. Dropped false "free trial" CTAs for price-honest copy ("Get Started · $49/mo"). Thinned section eyebrows 6 → 2; added a featured Core card to break grid sameness. Removed em-dash body copy. Added `:focus-visible` rings.
+- **`public/dashboard.html`** (auth gateway) — Honest paywall copy (removed false "your free trial has ended"). OTP recovery: Resend code button (45s cooldown) + "Use a different number" link. Focus-visible rings on auth inputs. SMS consent text bumped 10px → 11px (min type-scale floor).
+- **`public/privacy.html`** + **`public/terms.html`** — Meta-date contrast fix. Real support contact added to Privacy (`lonerangercontracting@gmail.com`).
+- **`public/sms-optin.html`** — Minor copy fix.
+
+#### 2. Shared starfield asset
+Added **`public/starfield.jpg`** — the same Milky Way nebula photo used by the React dashboard — so all static pages share the visual backdrop (no separate asset per page).
+
+#### 3. Critique snapshots
+`.impeccable/critique/` now contains snapshots for `index.html`, `dashboard.html`, `privacy.html`, and `terms.html`.
+
+#### Files modified
+```
+public/index.html                     — full cosmic-glass reskin, honest FAQ + CTAs
+public/dashboard.html                 — honest paywall, OTP recovery, focus rings
+public/privacy.html                   — contrast fix, real support email
+public/terms.html                     — contrast fix
+public/sms-optin.html                 — copy fix
+public/starfield.jpg                  — added (shared backdrop asset)
+.impeccable/critique/*.md             — new critique snapshots
+```
+
+---
+
+### Session: 2026-06-04 (Afternoon) — A2P SMS Opt-In Surfaced Pre-Auth
+
+**Context:** The A2P 10DLC campaign was rejected (error 30909 — CTA not verifiable without authentication). Carrier reviewers couldn't see the SMS consent without first logging in via Google OAuth.
+
+**Fix:** Phone number, company name, and SMS consent checkbox are now on the public `loginGate` card (above the Google button) so the opt-in is verifiable without authentication. The values are threaded through the OAuth popup into the existing register → OTP → wizard flow with no data loss.
+
+`public/sms-optin.html` now **redirects to `/dashboard-legacy`** so the TCR-submitted URL lands on the real working opt-in form rather than the standalone preview page.
+
+#### Files modified
+```
+public/dashboard.html   — phone/company/consent fields on loginGate; values wired into OAuth flow
+public/sms-optin.html   — redirect to /dashboard-legacy
+```
+
+---
+
 ### Session: 2026-06-04 — Frontend Design System + LedgerTable Overhaul (impeccable)
 **Gemini:** n/a (implementation session).
 **Claude:** Established a documented design system and ran a full quality arc on the estimate ledger via the `impeccable` skill. Critique score for `LedgerTable.tsx` moved **24 → 35 → 36 → 37 / 40** (Good → Excellent) across the passes.
@@ -359,6 +449,83 @@ docs/GEMINI_HANDOFF.md              — this entry
 - **Optional ledger refinements** (critique P3s, non-blocking): duplicate-row / bulk-delete, undo-after-delete, inline markup/tax help.
 - **Dev-only conveniences to be aware of:** `App.tsx` DEV auth bypass and `vite.config.ts` `NGROK_HOST` opt-in — both guarded, no prod impact.
 - **README.md** still says "React 18" and documents a removed "Build Layer" — minor, worth a cleanup pass.
+
+---
+
+### Session: 2026-06-03 (3) — Deterministic 3-Stage Pipeline (PIPELINE_V2)
+**Claude:** Replaced the monolithic Gemini extract-and-price call with a deterministic 3-stage pipeline. Full architectural detail in the **Sprint 2** section above.
+
+#### What was built
+- `src/lib/estimator.js` — Stage 1 LLM: raw input → price-free scope JSON. `EXTRACTION_PROMPT` and `VALID_TRADES` moved here from `server.js` (single source of truth).
+- `src/lib/pricer.js` — Stage 2 deterministic: wraps `createPricingEngine`; issues zero LLM calls when `default_labor_rate` is set.
+- `src/lib/reviewer.js` — Stage 3 LLM (temp 0): non-destructive QA pass; never mutates priced numbers.
+- `src/lib/pipeline.js` — Orchestrator: `createPipeline({db, ai}).runPipeline(input, ctx)` chains 1→2→3 in memory.
+- `server.js` — Single `PIPELINE_V2` fork in `POST /api/process-text`; legacy monolith fenced with `// LEGACY` marker; `persistLedger()` extracted so both paths share persistence and never double-price.
+- `__tests__/pipeline.test.js` — 10 offline integration tests ($0 API, Gemini + Firestore mocked). **Total suite: 66 tests.**
+- Corrected stale "Gemini 1.5 Pro" references throughout to `gemini-3.5-flash`.
+
+#### Verified
+Clean boot under `PIPELINE_V2=true`, 401 auth gate intact, live end-to-end run through real `gemini-3.5-flash` (Estimator → Pricer → Reviewer).
+
+#### Files created / modified
+```
+src/lib/estimator.js           — new
+src/lib/pricer.js              — new
+src/lib/reviewer.js            — new
+src/lib/pipeline.js            — new
+__tests__/pipeline.test.js     — new (10 tests)
+src/server.js                  — PIPELINE_V2 fork, persistLedger extraction
+README.md                      — updated
+```
+
+---
+
+### Session: 2026-06-03 (2) — WebXR AR Mode, Draggable Mini PIP, Mobile Orb Fix
+**Claude:** Added WebXR immersive-AR capability to the Three.js visualizer, made the mini PIP draggable, and fixed the mobile barrel-roll disappearing-orb bug.
+
+#### 1. WebXR AR mode (`ThreeVisualizer.tsx`)
+- `renderer.xr` enabled; render loop switched to `setAnimationLoop` (required for XR).
+- On `immersive-ar` session start: env geometry (ground plane, parking grid, trucks) hidden; all scene geometry scales from feet → meters (`ft * 0.3048`); scene anchors to real world.
+- On session end: env geometry restored, scale reverted.
+- AR availability detected async (`navigator.xr.isSessionSupported('immersive-ar')`); result surfaced via `onARReady(supported: boolean)` callback to parent.
+
+#### 2. AR controls (`App.tsx`)
+- AR pill button rendered below the mini PIP (outside `overflow-hidden`) when AR is supported.
+- Small circle AR button appears in medium and full visualizer modes.
+- AR entry starts/ends the XR session.
+
+#### 3. Draggable mini PIP (`App.tsx`)
+- Mini PIP uses `onPointerDown` + `setPointerCapture` for drag. Position stored as `{x, y}` px offsets; constrained to viewport bounds.
+- AR pill tracks the PIP position.
+
+#### 4. Mobile barrel-roll fix (`App.tsx`)
+- Barrel-roll animation conditionally skipped on mobile (`isMobile` check). The voice orb no longer disappears during theater-mode expansion on phones.
+
+#### 5. Vite dev config (`ui/vite.config.ts`)
+- `allowedHosts` added to accept ngrok tunnel hostnames.
+- HMR websocket uses `wss` protocol through the ngrok host when `NGROK_HOST` is set.
+
+#### Files modified
+```
+ui/src/App.tsx                        — draggable PIP, AR pill, mobile barrel-roll guard
+ui/src/components/ThreeVisualizer.tsx — WebXR session, ft→m scaling, env hide/restore
+ui/vite.config.ts                     — allowedHosts, HMR wss config
+```
+
+---
+
+### Session: 2026-06-03 (1) — Milky Way Nebula Background Swap
+**Claude:** Replaced the earlier starfield photo with a higher-quality 4000×6000 Milky Way/nebula shot.
+
+- Cover sizing crops the portrait image to landscape; warm amber nebula glow sits behind the ledger zone, cool star field backs the header/orb area.
+- Parallax drift tuned to portrait aspect ratio: ±2% horizontal (little room), ±4% vertical.
+- `hue-rotate(-8deg)` bridges warm amber tones into the cool-blue/violet UI palette.
+
+#### Files modified
+```
+ui/src/App.tsx              — parallax range tuned, CSS comment updated
+ui/src/assets/starfield.jpg — replaced (167 KB → 2 MB Milky Way photo)
+```
 
 ---
 
@@ -974,6 +1141,12 @@ All Unity development happens on a dedicated GCP cloud workstation.
 - [x] ~~**Mode 1 material ID tuning**~~ — `_identifyMaterial()` improved: bottom/sole/sill plates → PT by default (code-required), top plates → SPF, OSB detects sheathing/plywood
 - [ ] **Stripe webhook secret** — Add `STRIPE_WEBHOOK_SECRET` to Cloud Run env vars for production subscription lifecycle (cancel, payment_failed events). Get from Stripe Dashboard → Webhooks.
 - [ ] **Remove OTP log line** — `console.warn('[register] OTP...')` in server.js once Twilio 10DLC campaign approved
+- [ ] **Flip SMS_LIVE flag** — `gcloud run services update … --update-env-vars SMS_LIVE=true` once A2P 10DLC campaign is approved
+- [ ] **Rotate Twilio auth token** — Token was shared in plaintext during a session; rotate in Twilio Console, update local `.env` + add new Secret Manager version
+- [ ] **Wire React demo simulations to real routes** — Voice orb (real mic → `/api/process`), Change Order panel (`/api/change-orders/generate` + `/send`), client approval portal (`/approve`). All three are client-side sims; endpoints already exist.
+- [ ] **Finish type-scale migration** — `SettingsModal.tsx`, `EstimateList.tsx`, `ThreeVisualizer.tsx` still use raw `text-[Npx]`; migrate to `text-micro`/`text-mini` + semantic color tokens.
+- [x] ~~**PIPELINE_V2 wired into SMS webhook**~~ — `/api/webhook` now forks on `PIPELINE_V2=true` (same pattern as `process-text`); legacy monolith path kept as fallback.
+- [ ] **Remove legacy monolith** — Delete the `// LEGACY` branch in both `POST /api/process-text` and `/api/webhook` + `mergeIntoLedger` once `PIPELINE_V2` is validated clean in prod.
 - [ ] **Mode 2: blueprint upload** — Gemini vision reads blueprint image → extracts all walls → multi-wall JSON → full floor plan render in Three.js
 - [ ] **Multi-wall schema** — Extend Phase 1 JSON to support `walls[]` array with position + rotation per wall
 - [ ] **Phase 2 schema** — Define `floor_frame`, `roof_truss` project types
@@ -988,10 +1161,13 @@ If you're reading this to catch up on what's been built:
 - The **estimating core** (voice → items → price → PDF) is complete and in production
 - The **billing/onboarding** (Stripe + Google OAuth + Twilio OTP) is complete
 - The **change order system** (generate → SMS approval → sign off) is complete
-- The **new work** is the Supervisor/Builder 3D architecture — backend + Three.js builder are both live in production
-- The **3D visualizer** has two modes in the same panel: Stack Layer (material yard) and Build Layer (wall framing), both driven by voice input
+- The **3D visualizer** (Stack Layer — material yard) is live in the React dashboard; WebXR AR mode available when device supports it
+- The **PIPELINE_V2** 3-stage estimation pipeline (Estimator → Pricer → Reviewer) is implemented, flag-gated, and verified end-to-end; ready to flip in prod
+- The **design system** is codified — `PRODUCT.md` / `DESIGN.md` at repo root, tokens in `ui/src/index.css @theme`, machine-readable sidecar at `.impeccable/design.json`
+- All **public marketing/auth pages** (index, dashboard-legacy auth gate, privacy, terms) are now on the cosmic-glass system
+- The **SMS opt-in** is now visible to A2P reviewers without authentication (surfaced on the loginGate card); sms-optin.html redirects to the real form
 - The **GCP workstation** (`lone-ranger-unity-desktop`) is STOPPED; no longer needed — Three.js replaced Unity WebGL
-- The **repo is StudCast** (`github.com/iPolluxx/StudCast`) — all commits through `8be25b7` are on Cloud Run
+- The **repo** is `github.com/iPolluxx/StudCast` — latest deployed revision: `lone-ranger-app-00044-k8k`. Product name is now **Lone Ranger Estimator** (StudCast retired as a brand name)
 - The **next milestone** is Mode 2: contractor uploads a blueprint photo → Gemini vision extracts all walls → multi-wall JSON schema → Three.js renders the full floor plan
 - See `docs/app-features.md` for the full user-facing feature catalog
 - See `docs/user-journey.md` for the end-to-end contractor flow
