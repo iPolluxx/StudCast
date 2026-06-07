@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { X, Send, RefreshCw, AlertTriangle } from "lucide-react";
 import type { ChangeOrder, MaterialItem, LaborItem } from "../types";
+import { trapTab } from "../focusTrap";
 
 interface ClientOption {
   label: string;
@@ -52,13 +53,16 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
     }
   }, [changeOrder, open]);
 
-  // Esc closes the dialog — unless a cell is mid-edit, where Esc cancels the edit
+  // Esc closes the dialog (or cancels a mid-edit cell); Tab is trapped inside it
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      if (editingRef.current) { setEditingCell(null); return; }
-      onClose();
+      if (e.key === 'Escape') {
+        if (editingRef.current) { setEditingCell(null); return; }
+        onClose();
+        return;
+      }
+      trapTab(e, panelRef.current);
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
@@ -235,8 +239,8 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
           {localMaterials.length > 0 && (
             <section>
               <h3 className="text-micro font-black uppercase tracking-widest text-starlight/60 mb-2">Materials added</h3>
-              <div className="border border-white/10 rounded-xl overflow-hidden">
-                <table className="w-full">
+              <div className="border border-white/10 rounded-xl overflow-x-auto">
+                <table className="w-full min-w-[20rem]">
                   <thead>
                     <tr className="border-b border-white/10 bg-white/3">
                       <th className={thCls}>Item</th>
@@ -286,8 +290,8 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
           {localLabor.length > 0 && (
             <section>
               <h3 className="text-micro font-black uppercase tracking-widest text-starlight/60 mb-2">Labor added</h3>
-              <div className="border border-white/10 rounded-xl overflow-hidden">
-                <table className="w-full">
+              <div className="border border-white/10 rounded-xl overflow-x-auto">
+                <table className="w-full min-w-[20rem]">
                   <thead>
                     <tr className="border-b border-white/10 bg-white/3">
                       <th className={thCls}>Role</th>

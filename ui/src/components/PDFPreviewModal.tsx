@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { X, Eye, Send, RefreshCw } from "lucide-react";
 import type { MaterialItem, LaborItem } from "../types";
+import { trapTab } from "../focusTrap";
 
 interface Props {
   open: boolean;
@@ -86,7 +87,10 @@ export default function PDFPreviewModal({ open, authToken, estimateId, projectNa
 
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !sending) handleClose(); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !sending) { handleClose(); return; }
+      trapTab(e, panelRef.current);
+    };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   // eslint-disable-next-line react-hooks/exhaustive-deps

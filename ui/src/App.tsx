@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, lazy, Suspense } from "react";
 import starfieldSrc from "./assets/starfield.jpg";
 import {
   DollarSign,
@@ -17,7 +17,9 @@ import {
   Wrench,
 } from "lucide-react";
 import type { Estimate, FramingIntent, MaterialItem, LaborItem, ChangeOrder, ContractorUserSettings } from "./types";
-import ThreeVisualizer from "./components/ThreeVisualizer";
+// Three.js material yard is heavy (~Three core + addons); load it on demand so
+// it doesn't sit in the initial bundle.
+const ThreeVisualizer = lazy(() => import("./components/ThreeVisualizer"));
 import SettingsModal from "./components/SettingsModal";
 import EstimateList from "./components/EstimateList";
 import LedgerTable from "./components/LedgerTable";
@@ -843,15 +845,21 @@ export default function App() {
             ? 'relative w-[150px] h-[100px] sm:w-[240px] sm:h-[160px] rounded-2xl overflow-hidden shadow-2xl border border-white/15 bg-[#050810]'
             : 'relative w-full h-full'
         }>
-          <ThreeVisualizer
-            mode={visualizerMode}
-            framingIntent={framingIntent}
-            materials={materials}
-            drywallOpacity={drywallOpacity}
-            showOverlay={vizSize !== 'mini'}
-            onARReady={(toggle) => setArToggle(() => toggle)}
-            onARSessionChange={setIsARActive}
-          />
+          <Suspense fallback={
+            <div className="absolute inset-0 flex items-center justify-center">
+              <RefreshCw className="w-5 h-5 text-cool-blue/40 animate-spin" />
+            </div>
+          }>
+            <ThreeVisualizer
+              mode={visualizerMode}
+              framingIntent={framingIntent}
+              materials={materials}
+              drywallOpacity={drywallOpacity}
+              showOverlay={vizSize !== 'mini'}
+              onARReady={(toggle) => setArToggle(() => toggle)}
+              onARSessionChange={setIsARActive}
+            />
+          </Suspense>
 
           {/* Transparent drag-capture layer in mini mode — blocks OrbitControls, enables full-surface drag */}
           {vizSize === 'mini' && <div className="absolute inset-0 z-20 cursor-move" />}
