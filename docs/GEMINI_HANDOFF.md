@@ -1,7 +1,7 @@
 # Lone Ranger Estimator — Live Project Context
 > **Purpose:** This document is the handoff bridge between Gemini brainstorming sessions and Claude Code
 > implementation sessions. Update it after every meaningful work session.
-> **Last updated:** 2026-06-06 — PIPELINE_V2 wired into SMS webhook; CORS fix for gateway dashboard; gateway dashboard refactored to manual-refresh (no auto-poll); name finalized as Lone Ranger Estimator (StudCast retired)
+> **Last updated:** 2026-06-07 — Menards market pricing tier live (Oxylabs scraper, 70 verified SKUs, Cloud Scheduler weekly sync, Firestore global cache); ThreeVisualizer WebGL crash fix for headless
 
 ---
 
@@ -133,6 +133,14 @@ users/{phone}/estimates/{id}/change_orders/{coId}  ← change order subdocs
 users/{phone}/price_book/{itemId}     ← per-user custom pricing catalog
   .name, .price
 
+market_prices/menards                 ← shared global price cache (not per-tenant)
+  .last_run, .scraped, .failed        ← sync metadata written after each scrape run
+  items/{sanitizedKey}                ← one doc per SKU (70 items)
+    .name, .price, .unit              ← e.g. "2×4×8 Stud", 3.54, "each"
+    .scraped_at (Timestamp)
+    .url (Menards product page URL)
+    .stale (bool) ← true if last scrape failed; pricingEngine skips stale docs
+
 ledgers/{phone}                       ← legacy collection (pre-estimates migration)
 registrations/{phone}                 ← OTP verification staging
 approvals/{changeOrderId}             ← lookup map for token-gated approval page
@@ -140,27 +148,27 @@ approvals/{changeOrderId}             ← lookup map for token-gated approval pa
 
 ---
 
-## Pricing Engine (3-Tier Waterfall)
+## Pricing Engine (4-Tier Waterfall)
 
 Priority order inside `assignUnitPrice()` (never short-circuits without reason):
 
-1. **Explicit user price** — contractor stated a price in the transcript → `item.explicit_user_price`
-2. **Per-user price_book** — Firestore subcollection `users/{phone}/price_book/{sanitizedId}`
-3. **AI estimate fallback** — `item.estimated_unit_cost` embedded by Gemini in the extraction prompt
+1. **Explicit user price** (`override`) — contractor stated a price in the transcript → `item.explicit_user_price`
+2. **Per-user price_book** (`database`) — Firestore subcollection `users/{phone}/price_book/{sanitizedId}`
+2.5. **Menards market price** (`market`) — shared Firestore cache `market_prices/menards/items/{key}`, scraped weekly via Oxylabs. Only applied if `stale === false`. Sets `item.price_source = 'market'`, `item.market_source = 'menards'`, `item.market_age_h` (hours since last scrape).
+3. **AI estimate fallback** (`ai`) — `item.estimated_unit_cost` embedded by Gemini in the extraction prompt
 
-Labor uses the same 3-tier logic via `assignLaborRate()`, with `default_labor_rate` from settings as tier 2.
+Labor uses the same tiered logic via `assignLaborRate()`, with `default_labor_rate` from settings as tier 2.
 
-**Implementation note:** Both functions live in `src/lib/pricingEngine.js` and are exposed via a factory:
-`createPricingEngine({ db, ai })` — `db` is the Firestore client, `ai` is the Gemini client. In production, the live clients from `server.js` are injected after initialization. In tests, mock objects are injected instead. This is the dependency injection boundary that allows the entire waterfall to be covered by offline unit tests with no cloud credentials.
+**Implementation note:** `assignUnitPrice` and `assignLaborRate` live in `src/lib/pricingEngine.js`, exposed via `createPricingEngine({ db, ai })`. The market tier lookup is handled inline via `findMarketKey()` imported from `src/lib/menardsScraper.js`. In tests, mock objects are injected — market tier lookup is `try/catch`-wrapped so a missing Firestore doc degrades gracefully to the AI tier.
 
 ## Service Layer (`src/lib/`)
-
-Two modules extracted from `server.js` to make business logic independently testable:
 
 | File | Contents | External deps |
 |---|---|---|
 | `src/lib/sanitize.js` | `parseGeminiJSON`, `sanitizeItemId`, `normalizePhone`, `sanitizePhase1Intent` | None — pure functions |
-| `src/lib/pricingEngine.js` | `createPricingEngine({ db, ai })` factory → `assignUnitPrice`, `assignLaborRate` | `db` and `ai` injected via DI |
+| `src/lib/pricingEngine.js` | `createPricingEngine({ db, ai })` factory → `assignUnitPrice`, `assignLaborRate` | `db` and `ai` injected via DI; imports `findMarketKey` from menardsScraper |
+| `src/lib/menardsSKUs.js` | Array of 70 curated SKUs — `{ key, name, unit, url }` — all with verified `p-XXXXXXX` product page URLs | None — static data |
+| `src/lib/menardsScraper.js` | `scrapeMenardsPrices(db)` — Oxylabs scraper loop (per-item Firestore writes); `findMarketKey(itemName)` — fuzzy-match item name to SKU key | Oxylabs REST API (`OXYLABS_USER`/`OXYLABS_PASS` env vars) |
 
 `server.js` requires from these modules and provides its live clients at startup:
 ```js
@@ -212,6 +220,12 @@ const { assignUnitPrice, assignLaborRate } = createPricingEngine({ db, ai });
 | POST | `/api/change-orders/send` | requireAuth + sub | Send Twilio SMS with approval link |
 | GET | `/approve` | Token-gated (public) | Client-facing approval page |
 | POST | `/api/change-orders/approve` | Token-gated (public) | Record client approval |
+
+### Admin Routes
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| POST | `/api/admin/sync-prices` | `X-Api-Key` header | Trigger Menards Oxylabs scrape → populate `market_prices` Firestore cache. Key = `ADMIN_API_KEY` env var. Also called weekly by Cloud Scheduler job `menards-price-sync`. |
 
 ### New Routes (Supervisor/Builder Phase 1)
 
@@ -305,6 +319,63 @@ From `ui/dist/` (built by Dockerfile):
 ---
 
 ## Work Session Log
+
+### Session: 2026-06-06/07 — Menards Market Pricing Tier (Oxylabs, 70 SKUs, Cloud Scheduler)
+
+**Context:** AI-guessed prices are unreliable for real bids. Added a shared weekly-scraped Menards price cache as a new `market` tier (priority 2.5) sitting between the per-user `price_book` (`database`) tier and the AI fallback. All tenants benefit from one shared scrape. Target store: Wausau, WI.
+
+#### 1. `src/lib/menardsSKUs.js` — curated SKU list (70 items)
+Covers framing lumber (2x4–2x12, PT, LVL), sheathing (OSB, plywood, ZIP, AdvanTech), insulation (R-13 through R-49, rigid foam, spray foam), roofing (arch shingles, ice & water, felt, drip edge, ridge vent, pipe boot), drywall, siding (vinyl, LP SmartSide), aluminum trim (coil, soffit, fascia), MiTek connectors (joist hangers, hurricane ties, post bases), fasteners (16d/8d nails, screws, adhesives), concrete (60lb only — Menards doesn't carry 80lb), housewrap/vapor barrier/flashing tape, and windows.
+
+All 70 entries have verified `p-XXXXXXX` product-page URLs — zero TODO placeholders remain. URLs were researched via `site:menards.com` Google searches (no Oxylabs credits consumed for URL discovery).
+
+#### 2. `src/lib/menardsScraper.js` — Oxylabs scraper
+- Posts each URL to `https://realtime.oxylabs.io/v1/queries` with `source:'universal'`, `render:'html'`, `geo_location:'Wisconsin,United States'`.
+- Extracts price from JSON-LD structured data (`/"price"\s*:\s*([\d.]+)/`) with a `$`-regex fallback.
+- **Per-item Firestore writes** (critical): each scraped price is written to `market_prices/menards/items/{key}` immediately — not batched at the end. This means any Cloud Run timeout preserves all prices scraped so far; only the remaining items fall through to stale/AI tier.
+- Failed scrapes write `{ stale: true, last_attempted: now }` via merge without overwriting the last good price.
+- 600ms polite delay between Oxylabs requests.
+- `findMarketKey(itemName)` fuzzy-matches an extracted item name to a SKU key: normalizes both strings, then checks all SKU name tokens appear in the item name.
+
+#### 3. `src/lib/pricingEngine.js` — market tier added
+`findMarketKey()` imported from menardsScraper. Inside `assignUnitPrice()`, after the `database` tier and before the AI fallback: looks up the matched key in `market_prices/menards/items/{key}`, skips docs with `stale: true`, sets `price_source: 'market'`, `market_source: 'menards'`, `market_age_h` (hours since scrape). Entire lookup is try/catch-wrapped — any Firestore error degrades to the AI tier.
+
+#### 4. `src/server.js` — `/api/admin/sync-prices` endpoint
+`POST /api/admin/sync-prices` — authenticated by `X-Api-Key` header matching `ADMIN_API_KEY` env var (UUID). Calls `scrapeMenardsPrices(db)` and returns `{ ok: true, scraped, failed }`. Also hit by Cloud Scheduler on a weekly cron.
+
+#### 5. `ui/src/components/LedgerTable.tsx` — Menards price badge
+Added `market` to `SOURCE_META`. `sourceLabel()` returns `"Menards · Xh"` (age in hours). `sourceClass()` uses `bg-live-emerald/20 text-live-emerald`. Live market prices now show a green "Menards · Xh" badge in the ledger, consistent with the design system's "live-emerald = from the source" rule.
+
+#### 6. Infrastructure deployed
+- **Cloud Run env vars added:** `OXYLABS_USER=loneranger_7EgFl`, `OXYLABS_PASS=Y4e33~O~wziHlT`, `ADMIN_API_KEY=0216e563-a735-4106-8424-47a1315c7779`
+- **Cloud Run timeout:** increased from 300s → 3600s (Oxylabs JS rendering averages ~25-30s/page × 70 items ≈ 35 min)
+- **Cloud Scheduler job:** `menards-price-sync` in us-central1, `0 6 * * 1` (Monday 6AM CT), 600s attempt-deadline, first run June 8 2026
+- **Oxylabs free trial:** 2,000-request trial; ~70 requests consumed in first sync run (~$0.09 of $1.00 credit)
+- **Current revision:** `lone-ranger-app-00056-jfb`
+
+#### Key fix: per-item writes (why the batch design would have failed)
+The original plan batched all Firestore writes to the end of the scrape. With Cloud Run timeout at 900s and Oxylabs averaging 30s/call, a 70-item run takes ~35 min — far exceeding 900s. Even at 3600s the risk remains. Switched to immediate per-item writes so partial scrapes accumulate real data.
+
+#### Files created
+```
+src/lib/menardsSKUs.js          — 70 curated SKUs with verified Menards product URLs
+src/lib/menardsScraper.js       — Oxylabs scraper + findMarketKey() fuzzy matcher
+```
+
+#### Files modified
+```
+src/lib/pricingEngine.js        — market tier (priority 2.5) added to assignUnitPrice()
+src/server.js                   — /api/admin/sync-prices endpoint
+ui/src/components/LedgerTable.tsx — market badge (live-emerald, Menards · Xh)
+docs/GEMINI_HANDOFF.md          — this entry
+```
+
+#### Git commits
+- `1ad9ec1` — feat: Menards market pricing tier via Oxylabs scraper
+- `dd9677a` — fix: write Menards prices to Firestore per-item instead of batch
+- `661542a` — feat: fill all 36 remaining Menards product URLs — 70/70 verified
+
+---
 
 ### Session: 2026-06-06 — PIPELINE_V2 SMS Webhook, CORS Fix, Gateway Dashboard Overhaul
 
@@ -1146,6 +1217,7 @@ All Unity development happens on a dedicated GCP cloud workstation.
 - [ ] **Wire React demo simulations to real routes** — Voice orb (real mic → `/api/process`), Change Order panel (`/api/change-orders/generate` + `/send`), client approval portal (`/approve`). All three are client-side sims; endpoints already exist.
 - [ ] **Finish type-scale migration** — `SettingsModal.tsx`, `EstimateList.tsx`, `ThreeVisualizer.tsx` still use raw `text-[Npx]`; migrate to `text-micro`/`text-mini` + semantic color tokens.
 - [x] ~~**PIPELINE_V2 wired into SMS webhook**~~ — `/api/webhook` now forks on `PIPELINE_V2=true` (same pattern as `process-text`); legacy monolith path kept as fallback.
+- [x] ~~**Menards market pricing tier**~~ — `market` tier (priority 2.5) live; 70 verified SKUs, Oxylabs weekly scrape, Cloud Scheduler job `menards-price-sync` (Monday 6AM CT), Firestore global cache `market_prices/menards/items/`. Green "Menards · Xh" badge in LedgerTable.
 - [ ] **Remove legacy monolith** — Delete the `// LEGACY` branch in both `POST /api/process-text` and `/api/webhook` + `mergeIntoLedger` once `PIPELINE_V2` is validated clean in prod.
 - [ ] **Mode 2: blueprint upload** — Gemini vision reads blueprint image → extracts all walls → multi-wall JSON → full floor plan render in Three.js
 - [ ] **Multi-wall schema** — Extend Phase 1 JSON to support `walls[]` array with position + rotation per wall
@@ -1167,7 +1239,8 @@ If you're reading this to catch up on what's been built:
 - All **public marketing/auth pages** (index, dashboard-legacy auth gate, privacy, terms) are now on the cosmic-glass system
 - The **SMS opt-in** is now visible to A2P reviewers without authentication (surfaced on the loginGate card); sms-optin.html redirects to the real form
 - The **GCP workstation** (`lone-ranger-unity-desktop`) is STOPPED; no longer needed — Three.js replaced Unity WebGL
-- The **repo** is `github.com/iPolluxx/StudCast` — latest deployed revision: `lone-ranger-app-00044-k8k`. Product name is now **Lone Ranger Estimator** (StudCast retired as a brand name)
+- The **Menards market pricing tier** is live — 70 verified SKUs scraped weekly via Oxylabs, stored in `market_prices/menards/items/` (global, not per-tenant). The pricing waterfall is now 4-tier: `override → database → market → ai`. Cloud Scheduler job fires every Monday 6AM CT. Green "Menards · Xh" badge appears in the ledger for market-priced items.
+- The **repo** is `github.com/iPolluxx/StudCast` — latest deployed revision: `lone-ranger-app-00056-jfb`. Product name is now **Lone Ranger Estimator** (StudCast retired as a brand name)
 - The **next milestone** is Mode 2: contractor uploads a blueprint photo → Gemini vision extracts all walls → multi-wall JSON schema → Three.js renders the full floor plan
 - See `docs/app-features.md` for the full user-facing feature catalog
 - See `docs/user-journey.md` for the end-to-end contractor flow
