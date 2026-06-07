@@ -1523,7 +1523,7 @@ export default function App() {
               : e
           ));
         }}
-        onConfirmSend={async () => {
+        onConfirmSend={async (client) => {
           if (!authToken || !activeEstimate) return;
           const resp = await fetch('/api/generate-pdf', {
             method: 'POST',
@@ -1533,8 +1533,8 @@ export default function App() {
               project: {
                 materials,
                 labor,
-                client_name:    activeEstimate.client_name,
-                client_address: activeEstimate.client_address,
+                client_name:    client.name,
+                client_address: client.address,
                 scope_of_work:  activeEstimate.scope_of_work,
               },
             }),

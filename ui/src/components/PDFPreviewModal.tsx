@@ -16,7 +16,7 @@ interface Props {
     scope_of_work?: string;
   };
   onClose: () => void;
-  onConfirmSend: () => Promise<void>;
+  onConfirmSend: (client: { name: string; phone: string; address: string }) => Promise<void>;
   onClientDetailsSaved: (name: string, phone: string, address: string) => void;
 }
 
@@ -93,7 +93,7 @@ export default function PDFPreviewModal({ open, authToken, estimateId, projectNa
         body: JSON.stringify({ client_name: localName, client_address: localAddress, client_phone: localPhone }),
       });
       onClientDetailsSaved(localName, localPhone, localAddress);
-      await onConfirmSend();
+      await onConfirmSend({ name: localName, phone: localPhone, address: localAddress });
       handleClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Send failed — please try again.');

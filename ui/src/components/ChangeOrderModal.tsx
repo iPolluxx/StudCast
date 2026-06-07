@@ -31,6 +31,7 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
   const [localLabor, setLocalLabor] = useState<LaborItem[]>([]);
   const [editingCell, setEditingCell] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
+  const [dirty, setDirty] = useState(false);
   const [dispatching, setDispatching] = useState(false);
   const [dispatchError, setDispatchError] = useState<string | null>(null);
 
@@ -40,6 +41,7 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
       setLocalLabor(changeOrder.added_labor ?? []);
       setSelectedPhone('');
       setManualPhone('');
+      setDirty(false);
       setDispatchError(null);
     }
   }, [changeOrder, open]);
@@ -49,8 +51,8 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
 
   const matSubtotal = localMaterials.reduce((s, m) => s + (m.total ?? 0), 0);
   const labSubtotal = localLabor.reduce((s, l) => s + (l.total ?? 0), 0);
-  const taxRate = 0.055; // WI 5.5% — matches backend
-  const taxAmt = (matSubtotal + labSubtotal) * taxRate;
+  const taxRate = 0.055; // WI 5.5% — applied to materials only, matching backend
+  const taxAmt = matSubtotal * taxRate;
   const coTotal = matSubtotal + labSubtotal + taxAmt;
 
   function startEdit(key: string, val: number) {
@@ -67,6 +69,7 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
       updated.total = updated.quantity * updated.unit_price;
       return updated;
     }));
+    setDirty(true);
     setEditingCell(null);
   }
 
@@ -79,6 +82,7 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
       updated.total = updated.hours * updated.rate;
       return updated;
     }));
+    setDirty(true);
     setEditingCell(null);
   }
 
@@ -87,6 +91,23 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
     setDispatching(true);
     setDispatchError(null);
     try {
+      // 1. If the ledger was edited, persist it + regenerate the PDF the client
+      //    will see. Skipped when untouched — the generate step already rendered it.
+      if (dirty) {
+        const upd = await fetch(`/api/change-orders/${encodeURIComponent(changeOrder.id)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+          body: JSON.stringify({
+            parentEstimateId: activeEstimateId,
+            added_materials: localMaterials,
+            added_labor: localLabor,
+          }),
+        });
+        const updData = await upd.json();
+        if (!upd.ok) throw new Error(updData.error || 'Failed to save edits');
+      }
+
+      // 2. Dispatch the SMS (sends the regenerated PDF + total)
       const resp = await fetch('/api/change-orders/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },

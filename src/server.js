@@ -2628,6 +2628,49 @@ function buildChangeOrderHtml({ co, parentEstimateId, companyName, companyAddres
 </html>`;
 }
 
+// ── Render a change-order PDF (Puppeteer) and return it as base64 ──────
+// Shared by the generate + update routes so edits can regenerate the PDF
+// without duplicating the launch/HTML logic.
+async function renderChangeOrderPdf({ coDoc, parentEstimateId, profile, user }) {
+    const companyName = profile.company_name || user.companyName || 'Lone Ranger Contracting';
+    let logoHtml = '';
+    if (profile.company_logo_url && (profile.company_logo_url.startsWith('https://') || profile.company_logo_url.startsWith('data:image/'))) {
+        logoHtml = `<img src="${escapeHtml(profile.company_logo_url)}" style="max-height:50px;max-width:150px;object-fit:contain;" />`;
+    } else {
+        const initials = companyName.substring(0, 2).toUpperCase();
+        logoHtml = `<div style="width:50px;height:50px;border-radius:50%;background:#521880;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14pt;">${initials}</div>`;
+    }
+    const formattedDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+    const htmlContent = buildChangeOrderHtml({
+        co: { ...coDoc },
+        parentEstimateId,
+        companyName,
+        companyAddress: profile.company_address || '',
+        contactEmail: profile.contact_email || user.email || '',
+        licenseNumber: profile.license_number || '',
+        logoHtml,
+        formattedDate,
+    });
+
+    let browser;
+    try {
+        browser = await puppeteer.launch({
+            headless: true,
+            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/google-chrome',
+            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+        });
+        const page = await browser.newPage();
+        await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
+        const pdfBuffer = await page.pdf({ format: 'Letter', printBackground: true, margin: { top: '0.4in', bottom: '0.4in', left: '0.4in', right: '0.4in' } });
+        await browser.close();
+        browser = null;
+        return pdfBuffer.toString('base64');
+    } finally {
+        if (browser) { try { await browser.close(); } catch (_) {} }
+    }
+}
+
 // ══════════════════════════════════════════════════════════════════════
 //  ENDPOINT: POST /api/change-orders/generate
 //  Requires: requireAuth, requireSubscription
@@ -2714,50 +2757,13 @@ app.post('/api/change-orders/generate', requireAuth, requireSubscription, async 
 
         // ── 9. Generate PDF via Puppeteer ─────────────────────────────
         const profile = configSnap.exists ? configSnap.data() : {};
-        const companyName = profile.company_name || user.companyName || 'Lone Ranger Contracting';
-        let logoHtml = '';
-        if (profile.company_logo_url && (profile.company_logo_url.startsWith('https://') || profile.company_logo_url.startsWith('data:image/'))) {
-            logoHtml = `<img src="${escapeHtml(profile.company_logo_url)}" style="max-height:50px;max-width:150px;object-fit:contain;" />`;
-        } else {
-            const initials = companyName.substring(0, 2).toUpperCase();
-            logoHtml = `<div style="width:50px;height:50px;border-radius:50%;background:#521880;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14pt;">${initials}</div>`;
-        }
-        const formattedDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-
-        const htmlContent = buildChangeOrderHtml({
-            co: { ...coDoc },
-            parentEstimateId,
-            companyName,
-            companyAddress: profile.company_address || '',
-            contactEmail: profile.contact_email || user.email || '',
-            licenseNumber: profile.license_number || '',
-            logoHtml,
-            formattedDate,
-        });
-
-        const pdfFilename = `ChangeOrder_${changeOrderId}_${Date.now()}.pdf`;
-        const pdfPath = path.join('/tmp', pdfFilename);
-        let browser;
         try {
-            browser = await puppeteer.launch({
-                headless: true,
-                executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/google-chrome',
-                args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
-            });
-            const page = await browser.newPage();
-            await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
-            const pdfBuffer = await page.pdf({ format: 'Letter', printBackground: true, margin: { top: '0.4in', bottom: '0.4in', left: '0.4in', right: '0.4in' } });
-            fs.writeFileSync(pdfPath, pdfBuffer);
-            await browser.close();
-            browser = null;
-
+            const pdfBase64 = await renderChangeOrderPdf({ coDoc, parentEstimateId, profile, user });
             // Store PDF as base64 in Firestore for retrieval on approval page
-            const pdfBase64 = pdfBuffer.toString('base64');
             await coRef.set({ pdf_base64: pdfBase64 }, { merge: true });
             console.log(`[${userPhone}] Change order PDF generated: ${changeOrderId}`);
-        } finally {
-            if (browser) { try { await browser.close(); } catch (_) {} }
-            if (pdfPath && fs.existsSync(pdfPath)) { try { fs.unlinkSync(pdfPath); } catch (_) {} }
+        } catch (pdfErr) {
+            console.error(`[${userPhone}] Change order PDF generation failed:`, pdfErr.message);
         }
 
         res.json({
@@ -2775,6 +2781,84 @@ app.post('/api/change-orders/generate', requireAuth, requireSubscription, async 
     } catch (err) {
         console.error(`[${userPhone}] change-orders/generate error:`, err.message);
         res.status(500).json({ error: err.message || 'Failed to generate change order.' });
+    }
+});
+
+// ══════════════════════════════════════════════════════════════════════
+//  ENDPOINT: PUT /api/change-orders/:id
+//  Requires: requireAuth, requireSubscription
+//  Body: { parentEstimateId, added_materials, added_labor }
+//  Persists contractor edits, recomputes totals, regenerates the PDF.
+//  Edits are explicit overrides — no re-pricing through the waterfall.
+// ══════════════════════════════════════════════════════════════════════
+
+app.put('/api/change-orders/:id', requireAuth, requireSubscription, async (req, res) => {
+    const userPhone = req.userPhone;
+    const changeOrderId = req.params.id;
+    const { parentEstimateId, added_materials = [], added_labor = [] } = req.body;
+
+    if (!parentEstimateId) {
+        return res.status(400).json({ error: 'parentEstimateId is required.' });
+    }
+
+    try {
+        const coRef = db.collection('users').doc(userPhone)
+            .collection('estimates').doc(parentEstimateId)
+            .collection('change_orders').doc(changeOrderId);
+        const coSnap = await coRef.get();
+        if (!coSnap.exists) {
+            return res.status(404).json({ error: 'Change order not found.' });
+        }
+
+        // Recompute line totals from edited values (no re-pricing — edits are explicit)
+        const materials = added_materials.map(m => ({
+            ...m,
+            type: 'material',
+            total: Math.round((Number(m.unit_price) || 0) * (Number(m.quantity) || 0) * 100) / 100,
+        }));
+        const labor = added_labor.map(l => ({
+            ...l,
+            type: 'labor',
+            total: Math.round((Number(l.rate) || 0) * (Number(l.hours) || 0) * 100) / 100,
+        }));
+
+        const matsSubtotal = materials.reduce((s, m) => s + (m.total || 0), 0);
+        const laborSubtotal = labor.reduce((s, l) => s + (l.total || 0), 0);
+        const wiSalesTax = Math.round(matsSubtotal * 0.055 * 100) / 100;
+        const changeOrderTotal = Math.round((matsSubtotal + laborSubtotal + wiSalesTax) * 100) / 100;
+
+        const coDoc = {
+            ...coSnap.data(),
+            added_materials: materials,
+            added_labor: labor,
+            materials_subtotal: Math.round(matsSubtotal * 100) / 100,
+            labor_subtotal: Math.round(laborSubtotal * 100) / 100,
+            wi_sales_tax: wiSalesTax,
+            change_order_total: changeOrderTotal,
+        };
+
+        // Regenerate the PDF so the client sees the edited line items
+        const configSnap = await db.collection('users').doc(userPhone).collection('settings').doc('config').get();
+        const profile = configSnap.exists ? configSnap.data() : {};
+        try {
+            coDoc.pdf_base64 = await renderChangeOrderPdf({ coDoc, parentEstimateId, profile, user: req.authedUser });
+        } catch (pdfErr) {
+            console.error(`[${userPhone}] CO update PDF regen failed:`, pdfErr.message);
+        }
+
+        await coRef.set(coDoc, { merge: true });
+
+        res.json({
+            success: true,
+            changeOrderId,
+            change_order_total: changeOrderTotal,
+            materials_subtotal: coDoc.materials_subtotal,
+            labor_subtotal: coDoc.labor_subtotal,
+            wi_sales_tax: wiSalesTax,
+        });
+    } catch (err) {
+        console.error(`[${userPhone}] change-orders update error:`, err.message);
+        res.status(500).json({ error: err.message || 'Failed to update change order.' });
     }
 });
 
