@@ -1700,6 +1700,174 @@ app.post('/api/admin/sync-prices', async (req, res) => {
 });
 
 // ══════════════════════════════════════════════════════════════════════
+//  PRICE SHEET API — merged view of price_book + Menards market prices
+// ══════════════════════════════════════════════════════════════════════
+
+// GET /api/price-sheet — returns priceBook[] (user's saved prices with market comparison)
+// and marketOnly[] (Menards SKUs not yet in the user's price_book)
+app.get('/api/price-sheet', requireAuth, async (req, res) => {
+    const userPhone = req.userPhone;
+    const { findMarketKey } = require('./lib/menardsScraper');
+    const SKUs = require('./lib/menardsSKUs');
+
+    try {
+        const [pbSnap, marketSnap, metaDoc] = await Promise.all([
+            db.collection('users').doc(userPhone).collection('price_book').get(),
+            db.collection('market_prices').doc('menards').collection('items').get(),
+            db.collection('market_prices').doc('menards').get(),
+        ]);
+
+        const marketMap = {};
+        marketSnap.forEach(doc => { marketMap[doc.id] = doc.data(); });
+        const menardsMeta = metaDoc.exists ? metaDoc.data() : {};
+
+        const usedMarketKeys = new Set();
+        const priceBook = [];
+        pbSnap.forEach(doc => {
+            const d = doc.data();
+            const marketKey = findMarketKey(d.name);
+            const market = marketKey ? marketMap[marketKey] : null;
+            if (marketKey) usedMarketKeys.add(marketKey);
+            priceBook.push({
+                itemId: doc.id,
+                name: d.name,
+                savedPrice: d.price,
+                marketKey: marketKey || null,
+                marketPrice: (market && !market.stale) ? market.price : null,
+                marketUnit: market ? market.unit : null,
+                marketAgeH: (market && market.scraped_at)
+                    ? Math.round((Date.now() - market.scraped_at.toDate()) / 36e5)
+                    : null,
+                marketStale: market ? (market.stale || false) : null,
+            });
+        });
+
+        const marketOnly = [];
+        for (const sku of SKUs) {
+            const key = sanitizeItemId(sku.key);
+            if (usedMarketKeys.has(key)) continue;
+            const market = marketMap[key];
+            if (!market) continue;
+            marketOnly.push({
+                key,
+                name: sku.name,
+                unit: sku.unit,
+                price: market.stale ? null : market.price,
+                marketAgeH: market.scraped_at
+                    ? Math.round((Date.now() - market.scraped_at.toDate()) / 36e5)
+                    : null,
+                stale: market.stale || false,
+            });
+        }
+
+        res.json({
+            priceBook,
+            marketOnly,
+            lastSync: menardsMeta.last_run ? menardsMeta.last_run.toDate().toISOString() : null,
+        });
+    } catch (e) {
+        console.error('[price-sheet] error:', e.message);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// PUT /api/price-book/:itemId — update the saved price for one price_book entry
+app.put('/api/price-book/:itemId', requireAuth, async (req, res) => {
+    const userPhone = req.userPhone;
+    const { itemId } = req.params;
+    const price = Number(req.body?.price);
+    if (!Number.isFinite(price) || price < 0) {
+        return res.status(400).json({ error: 'price must be a non-negative number' });
+    }
+    try {
+        await db.collection('users').doc(userPhone)
+                .collection('price_book').doc(itemId)
+                .set({ price }, { merge: true });
+        res.json({ ok: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// DELETE /api/price-book/:itemId — remove one price_book entry (falls back to market/AI tier)
+app.delete('/api/price-book/:itemId', requireAuth, async (req, res) => {
+    const userPhone = req.userPhone;
+    const { itemId } = req.params;
+    try {
+        await db.collection('users').doc(userPhone)
+                .collection('price_book').doc(itemId)
+                .delete();
+        res.json({ ok: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// POST /api/price-book/sync-from-menards — pull current market prices into price_book
+// Body: {} = sync all matched entries; { itemId, marketKey } = sync one item
+app.post('/api/price-book/sync-from-menards', requireAuth, async (req, res) => {
+    const userPhone = req.userPhone;
+    const { findMarketKey } = require('./lib/menardsScraper');
+    const { itemId, marketKey: singleKey } = req.body || {};
+
+    try {
+        if (itemId && singleKey) {
+            const snap = await db.collection('market_prices').doc('menards')
+                                  .collection('items').doc(singleKey).get();
+            if (!snap.exists || snap.data().stale) {
+                return res.status(404).json({ error: 'No live market price for this item' });
+            }
+            const { price } = snap.data();
+            await db.collection('users').doc(userPhone)
+                    .collection('price_book').doc(itemId)
+                    .set({ price }, { merge: true });
+            return res.json({ ok: true, synced: 1, price });
+        }
+
+        const [pbSnap, marketSnap] = await Promise.all([
+            db.collection('users').doc(userPhone).collection('price_book').get(),
+            db.collection('market_prices').doc('menards').collection('items').get(),
+        ]);
+        const marketMap = {};
+        marketSnap.forEach(doc => { marketMap[doc.id] = doc.data(); });
+
+        const batch = db.batch();
+        let synced = 0;
+        pbSnap.forEach(doc => {
+            const mKey = findMarketKey(doc.data().name);
+            if (!mKey) return;
+            const market = marketMap[mKey];
+            if (!market || market.stale) return;
+            batch.set(doc.ref, { price: market.price }, { merge: true });
+            synced++;
+        });
+        if (synced > 0) await batch.commit();
+        res.json({ ok: true, synced });
+    } catch (e) {
+        console.error('[sync-from-menards] error:', e.message);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// POST /api/price-book — add a new entry (used when saving a market-only item to price_book)
+app.post('/api/price-book', requireAuth, async (req, res) => {
+    const userPhone = req.userPhone;
+    const { name, price } = req.body || {};
+    const p = Number(price);
+    if (!name || !Number.isFinite(p) || p < 0) {
+        return res.status(400).json({ error: 'name and non-negative price required' });
+    }
+    try {
+        await db.collection('users').doc(userPhone)
+                .collection('price_book').doc(sanitizeItemId(name))
+                .set({ name, price: p }, { merge: true });
+        res.json({ ok: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// ══════════════════════════════════════════════════════════════════════
 //  ESTIMATES STORAGE API
 // ══════════════════════════════════════════════════════════════════════
 
