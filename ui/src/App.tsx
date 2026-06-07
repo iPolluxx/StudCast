@@ -170,6 +170,10 @@ export default function App() {
 
   // Draggable mini PIP
   const pipRef = useRef<HTMLDivElement>(null);
+
+  // Live microphone recording
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
   const [pipPos, setPipPos] = useState<{ x: number; y: number } | null>(null);
   const pipDragRef = useRef<{ startPX: number; startPY: number; startX: number; startY: number } | null>(null);
 
@@ -585,17 +589,84 @@ export default function App() {
     setActiveStage(3);
   };
 
-  // Holographic audio recorder simulation
-  const toggleRecording = () => {
-    if (!isRecording) {
-      setIsRecording(true);
-      setTimeout(() => {
-        const text = "Frame a 24 foot exterior wall 10 foot tall with 1 window and 16 spacing with drywall and treated plates";
-        setIsRecording(false);
-        handleProcessNLP(text);
-      }, 4000);
-    } else {
+  const toggleRecording = async () => {
+    // Second tap — stop recording; onstop handler takes over
+    if (isRecording) {
       setIsRecording(false);
+      mediaRecorderRef.current?.stop();
+      return;
+    }
+
+    // First tap — request mic and start recording
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioChunksRef.current = [];
+
+      const mr = new MediaRecorder(stream);
+      mediaRecorderRef.current = mr;
+
+      mr.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+
+      mr.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+
+        // Strip codec suffix (e.g. "audio/webm;codecs=opus" → "audio/webm") so
+        // multer's allow-list matches.
+        const cleanMime = (mr.mimeType || 'audio/webm').split(';')[0];
+        const blob = new Blob(audioChunksRef.current, { type: cleanMime });
+
+        if (blob.size === 0) {
+          setStatusFlash("No audio captured — try again");
+          setTimeout(() => setStatusFlash(null), 4000);
+          return;
+        }
+
+        setAiProcessing(true);
+        try {
+          const ext = cleanMime.includes('ogg') ? '.ogg' : cleanMime.includes('mp4') ? '.mp4' : '.webm';
+          const fd = new FormData();
+          fd.append('audio', blob, `recording${ext}`);
+          if (activeEstimate?.id) fd.append('estimateId', activeEstimate.id);
+
+          const resp = await fetch('/api/process', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${authToken}` },
+            body: fd,
+          });
+
+          const data = await resp.json();
+          if (resp.ok && data.estimateId) {
+            const refreshed = await fetch(`/api/estimates/${data.estimateId}`, {
+              headers: apiHeaders(authToken!),
+            });
+            if (refreshed.ok) {
+              const full = await refreshed.json();
+              setEstimates(prev => prev.map(e => e.id === full.id ? full : e));
+              if (data.estimateId !== activeEstimateId) setActiveEstimateId(data.estimateId);
+            }
+            setStatusFlash(`${data.itemCount ?? '?'} items extracted from audio`);
+            setTimeout(() => setStatusFlash(null), 4000);
+          } else {
+            throw new Error(data.error || 'Audio extraction failed');
+          }
+        } catch (e: any) {
+          setStatusFlash('Audio failed: ' + (e.message || 'Unknown error'));
+          setTimeout(() => setStatusFlash(null), 5000);
+        } finally {
+          setAiProcessing(false);
+        }
+      };
+
+      mr.start();
+      setIsRecording(true);
+    } catch (e: any) {
+      const msg = e.name === 'NotAllowedError'
+        ? 'Microphone permission denied'
+        : `Mic unavailable: ${e.message}`;
+      setStatusFlash(msg);
+      setTimeout(() => setStatusFlash(null), 5000);
     }
   };
 
