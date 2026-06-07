@@ -1,7 +1,7 @@
 # Lone Ranger Estimator — Live Project Context
 > **Purpose:** This document is the handoff bridge between Gemini brainstorming sessions and Claude Code
 > implementation sessions. Update it after every meaningful work session.
-> **Last updated:** 2026-06-07 — Menards market pricing tier live (Oxylabs scraper, 70 verified SKUs, Cloud Scheduler weekly sync, Firestore global cache); ThreeVisualizer WebGL crash fix for headless
+> **Last updated:** 2026-06-07 — Master price sheet UI (Settings → Price Sheet tab): merged price_book + Menards market view, inline edit, sync from Menards, delete; 5 new price-book API routes; revision 00058-bjf
 
 ---
 
@@ -319,6 +319,41 @@ From `ui/dist/` (built by Dockerfile):
 ---
 
 ## Work Session Log
+
+### Session: 2026-06-07 — Master Price Sheet UI
+
+#### What was built
+Settings modal gained a **"Price Sheet" tab** (alongside the existing "Profile" tab). The modal widens to `max-w-5xl` when the Price Sheet tab is active.
+
+**`PriceSheetPanel.tsx`** — full merged view of pricing data:
+- **Your Saved Prices** table: name | your price (click to edit inline) | Menards market price | diff % (amber if >10%) | sync↓ (use market price) | delete (drops entry so it falls back to market/AI tier)
+- **Menards Catalog — Not in Your Price Book**: all 70 Menards SKUs not yet overridden, with a `+` button to lock one into the price book at market price
+- **Sync all from Menards** button: one-click update of every matched price_book entry
+
+**5 new server.js routes:**
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| GET | `/api/price-sheet` | Bearer | Merged price_book + Menards market; flags used market keys to build `marketOnly[]` section |
+| PUT | `/api/price-book/:itemId` | Bearer | Inline price edit |
+| DELETE | `/api/price-book/:itemId` | Bearer | Remove entry; item falls back to market → AI tier |
+| POST | `/api/price-book/sync-from-menards` | Bearer | `{}` = sync all matched; `{ itemId, marketKey }` = sync one |
+| POST | `/api/price-book` | Bearer | Save a market-only item into the price book |
+
+**Why this matters:** Once a contractor's price_book fills up, the `database` tier always wins over the live `market` tier — prices silently go stale. The Price Sheet gives them visibility and a one-tap sync path instead of manual corrections.
+
+**Deployed:** revision `lone-ranger-app-00058-bjf`
+
+#### Files created/modified
+```
+ui/src/components/PriceSheetPanel.tsx   — new
+ui/src/components/SettingsModal.tsx     — Profile | Price Sheet tab switcher
+src/server.js                           — 5 new price-book routes
+docs/GEMINI_HANDOFF.md                  — this entry
+README.md                               — pricing waterfall section, service layer, routes, component tree
+```
+
+---
 
 ### Session: 2026-06-06/07 — Menards Market Pricing Tier (Oxylabs, 70 SKUs, Cloud Scheduler)
 
@@ -1240,7 +1275,8 @@ If you're reading this to catch up on what's been built:
 - The **SMS opt-in** is now visible to A2P reviewers without authentication (surfaced on the loginGate card); sms-optin.html redirects to the real form
 - The **GCP workstation** (`lone-ranger-unity-desktop`) is STOPPED; no longer needed — Three.js replaced Unity WebGL
 - The **Menards market pricing tier** is live — 70 verified SKUs scraped weekly via Oxylabs, stored in `market_prices/menards/items/` (global, not per-tenant). The pricing waterfall is now 4-tier: `override → database → market → ai`. Cloud Scheduler job fires every Monday 6AM CT. Green "Menards · Xh" badge appears in the ledger for market-priced items.
-- The **repo** is `github.com/iPolluxx/StudCast` — latest deployed revision: `lone-ranger-app-00056-jfb`. Product name is now **Lone Ranger Estimator** (StudCast retired as a brand name)
+- The **master price sheet** is live — Settings → "Price Sheet" tab shows the merged view of the contractor's saved prices vs. Menards market, with inline edit, per-item and bulk sync, and delete. Fixes the stale-price-book problem: contractors can one-tap sync all matched prices from the live Menards cache instead of updating hundreds of entries manually.
+- The **repo** is `github.com/iPolluxx/StudCast` — latest deployed revision: `lone-ranger-app-00058-bjf`. Product name is now **Lone Ranger Estimator** (StudCast retired as a brand name)
 - The **next milestone** is Mode 2: contractor uploads a blueprint photo → Gemini vision extracts all walls → multi-wall JSON schema → Three.js renders the full floor plan
 - See `docs/app-features.md` for the full user-facing feature catalog
 - See `docs/user-journey.md` for the end-to-end contractor flow

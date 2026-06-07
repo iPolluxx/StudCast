@@ -88,9 +88,20 @@ users/{phone}/
   price_book/{itemId}        ← self-learning material price cache
 ```
 
-### 3. Self-Teaching Price Book
+### 3. Four-Tier Pricing Waterfall
 
-Each successful PDF generation feeds approved material prices back into a per-tenant `price_book` collection. Subsequent extractions for the same contractor pre-populate unit prices from their own historical jobs rather than model defaults.
+Material prices resolve through four tiers in priority order — the first match wins:
+
+| Priority | Tier | Source | Notes |
+|---|---|---|---|
+| 1 | `override` | Contractor stated a price in the transcript | Highest trust |
+| 2 | `database` | Per-tenant `price_book` in Firestore | Self-taught from approved estimates + CSV import |
+| 2.5 | `market` | Shared Menards weekly scrape (`market_prices/menards/items/`) | 70 verified SKUs, Oxylabs, live-emerald badge in ledger |
+| 3 | `ai` | Gemini `estimated_unit_cost` | Fallback when nothing else matches |
+
+**Menards market tier:** A shared weekly scrape (Oxylabs managed scraper API, Wausau WI geo) populates a global Firestore cache — all tenants benefit from one scrape. Cloud Scheduler fires every Monday 6 AM CT. LedgerTable shows a green **"Menards · Xh"** badge on market-priced line items. Admin trigger: `POST /api/admin/sync-prices` with `X-Api-Key` header.
+
+**Self-Teaching Price Book:** Each successful PDF generation feeds approved material prices back into the per-tenant `price_book` collection. The **Price Sheet** tab in Settings shows the merged view: contractor's saved prices alongside current Menards market prices, with diff% highlighting, inline editing, per-item or bulk "Sync from Menards", and delete (which drops back to the market/AI tier).
 
 ### 4. Three.js 3D Spatial Engine
 
@@ -145,8 +156,12 @@ src/lib/
 │
 ├── pricingEngine.js     Stateful business logic via Dependency Injection
 │   └── createPricingEngine({ db, ai })
-│       ├── assignUnitPrice(item, zipCode, phone)   3-priority material pricing waterfall
+│       ├── assignUnitPrice(item, zipCode, phone)   4-tier material pricing waterfall (override→db→market→ai)
 │       └── assignLaborRate(laborItem, phone)       3-priority labor rate resolution
+│
+├── menardsSKUs.js       70 curated SKUs — { key, name, unit, url } — all with verified product-page URLs
+├── menardsScraper.js    scrapeMenardsPrices(db) — Oxylabs scraper, per-item Firestore writes
+│                        findMarketKey(name) — fuzzy-match item name → SKU key
 │
 │  ── Deterministic 3-Stage Pipeline (gated behind PIPELINE_V2) ──
 ├── estimator.js         createEstimator({ ai })   Stage 1 — input-agnostic, price-free extraction
@@ -228,6 +243,12 @@ The workflow requires no secrets — the suite is entirely offline. A failing te
 | POST | `/api/billing/verify-session` | Bearer | Direct payment verification |
 | POST | `/api/webhooks/stripe` | Stripe sig | Subscription lifecycle events |
 | POST | `/api/webhook` | Twilio sig | Inbound SMS bridge |
+| GET | `/api/price-sheet` | Bearer | Merged price_book + Menards market view |
+| PUT | `/api/price-book/:itemId` | Bearer | Update a saved price inline |
+| DELETE | `/api/price-book/:itemId` | Bearer | Remove entry (falls back to market/AI) |
+| POST | `/api/price-book/sync-from-menards` | Bearer | Sync one or all matched entries from live Menards prices |
+| POST | `/api/price-book` | Bearer | Save a market item to the price book |
+| POST | `/api/admin/sync-prices` | `X-Api-Key` | Trigger Menards Oxylabs scrape (also run by Cloud Scheduler) |
 
 ---
 
@@ -250,7 +271,8 @@ ui/src/
 ├── types.ts
 └── components/
     ├── ThreeVisualizer.tsx   ← WebGL scene, both modes
-    ├── SettingsModal.tsx
+    ├── SettingsModal.tsx     ← Profile | Price Sheet tab switcher
+    ├── PriceSheetPanel.tsx   ← merged price_book + Menards market table
     ├── EstimateList.tsx
     └── LedgerTable.tsx
 ```
