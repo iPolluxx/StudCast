@@ -1917,7 +1917,7 @@ app.get('/api/estimates/:id', requireAuth, async (req, res) => {
 const saveEstimateHandler = async (req, res) => {
     const userPhone = req.userPhone;
     const estimateId = req.params.id;
-    const { project_name, items = [], total_amount, item_count, client_name, client_address, scope_of_work } = req.body;
+    const { project_name, items = [], total_amount, item_count, client_name, client_address, client_phone, scope_of_work } = req.body;
 
     try {
         const docRef = db.collection('users').doc(userPhone).collection('estimates').doc(estimateId);
@@ -1933,6 +1933,9 @@ const saveEstimateHandler = async (req, res) => {
         }
         if (client_address !== undefined) {
             updateObj.client_address = client_address;
+        }
+        if (client_phone !== undefined) {
+            updateObj.client_phone = client_phone;
         }
         if (scope_of_work !== undefined) {
             updateObj.scope_of_work = scope_of_work;

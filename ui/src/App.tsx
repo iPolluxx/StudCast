@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import starfieldSrc from "./assets/starfield.jpg";
 import {
   DollarSign,
@@ -8,7 +8,6 @@ import {
   Mic,
   RefreshCw,
   X,
-  CheckCircle,
   ArrowUpRight,
   Send,
   Sparkles,
@@ -23,6 +22,7 @@ import SettingsModal from "./components/SettingsModal";
 import EstimateList from "./components/EstimateList";
 import LedgerTable from "./components/LedgerTable";
 import PDFPreviewModal from "./components/PDFPreviewModal";
+import ChangeOrderModal from "./components/ChangeOrderModal";
 
 // ── CUSTOM PROCEDURAL STARFIELD BACKGROUND COMPONENT ──
 export function Starfield() {
@@ -187,9 +187,8 @@ export default function App() {
   const [projectDropdownOpen, setProjectDropdownOpen] = useState<boolean>(false);
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
   const [derivedChangeOrder, setDerivedChangeOrder] = useState<ChangeOrder | null>(null);
-
-  // Client Portal simulation authorization modal
-  const [clientPortalCo, setClientPortalCo] = useState<ChangeOrder | null>(null);
+  const [changeOrderLoading, setChangeOrderLoading] = useState(false);
+  const [changeOrderModalOpen, setChangeOrderModalOpen] = useState(false);
 
   // Price Override matrix configuration
   const [priceSheet, setPriceSheet] = useState({
@@ -670,77 +669,38 @@ export default function App() {
     }
   };
 
-  // Formulation of Change orders
-  const handleGenerateChangeOrder = () => {
-    if (!changeOrderInput.trim()) return;
-    setAiProcessing(true);
+  // Unique clients derived from estimates — used in ChangeOrderModal dropdown
+  const clients = useMemo(() =>
+    estimates
+      .filter(e => e.client_phone)
+      .map(e => ({
+        label: `${e.client_name || 'Unknown'} — ${e.client_phone}`,
+        phone: e.client_phone,
+      }))
+      .filter((c, i, arr) => arr.findIndex(x => x.phone === c.phone) === i)
+      .sort((a, b) => a.label.localeCompare(b.label)),
+    [estimates]
+  );
 
-    setTimeout(() => {
-      const input = changeOrderInput.toLowerCase();
-      let addedMats: MaterialItem[] = [];
-      let addedLab: LaborItem[] = [];
-      let exclusionsList: string[] = [];
-      let totalSum = 0;
-
-      if (input.includes("plywood") || input.includes("sheets") || input.includes("osb")) {
-        const qtyMatch = input.match(/(\d+)\s*(sheets|plywood|pcs|osb)/);
-        const qty = qtyMatch ? parseInt(qtyMatch[1]) : 15;
-        const price = 24.50;
-        const total = qty * price;
-        addedMats.push({ name: `${qty} General-purpose 3/4\" OSB Plywood Sheets`, quantity: qty, unit: "pcs", trade: "framing", unit_price: price, total, price_source: "ai" });
-        totalSum += total;
-      }
-
-      if (input.includes("hours") || input.includes("labor") || input.includes("framing")) {
-        const hrMatch = input.match(/(\d+)\s*(hours|hrs|labor)/);
-        const hrs = hrMatch ? parseInt(hrMatch[1]) : 6;
-        const rate = priceSheet.laborFrame;
-        const total = hrs * rate;
-        addedLab.push({ role: "Additional framing crew labor layout", hours: hrs, rate, total });
-        totalSum += total;
-      }
-
-      exclusionsList.push("Secondary structural routing sockets and custom exterior siding coatings.");
-
-      const order: ChangeOrder = {
-        id: "CO-" + Math.random().toString(16).substring(2, 6).toUpperCase(),
-        parentEstimateId: activeEstimate?.project_name ?? '',
-        change_summary: "Addition of premium sheathing ply deck structure and framing crew labor",
-        added_materials: addedMats,
-        added_labor: addedLab,
-        exclusions: exclusionsList,
-        change_order_total: Math.round(totalSum * 1.055 * 100) / 100,
-        status: "pending"
-      };
-
-      setDerivedChangeOrder(order);
-      setAiProcessing(false);
-    }, 1100);
-  };
-
-  const handleSendClientSMS = () => {
-    if (!derivedChangeOrder) return;
-    setClientPortalCo(derivedChangeOrder);
-  };
-
-  const handleClientApprove = () => {
-    if (!clientPortalCo) return;
-    
-    updateEstimateItems(prev => {
-      const mats = prev.filter(i => i.type === "material");
-      const labs = prev.filter(i => i.type === "labor");
-      
-      const newMats = clientPortalCo.added_materials.map(m => ({ ...m, type: "material" as const, name: `[CO] ${m.name}` }));
-      const newLabs = clientPortalCo.added_labor.map(l => ({ ...l, type: "labor" as const, role: `[CO] ${l.role}` }));
-
-      return [...mats, ...newMats, ...labs, ...newLabs];
-    });
-
-    setClientPortalCo(null);
-    setDerivedChangeOrder(null);
-    setChangeOrderInput("");
-    setStatusFlash("Change Order merged successfully");
-    setTimeout(() => setStatusFlash(null), 4000);
+  const handleGenerateChangeOrder = async () => {
+    if (!changeOrderInput.trim() || !activeEstimateId || !authToken) return;
+    setChangeOrderLoading(true);
+    try {
+      const resp = await fetch('/api/change-orders/generate', {
+        method: 'POST',
+        headers: apiHeaders(authToken),
+        body: JSON.stringify({ parentEstimateId: activeEstimateId, text: changeOrderInput }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || 'Generation failed');
+      setDerivedChangeOrder({ id: data.changeOrderId, ...data });
+      setChangeOrderModalOpen(true);
+    } catch (e: any) {
+      setStatusFlash('Change order failed: ' + e.message);
+      setTimeout(() => setStatusFlash(null), 5000);
+    } finally {
+      setChangeOrderLoading(false);
+    }
   };
 
   if (appLoading) {
@@ -1155,38 +1115,29 @@ export default function App() {
 
               <button
                 onClick={handleGenerateChangeOrder}
-                disabled={!changeOrderInput.trim() || aiProcessing}
+                disabled={!changeOrderInput.trim() || changeOrderLoading || !activeEstimateId}
                 className="w-full py-2 border border-cool-blue/30 hover:border-cool-blue bg-cool-blue/10 hover:bg-cool-blue/20 transition-all font-black uppercase tracking-widest text-micro rounded-full text-cool-blue flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40"
               >
-                {aiProcessing ? (
+                {changeOrderLoading ? (
                   <RefreshCw className="w-3 h-3 animate-spin" />
                 ) : (
                   <Sparkles className="w-3.5 h-3.5 text-soft-violet" />
                 )}
-                Formulate Change Addendum
+                {changeOrderLoading ? 'Generating PDF…' : 'Formulate Change Addendum'}
               </button>
 
-              {derivedChangeOrder && (
-                <div className="border border-white/10 bg-void-black/60 rounded-xl p-3.5 space-y-2 mt-2">
+              {derivedChangeOrder && !changeOrderModalOpen && (
+                <div className="border border-white/10 bg-void-black/60 rounded-xl p-3.5 mt-2">
                   <div className="flex justify-between items-center text-micro font-bold uppercase tracking-wider text-soft-violet">
-                    <span>Constructed Addendum</span>
+                    <span>Addendum Ready</span>
                     <span className="text-cool-blue">{derivedChangeOrder.id}</span>
                   </div>
-                  
-                  <div className="text-mini leading-relaxed text-starlight">
-                    <strong>Total Added:</strong> <span className="text-cool-blue text-mini font-black">${derivedChangeOrder.change_order_total.toFixed(2)}</span>
-                  </div>
-
-                  <p className="text-mini text-starlight/70 leading-normal italic">
-                    "{derivedChangeOrder.change_summary}"
-                  </p>
-
                   <button
-                    onClick={handleSendClientSMS}
-                    className="w-full py-2 bg-gradient-to-r from-cool-blue to-soft-violet text-void-black font-black uppercase tracking-widest text-micro rounded-full mt-2 transition-transform hover:scale-105 flex items-center justify-center gap-1.5 cursor-pointer"
+                    onClick={() => setChangeOrderModalOpen(true)}
+                    className="w-full mt-3 py-2 bg-gradient-to-r from-cool-blue to-soft-violet text-void-black font-black uppercase tracking-widest text-micro rounded-full transition-transform hover:scale-105 flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     <Send className="w-3.5 h-3.5" />
-                    Dispatch Authorization
+                    Review &amp; Dispatch
                   </button>
                 </div>
               )}
@@ -1531,72 +1482,6 @@ export default function App() {
         </button>
       )}
 
-      {/* ── CLIENT PORTAL AMENDMENT REVIEW modal ── */}
-      {clientPortalCo && (
-        <div className="fixed inset-0 z-50 bg-void-black/90 backdrop-blur-lg flex items-center justify-center p-4">
-          <div className="glass-panel border-white/15 max-w-md w-full rounded-2xl p-6 shadow-2xl relative space-y-4">
-            <div className="flex items-center justify-between border-b border-white/10 pb-3">
-              <span className="text-mini font-extrabold px-2.5 py-1 rounded-full bg-cool-blue/20 text-cool-blue border border-cool-blue/30 tracking-widest uppercase font-mono">
-                Amend Review Auth
-              </span>
-              <button onClick={() => setClientPortalCo(null)} className="text-starlight/60 hover:text-alert-rose">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="text-center space-y-1">
-              <h2 className="text-lg font-black tracking-tight text-[#ffffff]">Project amendment Order</h2>
-              <p className="text-mini font-mono tracking-widest uppercase text-soft-violet">{settings.company_name}</p>
-            </div>
-
-            <div className="p-4 bg-void-black/60 border border-white/8 rounded-xl space-y-3 font-mono">
-              <div className="flex justify-between items-center text-mini text-starlight">
-                <span>Ref Estimate ID:</span>
-                <span className="font-bold text-cool-blue uppercase">{activeEstimate?.project_name ?? ''}</span>
-              </div>
-              <div className="flex justify-between items-center text-mini text-starlight border-t border-white/5 pt-2">
-                <span>Contract Addition:</span>
-                <span className="font-extrabold text-cool-blue text-base">
-                  ${clientPortalCo.change_order_total.toFixed(2)}
-                </span>
-              </div>
-              <p className="text-mini italic text-starlight/70 border-t border-white/5 pt-2 text-center font-sans">
-                Scope: "{clientPortalCo.change_summary}"
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <p className="text-mini font-black uppercase tracking-wider text-soft-violet font-mono">Materials Added Takeoff:</p>
-              <div className="max-h-28 overflow-y-auto space-y-1 pr-1">
-                {clientPortalCo.added_materials.map((m, i) => (
-                  <div key={i} className="flex justify-between text-mini bg-void-black/40 p-2 rounded border border-white/5 font-mono">
-                    <span className="text-starlight/90">{m.name}</span>
-                    <span className="font-bold text-cool-blue">${m.total.toFixed(2)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {clientPortalCo.exclusions && clientPortalCo.exclusions.length > 0 && (
-              <div className="p-2.5 bg-alert-rose/5 border border-alert-rose/15 rounded-lg text-mini text-starlight/80 font-sans leading-relaxed">
-                <strong className="text-alert-rose font-mono">Exclusions:</strong> {clientPortalCo.exclusions.join("; ")}
-              </div>
-            )}
-
-            <button
-              onClick={handleClientApprove}
-              className="w-full bg-[#1e293b] hover:bg-cool-blue hover:text-void-black border border-cool-blue/40 text-starlight font-extrabold py-3.5 rounded-full transition-all cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-cool-blue/10 uppercase tracking-widest text-mini"
-            >
-              <CheckCircle className="w-4 h-4" />
-              Approve and Digitally Sign Addendum
-            </button>
-            <p className="text-micro text-center text-starlight/50 font-mono">
-              *By signing, you authorize contract price addition to the active estimator telemetry.
-            </p>
-          </div>
-        </div>
-      )}
-
       {/* ── WORKSPACE CONFIG SETUP modal ── */}
       <SettingsModal
         open={settingsOpen}
@@ -1620,15 +1505,24 @@ export default function App() {
       <PDFPreviewModal
         open={previewOpen}
         authToken={authToken ?? ''}
+        estimateId={activeEstimate?.id ?? ''}
         projectName={activeEstimate?.id ?? ''}
         project={{
           materials,
           labor,
           client_name:    activeEstimate?.client_name    ?? '',
           client_address: activeEstimate?.client_address ?? '',
+          client_phone:   activeEstimate?.client_phone   ?? '',
           scope_of_work:  activeEstimate?.scope_of_work  ?? '',
         }}
         onClose={() => setPreviewOpen(false)}
+        onClientDetailsSaved={(name, phone, address) => {
+          setEstimates(prev => prev.map(e =>
+            e.id === activeEstimateId
+              ? { ...e, client_name: name, client_phone: phone, client_address: address }
+              : e
+          ));
+        }}
         onConfirmSend={async () => {
           if (!authToken || !activeEstimate) return;
           const resp = await fetch('/api/generate-pdf', {
@@ -1648,6 +1542,22 @@ export default function App() {
           const data = await resp.json().catch(() => ({}));
           if (!resp.ok) throw new Error(data.error || `Server error ${resp.status}`);
           setStatusFlash(`PDF sent to ${settings.contact_email}`);
+          setTimeout(() => setStatusFlash(null), 5000);
+        }}
+      />
+
+      <ChangeOrderModal
+        open={changeOrderModalOpen}
+        changeOrder={derivedChangeOrder}
+        clients={clients}
+        authToken={authToken}
+        activeEstimateId={activeEstimateId}
+        onClose={() => { setChangeOrderModalOpen(false); setDerivedChangeOrder(null); setChangeOrderInput(''); }}
+        onDispatched={() => {
+          setChangeOrderModalOpen(false);
+          setDerivedChangeOrder(null);
+          setChangeOrderInput('');
+          setStatusFlash('Change order dispatched to client');
           setTimeout(() => setStatusFlash(null), 5000);
         }}
       />
