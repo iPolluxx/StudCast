@@ -31,12 +31,14 @@ export default function PDFPreviewModal({ open, authToken, estimateId, projectNa
   const [localName, setLocalName] = useState('');
   const [localPhone, setLocalPhone] = useState('');
   const [localAddress, setLocalAddress] = useState('');
+  const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (open) {
       setLocalName(project.client_name ?? '');
       setLocalPhone(project.client_phone ?? '');
       setLocalAddress(project.client_address ?? '');
+      requestAnimationFrame(() => panelRef.current?.focus());
     }
   }, [open]);
 
@@ -82,6 +84,14 @@ export default function PDFPreviewModal({ open, authToken, estimateId, projectNa
     onClose();
   };
 
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !sending) handleClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, sending]);
+
   const handleSend = async () => {
     setSending(true);
     setError(null);
@@ -102,15 +112,24 @@ export default function PDFPreviewModal({ open, authToken, estimateId, projectNa
     }
   };
 
-  const inputCls = "w-full bg-void-black border border-white/10 focus:border-cool-blue rounded-lg px-2 py-1.5 text-[10px] font-mono text-starlight outline-none transition-colors";
-  const labelCls = "block text-[9px] uppercase font-black text-starlight/40 font-mono tracking-widest mb-1";
+  const inputCls = "w-full bg-void-black border border-white/10 focus:border-cool-blue rounded-lg px-2 py-1.5 text-mini font-mono text-starlight outline-none transition-colors";
+  const labelCls = "block text-micro uppercase font-black text-starlight/40 font-mono tracking-widest mb-1";
 
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-void-black/85 backdrop-blur-md flex items-center justify-center p-4">
-      <div className="glass-panel border-white/10 max-w-5xl w-full rounded-2xl flex flex-col shadow-2xl"
-           style={{ height: '90vh' }}>
+    <div
+      className="fixed inset-0 z-50 bg-void-black/85 backdrop-blur-md flex items-center justify-center p-4"
+      onClick={(e) => { if (e.target === e.currentTarget && !sending) handleClose(); }}
+    >
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Preview and send estimate"
+        tabIndex={-1}
+        className="glass-panel border-white/10 max-w-5xl w-full rounded-2xl flex flex-col shadow-2xl outline-none animate-fade-in"
+        style={{ height: '90vh' }}>
 
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 shrink-0">
@@ -189,6 +208,7 @@ export default function PDFPreviewModal({ open, authToken, estimateId, projectNa
               />
             </div>
           </div>
+          <p className="text-micro text-starlight/40 font-mono">These are applied to the PDF when you send.</p>
 
           {/* Button row */}
           <div className="flex items-center justify-between gap-4">

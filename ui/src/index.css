@@ -221,3 +221,16 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(110, 181, 255, 0.3);
 }
+
+/* Honor reduced-motion: neutralize the orb pulse, barrel-roll, reveals, and
+   modal entrances down to a near-instant change for users who ask for it. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

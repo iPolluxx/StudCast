@@ -1103,7 +1103,7 @@ export default function App() {
               
               <div className="space-y-1">
                 <span className="block text-micro font-black uppercase text-soft-violet tracking-wider">
-                  Describe Change Segment
+                  Describe the change
                 </span>
                 <textarea
                   value={changeOrderInput}
@@ -1123,13 +1123,13 @@ export default function App() {
                 ) : (
                   <Sparkles className="w-3.5 h-3.5 text-soft-violet" />
                 )}
-                {changeOrderLoading ? 'Generating PDF…' : 'Formulate Change Addendum'}
+                {changeOrderLoading ? 'Creating…' : 'Create change order'}
               </button>
 
               {derivedChangeOrder && !changeOrderModalOpen && (
                 <div className="border border-white/10 bg-void-black/60 rounded-xl p-3.5 mt-2">
                   <div className="flex justify-between items-center text-micro font-bold uppercase tracking-wider text-soft-violet">
-                    <span>Addendum Ready</span>
+                    <span>Change order ready</span>
                     <span className="text-cool-blue">{derivedChangeOrder.id}</span>
                   </div>
                   <button
@@ -1137,7 +1137,7 @@ export default function App() {
                     className="w-full mt-3 py-2 bg-gradient-to-r from-cool-blue to-soft-violet text-void-black font-black uppercase tracking-widest text-micro rounded-full transition-transform hover:scale-105 flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     <Send className="w-3.5 h-3.5" />
-                    Review &amp; Dispatch
+                    Review &amp; send
                   </button>
                 </div>
               )}

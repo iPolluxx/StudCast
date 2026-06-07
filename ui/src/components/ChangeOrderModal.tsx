@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { X, Send, RefreshCw, AlertTriangle } from "lucide-react";
 import type { ChangeOrder, MaterialItem, LaborItem } from "../types";
 
@@ -35,6 +35,10 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
   const [dispatching, setDispatching] = useState(false);
   const [dispatchError, setDispatchError] = useState<string | null>(null);
 
+  const panelRef = useRef<HTMLDivElement>(null);
+  const editingRef = useRef<string | null>(null);
+  editingRef.current = editingCell;
+
   useEffect(() => {
     if (changeOrder && open) {
       setLocalMaterials(changeOrder.added_materials ?? []);
@@ -43,11 +47,26 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
       setManualPhone('');
       setDirty(false);
       setDispatchError(null);
+      // Move focus into the dialog for keyboard + screen-reader users
+      requestAnimationFrame(() => panelRef.current?.focus());
     }
   }, [changeOrder, open]);
 
+  // Esc closes the dialog — unless a cell is mid-edit, where Esc cancels the edit
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (editingRef.current) { setEditingCell(null); return; }
+      onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
   const effectivePhone = selectedPhone || manualPhone;
   const validPhone = normalizePhone(effectivePhone);
+  const hasItems = localMaterials.length > 0 || localLabor.length > 0;
 
   const matSubtotal = localMaterials.reduce((s, m) => s + (m.total ?? 0), 0);
   const labSubtotal = localLabor.reduce((s, l) => s + (l.total ?? 0), 0);
@@ -87,7 +106,7 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
   }
 
   const handleDispatch = async () => {
-    if (!validPhone || !changeOrder || !authToken) return;
+    if (!validPhone || !hasItems || !changeOrder || !authToken) return;
     setDispatching(true);
     setDispatchError(null);
     try {
@@ -107,7 +126,7 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
         if (!upd.ok) throw new Error(updData.error || 'Failed to save edits');
       }
 
-      // 2. Dispatch the SMS (sends the regenerated PDF + total)
+      // 2. Text the SMS link to the client (sends the regenerated PDF + total)
       const resp = await fetch('/api/change-orders/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
@@ -118,7 +137,7 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
         }),
       });
       const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error || 'Dispatch failed');
+      if (!resp.ok) throw new Error(data.error || 'Send failed');
       onDispatched();
     } catch (e: any) {
       setDispatchError(e.message);
@@ -127,25 +146,35 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
     }
   };
 
-  const cellBtn = "text-starlight hover:text-cool-blue transition-colors cursor-pointer font-mono text-[10px]";
-  const thCls = "text-left px-3 py-2 text-[9px] font-black uppercase tracking-widest text-starlight/40";
-  const tdCls = "px-3 py-2 text-[10px] font-mono";
-  const inputCls = "w-20 bg-void-black border border-cool-blue/50 rounded px-1 py-0.5 text-right text-cool-blue outline-none text-[10px] font-mono";
-  const labelCls = "block text-[9px] uppercase font-black text-starlight/40 font-mono tracking-widest mb-1";
+  const cellBtn = "text-starlight hover:text-cool-blue transition-colors cursor-pointer font-mono text-mini";
+  const thCls = "text-left px-3 py-2 text-micro font-black uppercase tracking-widest text-starlight/40";
+  const tdCls = "px-3 py-2 text-mini font-mono";
+  const inputCls = "w-24 bg-void-black border border-cool-blue/50 rounded px-1.5 py-1 text-right text-cool-blue outline-none text-mini font-mono";
+  const labelCls = "block text-micro uppercase font-black text-starlight/40 font-mono tracking-widest mb-1";
 
   if (!open || !changeOrder) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-void-black/85 backdrop-blur-md flex items-center justify-center p-4">
-      <div className="glass-panel border-white/10 max-w-5xl w-full rounded-2xl flex flex-col shadow-2xl max-h-[90vh]">
+    <div
+      className="fixed inset-0 z-50 bg-void-black/85 backdrop-blur-md flex items-center justify-center p-4"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Change order review"
+        tabIndex={-1}
+        className="glass-panel border-white/10 max-w-5xl w-full rounded-2xl flex flex-col shadow-2xl max-h-[90vh] outline-none animate-fade-in"
+      >
 
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 shrink-0">
           <div>
             <h2 className="text-mini font-black text-starlight uppercase tracking-widest">Change Order</h2>
-            <p className="text-[9px] text-soft-violet font-mono mt-0.5">{changeOrder.id}</p>
+            <p className="text-micro text-soft-violet font-mono mt-0.5">{changeOrder.id}</p>
           </div>
-          <button onClick={onClose} className="text-starlight/50 hover:text-alert-rose transition-colors cursor-pointer">
+          <button onClick={onClose} aria-label="Close" className="text-starlight/50 hover:text-alert-rose transition-colors cursor-pointer">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -162,14 +191,15 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
 
           {/* Client picker */}
           <div className="space-y-2">
-            <label className={labelCls}>Dispatch To — Client</label>
+            <label className={labelCls}>Send to</label>
             {clients.length > 0 && (
               <select
                 value={selectedPhone}
                 onChange={e => { setSelectedPhone(e.target.value); setManualPhone(''); }}
-                className="w-full bg-void-black border border-white/10 focus:border-cool-blue rounded-xl px-3 py-2 text-[10px] font-mono text-starlight outline-none transition-colors cursor-pointer"
+                style={{ colorScheme: 'dark' }}
+                className="w-full bg-void-black border border-white/10 focus:border-cool-blue rounded-xl px-3 py-2 text-mini font-mono text-starlight outline-none transition-colors cursor-pointer"
               >
-                <option value="">— Select a client —</option>
+                <option value="">Choose a client…</option>
                 {clients.map(c => (
                   <option key={c.phone} value={c.phone}>{c.label}</option>
                 ))}
@@ -180,20 +210,28 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
                 <input
                   value={manualPhone}
                   onChange={e => setManualPhone(e.target.value)}
-                  placeholder={clients.length > 0 ? 'Or enter phone manually: (715) 555-0100' : 'Client phone: (715) 555-0100'}
-                  className="w-full bg-void-black border border-white/10 focus:border-cool-blue rounded-xl px-3 py-2 text-[10px] font-mono text-starlight outline-none transition-colors"
+                  placeholder={clients.length > 0 ? 'Or type a phone number: (715) 555-0100' : 'Client phone: (715) 555-0100'}
+                  className="w-full bg-void-black border border-white/10 focus:border-cool-blue rounded-xl px-3 py-2 text-mini font-mono text-starlight outline-none transition-colors"
                 />
                 {manualPhone && !normalizePhone(manualPhone) && (
-                  <p className="text-[9px] text-alert-rose font-mono mt-1">Enter a full 10-digit US number</p>
+                  <p className="text-micro text-alert-rose font-mono mt-1">Enter a full 10-digit US number</p>
                 )}
               </div>
             )}
           </div>
 
+          {/* Empty state — Gemini found nothing to add */}
+          {!hasItems && (
+            <div className="border border-white/10 rounded-xl px-4 py-6 text-center">
+              <p className="text-mini text-starlight/60 font-mono">No materials or labor were found in this change.</p>
+              <p className="text-micro text-starlight/40 font-mono mt-1">Close and describe the change with specific items and quantities.</p>
+            </div>
+          )}
+
           {/* Materials table */}
           {localMaterials.length > 0 && (
             <section>
-              <h3 className="text-[9px] font-black uppercase tracking-widest text-starlight/50 mb-2">Materials Added</h3>
+              <h3 className="text-micro font-black uppercase tracking-widest text-starlight/50 mb-2">Materials added</h3>
               <div className="border border-white/10 rounded-xl overflow-hidden">
                 <table className="w-full">
                   <thead>
@@ -211,23 +249,25 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
                         <td className={`${tdCls} text-right`}>
                           {editingCell === `mat-qty-${i}` ? (
                             <input autoFocus type="number" step="1" value={editValue}
+                              aria-label={`Quantity for ${m.name}`}
                               onChange={e => setEditValue(e.target.value)}
                               onBlur={() => commitMatEdit(i, 'quantity')}
-                              onKeyDown={e => { if (e.key === 'Enter') commitMatEdit(i, 'quantity'); if (e.key === 'Escape') setEditingCell(null); }}
+                              onKeyDown={e => { if (e.key === 'Enter') commitMatEdit(i, 'quantity'); if (e.key === 'Escape') { e.stopPropagation(); setEditingCell(null); } }}
                               className={inputCls} />
                           ) : (
-                            <button onClick={() => startEdit(`mat-qty-${i}`, m.quantity)} className={cellBtn}>{m.quantity}</button>
+                            <button onClick={() => startEdit(`mat-qty-${i}`, m.quantity)} aria-label={`Edit quantity for ${m.name}`} className={cellBtn}>{m.quantity}</button>
                           )}
                         </td>
                         <td className={`${tdCls} text-right hidden sm:table-cell`}>
                           {editingCell === `mat-price-${i}` ? (
                             <input autoFocus type="number" step="0.01" value={editValue}
+                              aria-label={`Unit price for ${m.name}`}
                               onChange={e => setEditValue(e.target.value)}
                               onBlur={() => commitMatEdit(i, 'unit_price')}
-                              onKeyDown={e => { if (e.key === 'Enter') commitMatEdit(i, 'unit_price'); if (e.key === 'Escape') setEditingCell(null); }}
+                              onKeyDown={e => { if (e.key === 'Enter') commitMatEdit(i, 'unit_price'); if (e.key === 'Escape') { e.stopPropagation(); setEditingCell(null); } }}
                               className={inputCls} />
                           ) : (
-                            <button onClick={() => startEdit(`mat-price-${i}`, m.unit_price)} className={cellBtn}>${m.unit_price.toFixed(2)}</button>
+                            <button onClick={() => startEdit(`mat-price-${i}`, m.unit_price)} aria-label={`Edit unit price for ${m.name}`} className={cellBtn}>${m.unit_price.toFixed(2)}</button>
                           )}
                         </td>
                         <td className={`${tdCls} text-right text-cool-blue font-black`}>${(m.total ?? 0).toFixed(2)}</td>
@@ -242,7 +282,7 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
           {/* Labor table */}
           {localLabor.length > 0 && (
             <section>
-              <h3 className="text-[9px] font-black uppercase tracking-widest text-starlight/50 mb-2">Labor Added</h3>
+              <h3 className="text-micro font-black uppercase tracking-widest text-starlight/50 mb-2">Labor added</h3>
               <div className="border border-white/10 rounded-xl overflow-hidden">
                 <table className="w-full">
                   <thead>
@@ -260,23 +300,25 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
                         <td className={`${tdCls} text-right`}>
                           {editingCell === `lab-hrs-${i}` ? (
                             <input autoFocus type="number" step="0.5" value={editValue}
+                              aria-label={`Hours for ${l.role}`}
                               onChange={e => setEditValue(e.target.value)}
                               onBlur={() => commitLabEdit(i, 'hours')}
-                              onKeyDown={e => { if (e.key === 'Enter') commitLabEdit(i, 'hours'); if (e.key === 'Escape') setEditingCell(null); }}
+                              onKeyDown={e => { if (e.key === 'Enter') commitLabEdit(i, 'hours'); if (e.key === 'Escape') { e.stopPropagation(); setEditingCell(null); } }}
                               className={inputCls} />
                           ) : (
-                            <button onClick={() => startEdit(`lab-hrs-${i}`, l.hours)} className={cellBtn}>{l.hours}</button>
+                            <button onClick={() => startEdit(`lab-hrs-${i}`, l.hours)} aria-label={`Edit hours for ${l.role}`} className={cellBtn}>{l.hours}</button>
                           )}
                         </td>
                         <td className={`${tdCls} text-right hidden sm:table-cell`}>
                           {editingCell === `lab-rate-${i}` ? (
                             <input autoFocus type="number" step="1" value={editValue}
+                              aria-label={`Rate for ${l.role}`}
                               onChange={e => setEditValue(e.target.value)}
                               onBlur={() => commitLabEdit(i, 'rate')}
-                              onKeyDown={e => { if (e.key === 'Enter') commitLabEdit(i, 'rate'); if (e.key === 'Escape') setEditingCell(null); }}
+                              onKeyDown={e => { if (e.key === 'Enter') commitLabEdit(i, 'rate'); if (e.key === 'Escape') { e.stopPropagation(); setEditingCell(null); } }}
                               className={inputCls} />
                           ) : (
-                            <button onClick={() => startEdit(`lab-rate-${i}`, l.rate)} className={cellBtn}>${l.rate.toFixed(2)}</button>
+                            <button onClick={() => startEdit(`lab-rate-${i}`, l.rate)} aria-label={`Edit rate for ${l.role}`} className={cellBtn}>${l.rate.toFixed(2)}</button>
                           )}
                         </td>
                         <td className={`${tdCls} text-right text-cool-blue font-black`}>${(l.total ?? 0).toFixed(2)}</td>
@@ -291,11 +333,11 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
           {/* Exclusions */}
           {changeOrder.exclusions && changeOrder.exclusions.length > 0 && (
             <section>
-              <h3 className="text-[9px] font-black uppercase tracking-widest text-starlight/50 mb-2">Exclusions</h3>
+              <h3 className="text-micro font-black uppercase tracking-widest text-starlight/50 mb-2">Not included</h3>
               <div className="bg-alert-rose/5 border border-alert-rose/15 rounded-xl px-4 py-3">
                 <ul className="space-y-1">
                   {changeOrder.exclusions.map((ex, i) => (
-                    <li key={i} className="text-[10px] text-starlight/70 font-mono">{ex}</li>
+                    <li key={i} className="text-mini text-starlight/70 font-mono">{ex}</li>
                   ))}
                 </ul>
               </div>
@@ -303,50 +345,60 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
           )}
 
           {/* Totals */}
-          <section className="border border-white/10 rounded-xl overflow-hidden">
-            <div className="divide-y divide-white/5">
-              <div className="flex justify-between items-center px-4 py-2 text-[10px] font-mono text-starlight/60">
-                <span>Materials subtotal</span><span>${matSubtotal.toFixed(2)}</span>
+          {hasItems && (
+            <section className="border border-white/10 rounded-xl overflow-hidden">
+              <div className="divide-y divide-white/5">
+                <div className="flex justify-between items-center px-4 py-2 text-mini font-mono text-starlight/60">
+                  <span>Materials subtotal</span><span>${matSubtotal.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between items-center px-4 py-2 text-mini font-mono text-starlight/60">
+                  <span>Labor subtotal</span><span>${labSubtotal.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between items-center px-4 py-2 text-mini font-mono text-starlight/60">
+                  <span>WI sales tax (5.5%)</span><span>${taxAmt.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between items-center px-4 py-4 bg-cool-blue/5">
+                  <span className="text-micro font-black uppercase tracking-widest text-starlight/60">Change order total</span>
+                  <span className="text-xl font-black text-cool-blue font-mono">${coTotal.toFixed(2)}</span>
+                </div>
               </div>
-              <div className="flex justify-between items-center px-4 py-2 text-[10px] font-mono text-starlight/60">
-                <span>Labor subtotal</span><span>${labSubtotal.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between items-center px-4 py-2 text-[10px] font-mono text-starlight/60">
-                <span>WI Sales Tax (5.5%)</span><span>${taxAmt.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between items-center px-4 py-3 text-mini font-black text-cool-blue bg-cool-blue/5">
-                <span>Change Order Total</span><span>${coTotal.toFixed(2)}</span>
-              </div>
-            </div>
-          </section>
+            </section>
+          )}
 
         </div>
 
         {/* Footer */}
         <div className="px-6 py-4 border-t border-white/10 shrink-0 space-y-3">
           {dispatchError && (
-            <div className="flex items-center gap-2 text-[10px] text-alert-rose font-mono bg-alert-rose/5 border border-alert-rose/20 rounded-xl px-3 py-2">
-              <AlertTriangle className="w-3 h-3 shrink-0" />
+            <div className="flex items-center gap-2 text-mini text-alert-rose font-mono bg-alert-rose/5 border border-alert-rose/20 rounded-xl px-3 py-2">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
               {dispatchError}
             </div>
           )}
-          <div className="flex items-center justify-end gap-3">
-            <button
-              onClick={onClose}
-              className="px-5 py-2 border border-white/10 text-starlight/70 hover:bg-white/5 rounded-full text-micro font-black transition-all cursor-pointer uppercase tracking-widest"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleDispatch}
-              disabled={!validPhone || dispatching}
-              className="bg-gradient-to-r from-cool-blue to-soft-violet text-void-black font-black tracking-widest text-micro px-6 py-2 rounded-full transition-all cursor-pointer flex items-center gap-1.5 uppercase shadow-lg shadow-cool-blue/20 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {dispatching
-                ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                : <Send className="w-3.5 h-3.5" />}
-              {dispatching ? 'Dispatching…' : 'Dispatch Authorization'}
-            </button>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-micro text-starlight/40 font-mono">
+              {validPhone && hasItems
+                ? <>Texts a review link to <span className="text-starlight/70">{validPhone}</span></>
+                : 'Pick a client to send to'}
+            </p>
+            <div className="flex items-center gap-3 shrink-0">
+              <button
+                onClick={onClose}
+                className="px-5 py-2 border border-white/10 text-starlight/70 hover:bg-white/5 rounded-full text-micro font-black transition-all cursor-pointer uppercase tracking-widest"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDispatch}
+                disabled={!validPhone || !hasItems || dispatching}
+                className="bg-gradient-to-r from-cool-blue to-soft-violet text-void-black font-black tracking-widest text-micro px-6 py-2 rounded-full transition-all cursor-pointer flex items-center gap-1.5 uppercase shadow-lg shadow-cool-blue/20 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {dispatching
+                  ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  : <Send className="w-3.5 h-3.5" />}
+                {dispatching ? 'Sending…' : 'Text to client'}
+              </button>
+            </div>
           </div>
         </div>
 
