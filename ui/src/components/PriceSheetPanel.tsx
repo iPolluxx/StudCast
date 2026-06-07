@@ -35,15 +35,6 @@ function diffPct(saved: number, market: number): number {
   return Math.round(((saved - market) / market) * 100);
 }
 
-function AgeTag({ h }: { h: number | null }) {
-  if (h === null) return null;
-  return (
-    <span className="text-[9px] font-black uppercase tracking-widest text-live-emerald border border-live-emerald/30 rounded px-1 py-0.5 whitespace-nowrap">
-      {h}h ago
-    </span>
-  );
-}
-
 export default function PriceSheetPanel({ authToken }: Props) {
   const [data, setData] = useState<PriceSheetData | null>(null);
   const [loading, setLoading] = useState(true);
