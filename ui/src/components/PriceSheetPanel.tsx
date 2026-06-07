@@ -167,7 +167,7 @@ export default function PriceSheetPanel({ authToken }: Props) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-16 text-starlight/40">
+      <div className="flex items-center justify-center py-16 text-starlight/60">
         <RefreshCw className="w-4 h-4 animate-spin mr-2" />
         <span className="text-xs font-mono">Loading price sheet…</span>
       </div>
@@ -178,7 +178,7 @@ export default function PriceSheetPanel({ authToken }: Props) {
     return (
       <div className="py-8 text-center">
         <p className="text-xs text-alert-rose font-mono">{error}</p>
-        <button onClick={load} className="mt-3 text-[10px] text-cool-blue underline cursor-pointer">Retry</button>
+        <button onClick={load} className="mt-3 text-mini text-cool-blue underline cursor-pointer">Retry</button>
       </div>
     );
   }
@@ -189,7 +189,7 @@ export default function PriceSheetPanel({ authToken }: Props) {
       {/* Header bar */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <p className="text-[10px] text-starlight/50 font-mono">
+          <p className="text-mini text-starlight/60 font-mono">
             {data?.priceBook.length ?? 0} saved · {data?.marketOnly.length ?? 0} market-only
             {data?.lastSync && (
               <> · synced {new Date(data.lastSync).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</>
@@ -199,15 +199,15 @@ export default function PriceSheetPanel({ authToken }: Props) {
         <button
           onClick={syncAll}
           disabled={syncing || syncableCount === 0}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-cool-blue/10 border border-cool-blue/30 hover:border-cool-blue/60 text-cool-blue rounded-xl text-[9px] font-black uppercase tracking-widest transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-cool-blue/10 border border-cool-blue/30 hover:border-cool-blue/60 text-cool-blue rounded-xl text-micro font-black uppercase tracking-widest transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          <ArrowDownToLine className={`w-3 h-3 ${syncing ? "animate-bounce" : ""}`} />
+          <ArrowDownToLine className={`w-3 h-3 ${syncing ? "animate-spin" : ""}`} />
           {syncing ? "Syncing…" : `Sync all from Menards (${syncableCount})`}
         </button>
       </div>
 
       {flash && (
-        <div className="text-[10px] font-mono text-live-emerald bg-live-emerald/10 border border-live-emerald/20 rounded-xl px-3 py-2">
+        <div className="text-mini font-mono text-live-emerald bg-live-emerald/10 border border-live-emerald/20 rounded-xl px-3 py-2">
           {flash}
         </div>
       )}
@@ -215,17 +215,17 @@ export default function PriceSheetPanel({ authToken }: Props) {
       {/* ── Your saved prices ── */}
       {data && data.priceBook.length > 0 && (
         <section>
-          <h3 className="text-[9px] font-black uppercase tracking-widest text-starlight/50 mb-2">
+          <h3 className="text-micro font-black uppercase tracking-widest text-starlight/60 mb-2">
             Your Saved Prices
           </h3>
           <div className="border border-white/10 rounded-xl overflow-hidden">
-            <table className="w-full text-[10px] font-mono">
+            <table className="w-full text-mini font-mono">
               <thead>
                 <tr className="border-b border-white/10 bg-white/3">
-                  <th className="text-left px-3 py-2 text-[9px] font-black uppercase tracking-widest text-starlight/40">Item</th>
-                  <th className="text-right px-3 py-2 text-[9px] font-black uppercase tracking-widest text-starlight/40">Your Price</th>
-                  <th className="text-right px-3 py-2 text-[9px] font-black uppercase tracking-widest text-starlight/40 hidden sm:table-cell">Menards</th>
-                  <th className="text-right px-3 py-2 text-[9px] font-black uppercase tracking-widest text-starlight/40 hidden sm:table-cell">Diff</th>
+                  <th className="text-left px-3 py-2 text-micro font-black uppercase tracking-widest text-starlight/60">Item</th>
+                  <th className="text-right px-3 py-2 text-micro font-black uppercase tracking-widest text-starlight/60">Your Price</th>
+                  <th className="text-right px-3 py-2 text-micro font-black uppercase tracking-widest text-starlight/60 hidden sm:table-cell">Menards</th>
+                  <th className="text-right px-3 py-2 text-micro font-black uppercase tracking-widest text-starlight/60 hidden sm:table-cell">Diff</th>
                   <th className="px-3 py-2 w-20"></th>
                 </tr>
               </thead>
@@ -254,11 +254,12 @@ export default function PriceSheetPanel({ authToken }: Props) {
                               if (e.key === "Enter") commitEdit(entry);
                               if (e.key === "Escape") setEditingId(null);
                             }}
-                            className="w-20 bg-void-black border border-cool-blue/50 rounded px-1 py-0.5 text-right text-cool-blue outline-none text-[10px]"
+                            className="w-20 bg-void-black border border-cool-blue/50 rounded px-1 py-0.5 text-right text-cool-blue outline-none text-mini"
                           />
                         ) : (
                           <button
                             onClick={() => { setEditingId(entry.itemId); setEditValue(String(entry.savedPrice)); }}
+                            aria-label={`Edit your price for ${entry.name}`}
                             className="text-starlight hover:text-cool-blue transition-colors cursor-pointer font-mono"
                           >
                             ${entry.savedPrice.toFixed(2)}
@@ -271,23 +272,23 @@ export default function PriceSheetPanel({ authToken }: Props) {
                         {entry.marketPrice !== null ? (
                           <span className="text-live-emerald">${entry.marketPrice.toFixed(2)}</span>
                         ) : entry.marketStale ? (
-                          <span className="text-starlight/30">stale</span>
+                          <span className="text-starlight/60">stale</span>
                         ) : (
-                          <span className="text-starlight/30">—</span>
+                          <span className="text-starlight/60">—</span>
                         )}
                         {entry.marketAgeH !== null && entry.marketPrice !== null && (
-                          <span className="ml-1 text-[8px] text-starlight/30">{entry.marketAgeH}h</span>
+                          <span className="ml-1 text-micro text-starlight/60">{entry.marketAgeH}h</span>
                         )}
                       </td>
 
                       {/* Diff */}
                       <td className="px-3 py-2 text-right hidden sm:table-cell">
                         {diff !== null ? (
-                          <span className={stale ? "text-yellow-400 font-black" : "text-starlight/40"}>
+                          <span className={stale ? "text-stale-amber font-black" : "text-starlight/60"}>
                             {diff > 0 ? "+" : ""}{diff}%
                           </span>
                         ) : (
-                          <span className="text-starlight/20">—</span>
+                          <span className="text-starlight/60">—</span>
                         )}
                       </td>
 
@@ -299,18 +300,20 @@ export default function PriceSheetPanel({ authToken }: Props) {
                               onClick={() => syncOne(entry)}
                               disabled={syncingItem === entry.itemId}
                               title="Use Menards price"
-                              className="p-1 rounded hover:bg-cool-blue/10 text-cool-blue/50 hover:text-cool-blue transition-all cursor-pointer disabled:opacity-40"
+                              aria-label={`Use Menards price for ${entry.name}`}
+                              className="flex h-9 w-9 items-center justify-center rounded hover:bg-cool-blue/10 text-cool-blue/60 hover:text-cool-blue transition-all cursor-pointer disabled:opacity-40"
                             >
-                              <ArrowDownToLine className={`w-3 h-3 ${syncingItem === entry.itemId ? "animate-bounce" : ""}`} />
+                              <ArrowDownToLine className={`w-3.5 h-3.5 ${syncingItem === entry.itemId ? "animate-spin" : ""}`} />
                             </button>
                           )}
                           <button
                             onClick={() => deleteEntry(entry.itemId)}
                             disabled={deletingItem === entry.itemId}
                             title="Remove from saved prices"
-                            className="p-1 rounded hover:bg-alert-rose/10 text-alert-rose/40 hover:text-alert-rose transition-all cursor-pointer disabled:opacity-40"
+                            aria-label={`Remove ${entry.name} from saved prices`}
+                            className="flex h-9 w-9 items-center justify-center rounded hover:bg-alert-rose/10 text-alert-rose/60 hover:text-alert-rose transition-all cursor-pointer disabled:opacity-40"
                           >
-                            <Trash2 className="w-3 h-3" />
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       </td>
@@ -320,7 +323,7 @@ export default function PriceSheetPanel({ authToken }: Props) {
               </tbody>
             </table>
           </div>
-          <p className="text-[9px] text-starlight/30 font-mono mt-1.5 pl-1">
+          <p className="text-micro text-starlight/60 font-mono mt-1.5 pl-1">
             Click any price to edit inline. Amber diff = &gt;10% from Menards market.
           </p>
         </section>
@@ -329,16 +332,16 @@ export default function PriceSheetPanel({ authToken }: Props) {
       {/* ── Menards catalog — not yet saved ── */}
       {data && data.marketOnly.length > 0 && (
         <section>
-          <h3 className="text-[9px] font-black uppercase tracking-widest text-starlight/50 mb-2">
+          <h3 className="text-micro font-black uppercase tracking-widest text-starlight/60 mb-2">
             Menards Catalog — Not in Your Price Book
           </h3>
           <div className="border border-white/10 rounded-xl overflow-hidden">
-            <table className="w-full text-[10px] font-mono">
+            <table className="w-full text-mini font-mono">
               <thead>
                 <tr className="border-b border-white/10 bg-white/3">
-                  <th className="text-left px-3 py-2 text-[9px] font-black uppercase tracking-widest text-starlight/40">Item</th>
-                  <th className="text-left px-3 py-2 text-[9px] font-black uppercase tracking-widest text-starlight/40 hidden sm:table-cell">Unit</th>
-                  <th className="text-right px-3 py-2 text-[9px] font-black uppercase tracking-widest text-starlight/40">Market Price</th>
+                  <th className="text-left px-3 py-2 text-micro font-black uppercase tracking-widest text-starlight/60">Item</th>
+                  <th className="text-left px-3 py-2 text-micro font-black uppercase tracking-widest text-starlight/60 hidden sm:table-cell">Unit</th>
+                  <th className="text-right px-3 py-2 text-micro font-black uppercase tracking-widest text-starlight/60">Market Price</th>
                   <th className="px-3 py-2 w-16"></th>
                 </tr>
               </thead>
@@ -349,17 +352,17 @@ export default function PriceSheetPanel({ authToken }: Props) {
                     className={`border-t border-white/5 ${i % 2 === 0 ? "bg-white/2" : ""} hover:bg-white/5 transition-colors`}
                   >
                     <td className="px-3 py-2 text-starlight/80 max-w-[200px] truncate">{item.name}</td>
-                    <td className="px-3 py-2 text-starlight/40 hidden sm:table-cell">{item.unit}</td>
+                    <td className="px-3 py-2 text-starlight/60 hidden sm:table-cell">{item.unit}</td>
                     <td className="px-3 py-2 text-right">
                       {item.price !== null ? (
                         <span className="text-live-emerald">
                           ${item.price.toFixed(2)}
                           {item.marketAgeH !== null && (
-                            <span className="ml-1 text-[8px] text-starlight/30">{item.marketAgeH}h</span>
+                            <span className="ml-1 text-micro text-starlight/60">{item.marketAgeH}h</span>
                           )}
                         </span>
                       ) : (
-                        <span className="text-starlight/30">stale</span>
+                        <span className="text-starlight/60">stale</span>
                       )}
                     </td>
                     <td className="px-3 py-2 text-right">
@@ -368,9 +371,10 @@ export default function PriceSheetPanel({ authToken }: Props) {
                           onClick={() => saveMarketItem(item)}
                           disabled={savingItem === item.key}
                           title="Save to your price book"
-                          className="p-1 rounded hover:bg-live-emerald/10 text-live-emerald/50 hover:text-live-emerald transition-all cursor-pointer disabled:opacity-40"
+                          aria-label={`Save ${item.name} to your price book`}
+                          className="flex h-9 w-9 items-center justify-center rounded hover:bg-live-emerald/10 text-live-emerald/60 hover:text-live-emerald transition-all cursor-pointer disabled:opacity-40"
                         >
-                          <Plus className={`w-3 h-3 ${savingItem === item.key ? "animate-spin" : ""}`} />
+                          <Plus className={`w-3.5 h-3.5 ${savingItem === item.key ? "animate-spin" : ""}`} />
                         </button>
                       )}
                     </td>
@@ -379,14 +383,14 @@ export default function PriceSheetPanel({ authToken }: Props) {
               </tbody>
             </table>
           </div>
-          <p className="text-[9px] text-starlight/30 font-mono mt-1.5 pl-1">
+          <p className="text-micro text-starlight/60 font-mono mt-1.5 pl-1">
             These use the Menards market price automatically. Save to your book to lock in a custom price.
           </p>
         </section>
       )}
 
       {data && data.priceBook.length === 0 && data.marketOnly.length === 0 && (
-        <div className="py-10 text-center text-starlight/30 text-xs font-mono">
+        <div className="py-10 text-center text-starlight/60 text-xs font-mono">
           No pricing data yet. Generate estimates to build your price book, or trigger a Menards sync.
         </div>
       )}

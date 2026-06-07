@@ -14,6 +14,7 @@
   /* Semantic + surface tokens (documented in DESIGN.md, previously hard-coded) */
   --color-live-emerald: #34d399;  /* "from the source" — live status, saved price-book */
   --color-alert-rose: #fb7185;    /* destructive / error only */
+  --color-stale-amber: #fbbf24;   /* price drift / staleness warning (Price Sheet) */
   --color-navy-deep: #20346a;     /* secondary-CTA gradient start */
   --color-navy-violet: #2e1d52;   /* secondary-CTA gradient end */
 

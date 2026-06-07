@@ -147,10 +147,10 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
   };
 
   const cellBtn = "text-starlight hover:text-cool-blue transition-colors cursor-pointer font-mono text-mini";
-  const thCls = "text-left px-3 py-2 text-micro font-black uppercase tracking-widest text-starlight/40";
-  const tdCls = "px-3 py-2 text-mini font-mono";
-  const inputCls = "w-24 bg-void-black border border-cool-blue/50 rounded px-1.5 py-1 text-right text-cool-blue outline-none text-mini font-mono";
-  const labelCls = "block text-micro uppercase font-black text-starlight/40 font-mono tracking-widest mb-1";
+  const thCls = "text-left px-2 sm:px-3 py-2 text-micro font-black uppercase tracking-widest text-starlight/60";
+  const tdCls = "px-2 sm:px-3 py-2 text-mini font-mono";
+  const inputCls = "w-20 sm:w-24 bg-void-black border border-cool-blue/50 rounded px-1.5 py-1 text-right text-cool-blue outline-none text-mini font-mono";
+  const labelCls = "block text-micro uppercase font-black text-starlight/60 font-mono tracking-widest mb-1";
 
   if (!open || !changeOrder) return null;
 
@@ -174,7 +174,7 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
             <h2 className="text-mini font-black text-starlight uppercase tracking-widest">Change Order</h2>
             <p className="text-micro text-soft-violet font-mono mt-0.5">{changeOrder.id}</p>
           </div>
-          <button onClick={onClose} aria-label="Close" className="text-starlight/50 hover:text-alert-rose transition-colors cursor-pointer">
+          <button onClick={onClose} aria-label="Close" className="flex h-11 w-11 -mr-2.5 items-center justify-center text-starlight/60 hover:text-alert-rose transition-colors cursor-pointer">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -184,16 +184,17 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
 
           {/* Change summary */}
           {changeOrder.change_summary && (
-            <p className="text-mini text-starlight/70 italic font-sans leading-relaxed border-l-2 border-soft-violet/40 pl-3">
+            <p className="text-mini text-starlight/70 italic font-sans leading-relaxed bg-soft-violet/5 border border-soft-violet/15 rounded-xl px-3 py-2.5">
               "{changeOrder.change_summary}"
             </p>
           )}
 
           {/* Client picker */}
           <div className="space-y-2">
-            <label className={labelCls}>Send to</label>
+            <label htmlFor="co-client" className={labelCls}>Send to</label>
             {clients.length > 0 && (
               <select
+                id="co-client"
                 value={selectedPhone}
                 onChange={e => { setSelectedPhone(e.target.value); setManualPhone(''); }}
                 style={{ colorScheme: 'dark' }}
@@ -208,6 +209,8 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
             {!selectedPhone && (
               <div>
                 <input
+                  id="co-phone"
+                  aria-label="Client phone number"
                   value={manualPhone}
                   onChange={e => setManualPhone(e.target.value)}
                   placeholder={clients.length > 0 ? 'Or type a phone number: (715) 555-0100' : 'Client phone: (715) 555-0100'}
@@ -224,21 +227,21 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
           {!hasItems && (
             <div className="border border-white/10 rounded-xl px-4 py-6 text-center">
               <p className="text-mini text-starlight/60 font-mono">No materials or labor were found in this change.</p>
-              <p className="text-micro text-starlight/40 font-mono mt-1">Close and describe the change with specific items and quantities.</p>
+              <p className="text-micro text-starlight/60 font-mono mt-1">Close and describe the change with specific items and quantities.</p>
             </div>
           )}
 
           {/* Materials table */}
           {localMaterials.length > 0 && (
             <section>
-              <h3 className="text-micro font-black uppercase tracking-widest text-starlight/50 mb-2">Materials added</h3>
+              <h3 className="text-micro font-black uppercase tracking-widest text-starlight/60 mb-2">Materials added</h3>
               <div className="border border-white/10 rounded-xl overflow-hidden">
                 <table className="w-full">
                   <thead>
                     <tr className="border-b border-white/10 bg-white/3">
                       <th className={thCls}>Item</th>
                       <th className={`${thCls} text-right`}>Qty</th>
-                      <th className={`${thCls} text-right hidden sm:table-cell`}>Unit Price</th>
+                      <th className={`${thCls} text-right`}>Unit Price</th>
                       <th className={`${thCls} text-right`}>Total</th>
                     </tr>
                   </thead>
@@ -258,7 +261,7 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
                             <button onClick={() => startEdit(`mat-qty-${i}`, m.quantity)} aria-label={`Edit quantity for ${m.name}`} className={cellBtn}>{m.quantity}</button>
                           )}
                         </td>
-                        <td className={`${tdCls} text-right hidden sm:table-cell`}>
+                        <td className={`${tdCls} text-right`}>
                           {editingCell === `mat-price-${i}` ? (
                             <input autoFocus type="number" step="0.01" value={editValue}
                               aria-label={`Unit price for ${m.name}`}
@@ -282,14 +285,14 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
           {/* Labor table */}
           {localLabor.length > 0 && (
             <section>
-              <h3 className="text-micro font-black uppercase tracking-widest text-starlight/50 mb-2">Labor added</h3>
+              <h3 className="text-micro font-black uppercase tracking-widest text-starlight/60 mb-2">Labor added</h3>
               <div className="border border-white/10 rounded-xl overflow-hidden">
                 <table className="w-full">
                   <thead>
                     <tr className="border-b border-white/10 bg-white/3">
                       <th className={thCls}>Role</th>
                       <th className={`${thCls} text-right`}>Hours</th>
-                      <th className={`${thCls} text-right hidden sm:table-cell`}>Rate/hr</th>
+                      <th className={`${thCls} text-right`}>Rate/hr</th>
                       <th className={`${thCls} text-right`}>Total</th>
                     </tr>
                   </thead>
@@ -309,7 +312,7 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
                             <button onClick={() => startEdit(`lab-hrs-${i}`, l.hours)} aria-label={`Edit hours for ${l.role}`} className={cellBtn}>{l.hours}</button>
                           )}
                         </td>
-                        <td className={`${tdCls} text-right hidden sm:table-cell`}>
+                        <td className={`${tdCls} text-right`}>
                           {editingCell === `lab-rate-${i}` ? (
                             <input autoFocus type="number" step="1" value={editValue}
                               aria-label={`Rate for ${l.role}`}
@@ -333,7 +336,7 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
           {/* Exclusions */}
           {changeOrder.exclusions && changeOrder.exclusions.length > 0 && (
             <section>
-              <h3 className="text-micro font-black uppercase tracking-widest text-starlight/50 mb-2">Not included</h3>
+              <h3 className="text-micro font-black uppercase tracking-widest text-starlight/60 mb-2">Not included</h3>
               <div className="bg-alert-rose/5 border border-alert-rose/15 rounded-xl px-4 py-3">
                 <ul className="space-y-1">
                   {changeOrder.exclusions.map((ex, i) => (
@@ -376,7 +379,7 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
             </div>
           )}
           <div className="flex items-center justify-between gap-3">
-            <p className="text-micro text-starlight/40 font-mono">
+            <p className="text-micro text-starlight/60 font-mono">
               {validPhone && hasItems
                 ? <>Texts a review link to <span className="text-starlight/70">{validPhone}</span></>
                 : 'Pick a client to send to'}

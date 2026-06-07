@@ -113,7 +113,7 @@ export default function PDFPreviewModal({ open, authToken, estimateId, projectNa
   };
 
   const inputCls = "w-full bg-void-black border border-white/10 focus:border-cool-blue rounded-lg px-2 py-1.5 text-mini font-mono text-starlight outline-none transition-colors";
-  const labelCls = "block text-micro uppercase font-black text-starlight/40 font-mono tracking-widest mb-1";
+  const labelCls = "block text-micro uppercase font-black text-starlight/60 font-mono tracking-widest mb-1";
 
   if (!open) return null;
 
@@ -140,7 +140,8 @@ export default function PDFPreviewModal({ open, authToken, estimateId, projectNa
           <button
             onClick={handleClose}
             disabled={sending}
-            className="text-starlight/50 hover:text-alert-rose transition-colors cursor-pointer disabled:opacity-40"
+            aria-label="Close"
+            className="flex h-11 w-11 -mr-2.5 items-center justify-center text-starlight/60 hover:text-alert-rose transition-colors cursor-pointer disabled:opacity-40"
           >
             <X className="w-5 h-5" />
           </button>
@@ -151,7 +152,7 @@ export default function PDFPreviewModal({ open, authToken, estimateId, projectNa
           {loading && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
               <RefreshCw className="w-8 h-8 text-soft-violet animate-spin" />
-              <span className="text-micro text-starlight/50 font-mono uppercase tracking-widest">Building preview…</span>
+              <span className="text-micro text-starlight/60 font-mono uppercase tracking-widest">Building preview…</span>
             </div>
           )}
           {error && !loading && (
@@ -181,8 +182,9 @@ export default function PDFPreviewModal({ open, authToken, estimateId, projectNa
           {/* Recipient strip */}
           <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_2fr] gap-2">
             <div>
-              <label className={labelCls}>Client Name</label>
+              <label htmlFor="pdf-client-name" className={labelCls}>Client Name</label>
               <input
+                id="pdf-client-name"
                 value={localName}
                 onChange={e => setLocalName(e.target.value)}
                 placeholder="Jane Smith"
@@ -190,8 +192,9 @@ export default function PDFPreviewModal({ open, authToken, estimateId, projectNa
               />
             </div>
             <div>
-              <label className={labelCls}>Phone</label>
+              <label htmlFor="pdf-client-phone" className={labelCls}>Phone</label>
               <input
+                id="pdf-client-phone"
                 value={localPhone}
                 onChange={e => setLocalPhone(e.target.value)}
                 placeholder="(715) 555-0100"
@@ -199,8 +202,9 @@ export default function PDFPreviewModal({ open, authToken, estimateId, projectNa
               />
             </div>
             <div>
-              <label className={labelCls}>Address</label>
+              <label htmlFor="pdf-client-address" className={labelCls}>Address</label>
               <input
+                id="pdf-client-address"
                 value={localAddress}
                 onChange={e => setLocalAddress(e.target.value)}
                 placeholder="123 Oak St, Wausau WI"
@@ -208,11 +212,11 @@ export default function PDFPreviewModal({ open, authToken, estimateId, projectNa
               />
             </div>
           </div>
-          <p className="text-micro text-starlight/40 font-mono">These are applied to the PDF when you send.</p>
+          <p className="text-micro text-starlight/60 font-mono">These are applied to the PDF when you send.</p>
 
           {/* Button row */}
           <div className="flex items-center justify-between gap-4">
-            <p className="text-micro text-starlight/40 font-mono leading-snug">
+            <p className="text-micro text-starlight/60 font-mono leading-snug">
               Estimate number assigned on send · Logo and company info pulled from Settings
             </p>
             <div className="flex items-center gap-3 shrink-0">
