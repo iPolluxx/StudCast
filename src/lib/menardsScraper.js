@@ -47,39 +47,15 @@ async function fetchMenardsPrice(url) {
 
 async function scrapeMenardsPrices(db) {
     let scraped = 0, failed = 0;
-    const results = [];
+    const now = new Date();
 
     for (const sku of SKUs) {
+        const ref = db.collection('market_prices').doc('menards')
+                      .collection('items').doc(sanitizeItemId(sku.key));
         try {
             const price = await fetchMenardsPrice(sku.url);
             if (price && price > 0) {
-                results.push({ sku, price });
-                scraped++;
-                console.log(`[menards] ✓ ${sku.name}: $${price}`);
-            } else {
-                results.push({ sku, price: null });
-                failed++;
-                console.warn(`[menards] ✗ ${sku.name}: no price extracted`);
-            }
-        } catch (err) {
-            results.push({ sku, price: null });
-            failed++;
-            console.warn(`[menards] ✗ ${sku.name}: ${err.message}`);
-        }
-        // Polite delay — avoid hammering Oxylabs rate limits
-        await new Promise(r => setTimeout(r, 600));
-    }
-
-    // Batch-write to Firestore (stay under 499-op limit per batch)
-    const now = new Date();
-    const CHUNK = 499;
-    for (let i = 0; i < results.length; i += CHUNK) {
-        const batch = db.batch();
-        for (const { sku, price } of results.slice(i, i + CHUNK)) {
-            const ref = db.collection('market_prices').doc('menards')
-                          .collection('items').doc(sanitizeItemId(sku.key));
-            if (price !== null) {
-                batch.set(ref, {
+                await ref.set({
                     name:       sku.name,
                     price,
                     unit:       sku.unit,
@@ -87,12 +63,20 @@ async function scrapeMenardsPrices(db) {
                     url:        sku.url,
                     stale:      false,
                 });
+                scraped++;
+                console.log(`[menards] ✓ ${sku.name}: $${price}`);
             } else {
-                // Preserve last good price — only flip stale flag
-                batch.set(ref, { stale: true, last_attempted: now }, { merge: true });
+                await ref.set({ stale: true, last_attempted: now }, { merge: true });
+                failed++;
+                console.warn(`[menards] ✗ ${sku.name}: no price extracted`);
             }
+        } catch (err) {
+            await ref.set({ stale: true, last_attempted: now }, { merge: true });
+            failed++;
+            console.warn(`[menards] ✗ ${sku.name}: ${err.message}`);
         }
-        await batch.commit();
+        // Polite delay — avoid hammering Oxylabs rate limits
+        await new Promise(r => setTimeout(r, 600));
     }
 
     await db.collection('market_prices').doc('menards').set(
