@@ -22,7 +22,7 @@ A dark, luminous palette: a near-black space ground, a cool-blue → soft-violet
 | `cool-blue` | `#6eb5ff` | **Trust:** money, totals, prices, primary actions, focus glow |
 | `soft-violet` | `#a78bfa` | **Intelligence:** AI moments only (extraction, change orders, `ai` price badge) |
 | `starlight` | `#e2e8f0` | Default text; reduced opacity (`/70`, `/60`) for secondary/muted |
-| `live-emerald` | `#34d399` | Status / "from the source": LIVE badge, `database` (saved price-book) badge |
+| `live-emerald` | `#34d399` | Status / "from the source": LIVE badge, `database` (saved price-book) badge, `market` (Menards live) badge |
 | `alert-rose` | `#fb7185` | Destructive / error **only** (delete, publish error, exclusions) |
 | `navy-deep` / `navy-violet` | `#20346a` / `#2e1d52` | Secondary-CTA ("Publish & Send PDF") resting gradient |
 
@@ -101,3 +101,13 @@ Easings used: `cubic-bezier(0.4,0,0.2,1)` (standard), `cubic-bezier(0.16,1,0.3,1
 | Error / destructive | `alert-rose` `#fb7185` (`border-alert-rose/40 bg-alert-rose/10`) |
 | AI-generated | `soft-violet` `#a78bfa` (`bg-soft-violet/20 text-soft-violet`) |
 | Override / trusted value | `cool-blue` `#6eb5ff` (`bg-cool-blue/20 text-cool-blue`) |
+| Stale / drift warning | `yellow-400` — used exclusively for the price-drift flag in PriceSheetPanel (diff ≥ 10% from Menards); not a named design-system token, only appears in that component |
+
+**Price-source badge pattern** (LedgerTable + PriceSheetPanel):
+
+| Source | Badge label | Color |
+| :--- | :--- | :--- |
+| Manual override | **Yours** | `cool-blue` |
+| Saved price book | **Saved** | `live-emerald` |
+| Menards market | **Menards · Xh** (age in hours) | `live-emerald` |
+| AI fallback | **Est.** | `soft-violet` |

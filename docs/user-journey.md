@@ -91,18 +91,19 @@ This document details the step-by-step user journey of a residential contractor 
   * They notice the AI calculated standard pricing. They decide to tweak a line item.
   * The contractor clicks directly into a cell on the grid—such as the drywall price or the labor hours—and types the new value (fractional quantities/hours are allowed). The active cell glows cool-blue to show it is in edit mode, and on desktop they can drive the grid by keyboard (Enter to advance down / add a row, ↑/↓ to move between rows).
   * The project total, taxes, and subtotals recalculate instantly at the bottom of the ledger.
-  * Each line carries a price-source badge — **Est.** (AI), **Yours** (manual), **Saved** (price book) — so it's clear where every number came from. *(The React app does not have a "Contractor vs Average Rates" toggle; pricing comes from the override → price-book → AI waterfall plus the manual rate-override panel.)*
+  * Each line carries a price-source badge reflecting the four-tier waterfall: **Yours** (manual cell override), **Saved** (contractor's price book), **Menards · Xh** (live Menards market price, age in hours shown in green), or **Est.** (AI fallback). This makes it instantly clear where every number came from and whether any price is pulled from a live supplier source. *(The React app does not have a "Contractor vs Average Rates" toggle; pricing comes from the four-tier override → price-book → market → AI waterfall plus the manual rate-override panel.)*
   * Deleting a line requires a two-step confirm, and the scope field autosaves on a debounce. *(The React app does not implement the legacy "Unsaved Changes Interceptor"; that modal exists only in `public/dashboard.html`.)*
 
 ---
 
-## Step 8: Uploading a Custom Pricing Spreadsheet
-* **Goal:** Upload their own catalog of materials to standardize future estimate pricing.
+## Step 8: Uploading a Custom Pricing Spreadsheet & Managing the Price Sheet
+* **Goal:** Upload their own catalog of materials to standardize future estimate pricing, and keep those prices current against live market data.
 * **Journey Details:**
   * To ensure the AI uses their actual supplier pricing instead of regional estimates, the contractor prepares a CSV file containing columns for item descriptions and unit prices.
   * They scroll to the **"Upload Pricing CSV"** section on the dashboard, click to select their file, and click **"Upload Pricing CSV"**.
   * A progress bar updates from 0% to 100% as the file is parsed and saved to their settings profile.
-  * From this point forward, when they record a voice note, the AI automatically checks their custom spreadsheet first to apply exact material costs before falling back to local averages.
+  * From this point forward, the full four-tier waterfall applies: (1) any manual cell override, (2) the contractor's saved price book, (3) Menards live market prices (weekly-scraped for ~70 common WI construction materials), and finally (4) the AI fallback. The ledger badge on each line makes the source visible.
+  * Over time, saved prices can go stale as market rates shift. The contractor opens **Settings → Price Sheet tab** to review a merged table of all their saved entries vs. current Menards market data. Amber rows flag items where the saved price has drifted more than 10% from market. A **"Sync all from Menards"** button updates every matched entry in one click. Individual row sync arrows and a delete button (which drops the item back to market/AI tier) are available for per-item control. Menards catalog items not yet in the price book appear in a second table for easy one-click saving.
 
 ---
 
