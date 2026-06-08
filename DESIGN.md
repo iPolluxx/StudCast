@@ -195,12 +195,12 @@ Depth is light, not shadow. This system is **glow-as-depth**: surfaces lift by g
 - **Primary (gradient CTA):** Linear gradient `cool-blue → soft-violet`, `void-black` text, uppercase mono label, tracked. Used for the headline actions: Subscribe, Dispatch Authorization, the mobile tools FAB. Confident and energetic by design.
 - **Secondary (Publish & Send):** Dark navy gradient (`#20346a → #2e1d52`) with a `cool-blue/30` border and starlight text at rest; on hover it *fills* with the cool-blue→violet gradient and flips text to `void-black`. The signature "charge up on hover" move.
 - **Hover / Focus:** Buttons brighten and many `scale-105`. Transitions ~200–300ms. Disabled drops to ~40–50% opacity. A spinning `RefreshCw` replaces the icon during async work.
-- **Ghost / icon:** Circular, `bg-white/5`, `border-white/10`, cool-blue icon; hover raises background opacity. Used for the settings gear, viz-size controls, AR pills.
+- **Ghost / icon:** Circular, `bg-white/5` (or `bg-void-black/80` over the 3D canvas), `border-white/10`, cool-blue icon; hover raises background opacity. Used for the settings gear and viz-size controls. The AR control is the same shape in `soft-violet` (intelligence voice) rather than cool-blue.
 
 ### Chips / Badges
 - **Price-source badges:** Tiny uppercase mono pills (`rounded`, 4px) using the tint-on-tint pattern: background is the hue at ~20% opacity, text is the same hue at full. `ai` → soft-violet, `override` → cool-blue, `database` → live-emerald. This three-way color code is how the contractor sees at a glance where every price came from (trust through legibility).
 - **Status pill:** LIVE ESTIMATE — emerald pulsing dot + emerald tracked-caps mono label.
-- **Status flash:** A cool-blue/15 pill with sparkle icon that bounces in on a successful action ("3 ITEMS IN ESTIMATE", "PDF SENT TO…").
+- **Status flash:** A cool-blue/15 pill with sparkle icon that fades in (`animate-fade-in`, a one-time ease-out, never an infinite bounce) on a successful action ("3 ITEMS IN ESTIMATE", "PDF SENT TO…").
 
 ### Cards / Containers (Glass Panels)
 - **Corner Style:** `rounded-2xl` (16px) for panels and modals; `rounded-xl` (12px) for inner cards and instrument rows.
@@ -224,7 +224,7 @@ Depth is light, not shadow. This system is **glow-as-depth**: surfaces lift by g
 - The console you talk to. A 56px (`h-14 w-14`) circular button, gradient `#121829 → #3a2254` with a `#614582` border and a cool-blue mic icon at rest; pulses with a layered glow (`animate-orb-glow`). While listening it flips to a rose→violet gradient and emits expanding concentric rings (`ring-expand` 1/2/3) plus a jumping waveform bar row. While processing it shows a spinning loader. Entering theater mode on desktop it performs a two-rotation barrel-roll across the bridge and "lands" on the left rail with an overshoot bounce. This is the most expressive object in the system and the clearest expression of the energetic register.
 
 ### Material Yard (signature component)
-- A Three.js 3D viewport with three states: a draggable mini PIP (150–240px rounded-2xl glass tile), a theater banner (40–45vh, top-docked, with a gradient bleed into the content below), and fullscreen. Size controls are circular ghost buttons; an AR pill (violet gradient) launches WebXR. The "viewport" of the bridge metaphor.
+- A Three.js 3D viewport with three states: a draggable mini PIP (150–240px rounded-2xl glass tile), a theater banner (40–45vh, top-docked, with a gradient bleed into the content below), and fullscreen. Size controls are circular ghost buttons (cool-blue); the AR control is the same ghost-chip pattern in `soft-violet` (the intelligence voice), `bg-void-black/80` with a `soft-violet` glyph and border, launching WebXR. The "viewport" of the bridge metaphor. Loaded lazily (`React.lazy`) so Three.js stays out of the initial bundle.
 
 ## 6. Do's and Don'ts
 

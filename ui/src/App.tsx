@@ -876,8 +876,9 @@ export default function App() {
           {vizSize !== 'mini' && arToggle && (
             <button
               onClick={arToggle}
-              className="absolute bottom-4 right-4 z-10 h-9 w-9 rounded-full bg-gradient-to-tr from-[#3a1854]/80 to-violet-700/80 hover:from-violet-800 hover:to-violet-500 border border-violet-400/35 text-white text-micro font-black flex items-center justify-center backdrop-blur-md shadow-lg transition-colors cursor-pointer"
+              className="absolute bottom-4 right-4 z-10 h-9 w-9 rounded-full bg-void-black/80 hover:bg-soft-violet/25 text-soft-violet border border-soft-violet/35 text-micro font-black flex items-center justify-center backdrop-blur-md shadow-lg transition-colors cursor-pointer"
               title={isARActive ? 'Exit AR' : 'View in AR'}
+              aria-label={isARActive ? 'Exit AR' : 'View in AR'}
             >
               AR
             </button>
@@ -930,9 +931,9 @@ export default function App() {
           <button
             onClick={arToggle}
             onPointerDown={(e) => e.stopPropagation()}
-            className="mt-1 mr-0.5 h-6 px-2.5 rounded-full bg-gradient-to-r from-[#2d1050]/90 to-violet-700/80 hover:from-violet-900 hover:to-violet-600 border border-violet-500/30 text-white text-micro font-black backdrop-blur-md flex items-center gap-1.5 shadow-lg transition-colors cursor-pointer"
+            className="mt-1 mr-0.5 h-6 px-2.5 rounded-full bg-void-black/80 hover:bg-soft-violet/25 text-soft-violet border border-soft-violet/35 text-micro font-black backdrop-blur-md flex items-center gap-1.5 shadow-lg transition-colors cursor-pointer"
           >
-            <span className="w-1.5 h-1.5 rounded-full bg-violet-300 animate-pulse" />
+            <span className="w-1.5 h-1.5 rounded-full bg-soft-violet animate-pulse" />
             {isARActive ? 'Exit AR' : 'View in AR'}
           </button>
         )}
@@ -1298,7 +1299,7 @@ export default function App() {
         
         {/* Status Flash notification popup above orb */}
         {statusFlash && (
-          <div className="bg-cool-blue/15 border border-cool-blue/30 text-cool-blue px-3.5 py-1.5 rounded-full text-mini font-mono tracking-wider font-extrabold shadow-lg shadow-cool-blue/10 flex items-center gap-1.5 animate-bounce">
+          <div className="bg-cool-blue/15 border border-cool-blue/30 text-cool-blue px-3.5 py-1.5 rounded-full text-mini font-mono tracking-wider font-extrabold shadow-lg shadow-cool-blue/10 flex items-center gap-1.5 animate-fade-in">
             <Sparkles className="w-3.5 h-3.5 animate-spin" />
             + {statusFlash.toUpperCase()}
           </div>
