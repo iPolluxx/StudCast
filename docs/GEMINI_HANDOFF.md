@@ -1,7 +1,7 @@
 # Lone Ranger Estimator — Live Project Context
 > **Purpose:** This document is the handoff bridge between Gemini brainstorming sessions and Claude Code
 > implementation sessions. Update it after every meaningful work session.
-> **Last updated:** 2026-06-07 — Master price sheet UI (Settings → Price Sheet tab): merged price_book + Menards market view, inline edit, sync from Menards, delete; 5 new price-book API routes; revision 00058-bjf
+> **Last updated:** 2026-06-07 — Live microphone wired to `/api/process`; client details captured in the PDF preview; real change orders via a new editable `ChangeOrderModal` (client picker + `PUT /api/change-orders/:id` to persist edits + Twilio dispatch); full impeccable design pass (a11y, type tokens, focus traps, code-split Three.js 852→294 kB). Earlier same day: master price sheet UI + 5 price-book routes.
 
 ---
 
@@ -319,6 +319,52 @@ From `ui/dist/` (built by Dockerfile):
 ---
 
 ## Work Session Log
+
+### Session: 2026-06-07 — Live Mic, Real Change Orders + Client Capture, Design Pass
+
+#### What was built
+
+**1. Live microphone (replaced the orb simulation).** `App.tsx`'s `toggleRecording` was a `setTimeout` that injected one hardcoded transcript. It now does real capture: `getUserMedia` → `MediaRecorder` → stop on second tap → `FormData` POST to `POST /api/process` (the audio-extraction route that already existed but was never wired). Strips the codec suffix from `MediaRecorder.mimeType` (`audio/webm;codecs=opus` → `audio/webm`) so multer's allow-list matches; surfaces permission/empty-recording/server errors as status flashes.
+
+**2. Client details captured at PDF send time.** `PDFPreviewModal` gained a 3-field recipient strip (name / phone / address), pre-filled from the saved estimate. On send it persists those to Firestore via `POST /api/estimates/:id/save` *before* calling `generate-pdf`, and passes the typed values through `onConfirmSend` so the emailed PDF always has the right Bill To (the route reads client fields from the request body, so a stale closure would otherwise lose freshly-typed values). Added `client_phone` passthrough to the save route.
+
+**3. Real change orders + dispatch.** `handleGenerateChangeOrder` was a full client-side mock; it now calls `POST /api/change-orders/generate` (Gemini extraction → pricing waterfall → Puppeteer PDF, all already built backend-side). On success a new **`ChangeOrderModal`** opens — a full-width modal with an editable materials/labor ledger, a **client picker dropdown** derived from saved estimates (deduplicated by phone, with a manual-phone fallback), exclusions, a totals breakdown (materials-only 5.5% WI tax, matching backend), and a "Text to client" dispatch button calling `POST /api/change-orders/send` (real Twilio SMS, gated by `SMS_LIVE`). Removed the old client-side approval simulation (`clientPortalCo`, `handleClientApprove`, the "Amend Review Auth" modal) — approval now happens on the client's phone via the existing `/approve` route.
+
+**4. New backend route + refactor.** Added **`PUT /api/change-orders/:id`** so contractor edits in the modal actually persist: it recomputes totals from the edited line items (explicit overrides, no re-pricing) and regenerates the PDF, then dispatch sends the fresh version. Extracted a shared **`renderChangeOrderPdf()`** helper (used by both generate + update) to avoid duplicating the Puppeteer block. The modal only PUTs when the ledger was actually edited (a `dirty` flag), avoiding a redundant second PDF render on every send.
+
+**5. Design pass (impeccable critique → audit → polish).** Critique of the change-order/PDF flow scored 25/40; audit went 11 → 17 → 19/20. Fixes:
+- **Type:** every sub-11px `text-[Npx]` in `ChangeOrderModal`, `PDFPreviewModal`, and `PriceSheetPanel` lifted to the `text-micro`/`text-mini` tokens; change-order total promoted to `text-xl`.
+- **Copy:** cockpit jargon ("Formulate Change Addendum", "Dispatch Authorization") → plain contractor English ("Create change order", "Text to client").
+- **A11y:** `role="dialog"`/`aria-modal`/autofocus/Esc + a shared `trapTab()` focus trap (`focusTrap.ts`) on both modals; `htmlFor` label associations; `aria-label`s on icon-only controls; secondary text floored to `starlight/60` for contrast.
+- **Responsive:** change-order unit-price/rate columns no longer hidden on mobile (were uneditable on a phone); tables `overflow-x-auto`; 44px modal close targets.
+- **Anti-patterns:** removed a side-stripe border; `animate-bounce` → `animate-spin`/`animate-fade-in` (the status flash was looping infinitely); AR controls moved off raw `violet-700/800/900` gradients to the `soft-violet` ghost-chip pattern.
+- **Perf:** `ThreeVisualizer` is now `React.lazy` + `Suspense` — initial JS bundle dropped **852 kB → 294 kB**; Three.js loads on demand.
+- **Tokens/motion:** new `--color-stale-amber` token (drift flag); global `@media (prefers-reduced-motion: reduce)` guard added to `index.css`.
+
+**Deployed:** revision deploying this session (supersedes `00058-bjf`).
+
+#### Files created/modified
+```
+ui/src/App.tsx                          — live mic; real CO generation; client list; modal wiring; lazy ThreeVisualizer; AR controls; status-flash motion
+ui/src/components/ChangeOrderModal.tsx  — new: editable CO ledger + client picker + dispatch
+ui/src/components/PDFPreviewModal.tsx   — recipient strip; client-details save; focus trap
+ui/src/components/PriceSheetPanel.tsx   — type-token migration; a11y; touch targets; stale-amber
+ui/src/focusTrap.ts                     — new: shared modal Tab-trap helper
+ui/src/index.css                        — --color-stale-amber token; reduced-motion guard
+src/server.js                           — client_phone in save route; PUT /api/change-orders/:id; renderChangeOrderPdf() helper
+DESIGN.md, docs/*.md, README.md         — doc sync (4-tier waterfall, AR treatment, motion)
+```
+
+#### Backend routes touched
+| Method | Path | Change |
+|---|---|---|
+| POST | `/api/process` | now wired from the React UI (live mic audio) |
+| POST | `/api/estimates/:id/save` | `client_phone` now persisted |
+| POST | `/api/change-orders/generate` | refactored to use `renderChangeOrderPdf()` |
+| PUT | `/api/change-orders/:id` | **new** — persist edits + regenerate PDF |
+| POST | `/api/change-orders/send` | (unchanged) now driven from `ChangeOrderModal` |
+
+---
 
 ### Session: 2026-06-07 — Master Price Sheet UI
 
@@ -1276,7 +1322,10 @@ If you're reading this to catch up on what's been built:
 - The **GCP workstation** (`lone-ranger-unity-desktop`) is STOPPED; no longer needed — Three.js replaced Unity WebGL
 - The **Menards market pricing tier** is live — 70 verified SKUs scraped weekly via Oxylabs, stored in `market_prices/menards/items/` (global, not per-tenant). The pricing waterfall is now 4-tier: `override → database → market → ai`. Cloud Scheduler job fires every Monday 6AM CT. Green "Menards · Xh" badge appears in the ledger for market-priced items.
 - The **master price sheet** is live — Settings → "Price Sheet" tab shows the merged view of the contractor's saved prices vs. Menards market, with inline edit, per-item and bulk sync, and delete. Fixes the stale-price-book problem: contractors can one-tap sync all matched prices from the live Menards cache instead of updating hundreds of entries manually.
-- The **repo** is `github.com/iPolluxx/StudCast` — latest deployed revision: `lone-ranger-app-00058-bjf`. Product name is now **Lone Ranger Estimator** (StudCast retired as a brand name)
+- The **voice orb is now live** — tapping it records real audio (`getUserMedia` → `MediaRecorder`) and posts to `/api/process` for Gemini extraction. No longer a scripted demo. (Older docs that call it a "scripted demo" are stale.)
+- **Change orders are fully real** — `ChangeOrderModal` (editable ledger + client picker) calls `POST /api/change-orders/generate` and `POST /api/change-orders/send` (Twilio, gated by `SMS_LIVE`); contractor edits persist via `PUT /api/change-orders/:id` (regenerates the PDF). The old client-side approval simulation is gone. Client details (name/phone/address) are captured in the PDF preview's recipient strip and saved before the PDF renders.
+- The **frontend has had a full design pass** (impeccable critique/audit/polish, audit 19/20): type on tokens, modal focus traps + dialog semantics, contrast floored, 44px targets, mobile-editable change-order table, `--color-stale-amber` token, global reduced-motion guard, AR controls on `soft-violet`. `ThreeVisualizer` is lazy-loaded — initial JS bundle is 294 kB (was 852 kB).
+- The **repo** is `github.com/iPolluxx/StudCast` — latest deployed revision: see the most recent Work Session Log entry. Product name is now **Lone Ranger Estimator** (StudCast retired as a brand name)
 - The **next milestone** is Mode 2: contractor uploads a blueprint photo → Gemini vision extracts all walls → multi-wall JSON schema → Three.js renders the full floor plan
 - See `docs/app-features.md` for the full user-facing feature catalog
 - See `docs/user-journey.md` for the end-to-end contractor flow

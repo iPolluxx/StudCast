@@ -232,11 +232,14 @@ The workflow requires no secrets — the suite is entirely offline. A failing te
 | POST | `/api/auth/verify` | Public | OTP verification |
 | GET | `/api/estimates` | Bearer | List all estimates (summary) |
 | GET | `/api/estimates/:id` | Bearer | Full estimate with line items |
-| POST | `/api/estimates/:id/save` | Bearer | Save / update estimate |
+| POST | `/api/estimates/:id/save` | Bearer | Save / update estimate (incl. `client_name` / `client_phone` / `client_address`) |
 | DELETE | `/api/estimates/:id` | Bearer | Delete estimate |
 | POST | `/api/process-text` | Bearer + Sub | Text → extraction → priced ledger (3-stage pipeline when `PIPELINE_V2` is enabled) |
-| POST | `/api/process` | Bearer + Sub | Audio upload → Gemini extraction |
+| POST | `/api/process` | Bearer + Sub | Live mic audio → Gemini extraction (wired to the voice orb) |
 | POST | `/api/generate-pdf` | Bearer + Sub | Puppeteer PDF → email delivery |
+| POST | `/api/change-orders/generate` | Bearer + Sub | Scope change → Gemini → priced delta + Puppeteer PDF |
+| PUT | `/api/change-orders/:id` | Bearer + Sub | Persist edited line items + regenerate the PDF |
+| POST | `/api/change-orders/send` | Bearer + Sub | Twilio SMS approval link to the client (gated by `SMS_LIVE`) |
 | GET | `/api/settings` | Bearer | Load contractor profile |
 | POST | `/api/settings` | Bearer | Save contractor profile |
 | POST | `/api/billing/create-checkout` | Bearer | Stripe session creation |
@@ -259,23 +262,32 @@ The dashboard UI was rebuilt from scratch as a React 19 + TypeScript + Vite appl
 - **Cosmic glass aesthetic** — procedural canvas starfield with parallax inertia, glassmorphism panels, aurora gradient pools
 - **Workflow stage system** — CAPTURE → PROCESS → VISUALIZE → FINALIZE, driven by AI and interaction state
 - **Full-bleed Three.js canvas** — the 3D scene is the environment, not a panel
-- **Voice orb** — center-anchored interaction point with pulsing ring animations, waveform visualizer, and real-time status
+- **Voice orb** — live mic capture (`getUserMedia` → `MediaRecorder` → `POST /api/process`) with pulsing ring animations, waveform visualizer, and real-time status
 - **Collapsible ledger drawer** — bottom sheet with inline-editable material and labor tables
+- **PDF preview + send** — `PDFPreviewModal` renders the estimate and captures client name/phone/address before emailing
+- **Change order flow** — `ChangeOrderModal` with an editable delta ledger, a client picker (derived from saved estimates), and one-tap SMS dispatch to the client
 - **Floating instrument panels** — framing controls, price sheet, change order engine, visualizer settings
 
 **Component architecture:**
 
 ```
 ui/src/
-├── App.tsx                  ← orchestrator, auth, API wiring
+├── App.tsx                  ← orchestrator, auth, API wiring, live mic
 ├── types.ts
+├── focusTrap.ts             ← shared modal Tab-trap helper
 └── components/
-    ├── ThreeVisualizer.tsx   ← WebGL scene, both modes
+    ├── ThreeVisualizer.tsx   ← WebGL scene (lazy-loaded; kept out of the initial bundle)
     ├── SettingsModal.tsx     ← Profile | Price Sheet tab switcher
     ├── PriceSheetPanel.tsx   ← merged price_book + Menards market table
+    ├── PDFPreviewModal.tsx   ← estimate preview + client-details capture
+    ├── ChangeOrderModal.tsx  ← editable change-order ledger + client picker + dispatch
     ├── EstimateList.tsx
     └── LedgerTable.tsx
 ```
+
+> The dashboard surfaces have had a full accessibility/design pass: modal dialog
+> semantics + focus traps, design-token typography (11px floor), WCAG-floored
+> contrast, 44px touch targets, and a global reduced-motion guard.
 
 The legacy onboarding flow (Google OAuth → Phone OTP → Stripe) runs on the existing vanilla HTML stack and hands off to the React dashboard after authentication — zero-regression migration with no user-facing disruption.
 
