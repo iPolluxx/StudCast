@@ -126,7 +126,7 @@ export default function LedgerTable({
   // shouldn't vaporize a priced line. Mobile targets are a full 44px.
   const renderDelete = (origIdx: number, variant: "mobile" | "desktop") => {
     const confirming = confirmDeleteIdx === origIdx;
-    const box = variant === "mobile" ? "h-11 w-11" : "h-8 w-8";
+    const box = "h-11 w-11";
     if (confirming) {
       return (
         <div className="flex items-center justify-center gap-1">
@@ -171,7 +171,7 @@ export default function LedgerTable({
           onChange={(e) => onScopeChange(e.target.value)}
           placeholder="Describe the project scope — this appears on the PDF estimate sent to your client..."
           rows={3}
-          className="w-full bg-void-black/60 border border-white/10 rounded-xl px-3 py-2.5 text-mini text-starlight font-sans placeholder-starlight/60 outline-none focus:border-cool-blue/50 resize-none leading-relaxed"
+          className="w-full bg-void-black/60 border border-white/10 rounded-xl px-3 py-2.5 text-mini text-starlight font-sans placeholder-starlight/80 outline-none focus:border-cool-blue/50 resize-none leading-relaxed"
         />
       </div>
 

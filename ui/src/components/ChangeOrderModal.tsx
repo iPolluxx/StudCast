@@ -14,8 +14,9 @@ interface Props {
   clients: ClientOption[];
   authToken: string | null;
   activeEstimateId: string | null;
+  taxRate?: number;
   onClose: () => void;
-  onDispatched: () => void;
+  onDispatched: (phone: string) => void;
 }
 
 function normalizePhone(raw: string): string | null {
@@ -25,7 +26,7 @@ function normalizePhone(raw: string): string | null {
   return null;
 }
 
-export default function ChangeOrderModal({ open, changeOrder, clients, authToken, activeEstimateId, onClose, onDispatched }: Props) {
+export default function ChangeOrderModal({ open, changeOrder, clients, authToken, activeEstimateId, taxRate = 0.055, onClose, onDispatched }: Props) {
   const [selectedPhone, setSelectedPhone] = useState('');
   const [manualPhone, setManualPhone] = useState('');
   const [localMaterials, setLocalMaterials] = useState<MaterialItem[]>([]);
@@ -74,7 +75,6 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
 
   const matSubtotal = localMaterials.reduce((s, m) => s + (m.total ?? 0), 0);
   const labSubtotal = localLabor.reduce((s, l) => s + (l.total ?? 0), 0);
-  const taxRate = 0.055; // WI 5.5% — applied to materials only, matching backend
   const taxAmt = matSubtotal * taxRate;
   const coTotal = matSubtotal + labSubtotal + taxAmt;
 
@@ -142,7 +142,7 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
       });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.error || 'Send failed');
-      onDispatched();
+      onDispatched(validPhone!);
     } catch (e: any) {
       setDispatchError(e.message);
     } finally {
@@ -362,7 +362,7 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
                   <span>Labor subtotal</span><span>${labSubtotal.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between items-center px-4 py-2 text-mini font-mono text-starlight/60">
-                  <span>WI sales tax (5.5%)</span><span>${taxAmt.toFixed(2)}</span>
+                  <span>Sales tax ({(taxRate * 100).toFixed(2).replace(/\.?0+$/, '')}%)</span><span>${taxAmt.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between items-center px-4 py-4 bg-cool-blue/5">
                   <span className="text-micro font-black uppercase tracking-widest text-starlight/60">Change order total</span>
@@ -382,11 +382,20 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
               {dispatchError}
             </div>
           )}
+          {/* Blocking reason — visible and specific when CTA is locked */}
+          {(!validPhone || !hasItems) && !dispatchError && (
+            <div className="flex items-center gap-2 text-mini font-mono bg-void-black/60 border border-white/8 rounded-xl px-3 py-2 text-starlight/60">
+              {!hasItems
+                ? 'No items to send — close and describe the change with specific materials or labor.'
+                : 'Enter a client phone number above to enable sending.'}
+            </div>
+          )}
+
           <div className="flex items-center justify-between gap-3">
             <p className="text-micro text-starlight/60 font-mono">
               {validPhone && hasItems
-                ? <>Texts a review link to <span className="text-starlight/70">{validPhone}</span></>
-                : 'Pick a client to send to'}
+                ? <>Will text a review link to <span className="text-cool-blue font-black">{validPhone}</span></>
+                : null}
             </p>
             <div className="flex items-center gap-3 shrink-0">
               <button

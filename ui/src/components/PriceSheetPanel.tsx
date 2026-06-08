@@ -301,7 +301,7 @@ export default function PriceSheetPanel({ authToken }: Props) {
                               disabled={syncingItem === entry.itemId}
                               title="Use Menards price"
                               aria-label={`Use Menards price for ${entry.name}`}
-                              className="flex h-9 w-9 items-center justify-center rounded hover:bg-cool-blue/10 text-cool-blue/60 hover:text-cool-blue transition-all cursor-pointer disabled:opacity-40"
+                              className="flex h-11 w-11 items-center justify-center rounded hover:bg-cool-blue/10 text-cool-blue/60 hover:text-cool-blue transition-all cursor-pointer disabled:opacity-40"
                             >
                               <ArrowDownToLine className={`w-3.5 h-3.5 ${syncingItem === entry.itemId ? "animate-spin" : ""}`} />
                             </button>
@@ -311,7 +311,7 @@ export default function PriceSheetPanel({ authToken }: Props) {
                             disabled={deletingItem === entry.itemId}
                             title="Remove from saved prices"
                             aria-label={`Remove ${entry.name} from saved prices`}
-                            className="flex h-9 w-9 items-center justify-center rounded hover:bg-alert-rose/10 text-alert-rose/60 hover:text-alert-rose transition-all cursor-pointer disabled:opacity-40"
+                            className="flex h-11 w-11 items-center justify-center rounded hover:bg-alert-rose/10 text-alert-rose/60 hover:text-alert-rose transition-all cursor-pointer disabled:opacity-40"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -372,7 +372,7 @@ export default function PriceSheetPanel({ authToken }: Props) {
                           disabled={savingItem === item.key}
                           title="Save to your price book"
                           aria-label={`Save ${item.name} to your price book`}
-                          className="flex h-9 w-9 items-center justify-center rounded hover:bg-live-emerald/10 text-live-emerald/60 hover:text-live-emerald transition-all cursor-pointer disabled:opacity-40"
+                          className="flex h-11 w-11 items-center justify-center rounded hover:bg-live-emerald/10 text-live-emerald/60 hover:text-live-emerald transition-all cursor-pointer disabled:opacity-40"
                         >
                           <Plus className={`w-3.5 h-3.5 ${savingItem === item.key ? "animate-spin" : ""}`} />
                         </button>

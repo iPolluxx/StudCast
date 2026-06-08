@@ -7,6 +7,7 @@ interface Props {
   estimateTotal: number;
   approvedCoTotal: number;
   clientName: string;
+  contractorEmail: string;
   authToken: string;
   onClose: () => void;
   onSuccess: (r: { balance_due: number; invoice_number: string }) => void;
@@ -19,6 +20,7 @@ export default function InvoiceModal({
   estimateTotal,
   approvedCoTotal,
   clientName,
+  contractorEmail,
   authToken,
   onClose,
   onSuccess,
@@ -136,6 +138,14 @@ export default function InvoiceModal({
             </div>
           ) : (
             <>
+              {/* Delivery path — show exactly where the invoice goes */}
+              {contractorEmail && (
+                <div className="flex items-center gap-2 text-mini font-mono bg-void-black/60 border border-white/8 rounded-xl px-3 py-2">
+                  <span className="text-starlight/50 shrink-0">Invoice sent to</span>
+                  <span className="text-cool-blue font-black truncate">{contractorEmail}</span>
+                </div>
+              )}
+
               {/* Live balance breakdown */}
               <section className="border border-white/10 rounded-xl overflow-hidden">
                 <div className="divide-y divide-white/5">

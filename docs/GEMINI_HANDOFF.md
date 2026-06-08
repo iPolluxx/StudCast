@@ -1,7 +1,7 @@
 # Lone Ranger Estimator — Live Project Context
 > **Purpose:** This document is the handoff bridge between Gemini brainstorming sessions and Claude Code
 > implementation sessions. Update it after every meaningful work session.
-> **Last updated:** 2026-06-07 — Phase 1 housekeeping: removed the legacy extraction monolith + `mergeIntoLedger`; the V2 pipeline is now the **sole, unconditional** extraction path across all three ingestion routes (text, SMS webhook, **and audio** — the audio route was migrated to the pipeline). Frontend type-scale migration finished (`SettingsModal`/`EstimateList`/`ThreeVisualizer` → `text-micro`/`text-mini` + semantic colors); no components remain on ad-hoc sizes. Earlier same day: live microphone wired to `/api/process`; client details in the PDF preview; real change orders via `ChangeOrderModal` (+ `PUT /api/change-orders/:id`); full impeccable design pass (a11y, type tokens, focus traps, code-split Three.js 852→294 kB); master price sheet UI + 5 price-book routes.
+> **Last updated:** 2026-06-08 — CO/Invoice flow hardening: durable CO dispatch confirmation card (replaces ephemeral toast), `invoiced` status badge in estimate switcher, backend CO tax now reads from contractor settings (`tax_rate`) instead of hardcoded WI 5.5%, broken ChangeOrderModal ternary fixed (TypeScript TS1005). Final Invoice generation (backend + InvoiceModal) shipped in prior session. Earlier: Phase 1 housekeeping (legacy monolith removed, V2 sole path), type-scale migration, live mic, real change orders, client capture, full design pass, master price sheet UI.
 
 ---
 
@@ -330,6 +330,42 @@ From `ui/dist/` (built by Dockerfile):
 ---
 
 ## Work Session Log
+
+### Session: 2026-06-08 — CO/Invoice Flow Hardening + Backend Tax Fix
+
+#### What was built
+
+**1. Durable CO dispatch confirmation (P1 — replaced ephemeral toast).**
+After a change order is texted to a client, the instrument panel now shows a persistent green "Sent" card instead of a 5-second `statusFlash` toast. The card displays CO ID, dollar total (formatted), and the client phone number that was texted. It persists until the contractor explicitly taps "Create another." This is backed by a new `coDispatchedInfo` state in `App.tsx`; the ChangeOrderModal's `onDispatched` callback now receives the client phone number (`onDispatched: (phone: string) => void`).
+
+**2. `invoiced` status badge in estimate switcher.**
+`EstimateList.tsx` now renders a small `FileCheck` + "Invoiced" badge inline with the estimate name for any estimate whose `status === 'invoiced'`. The backend already sets this field on invoice generation; the badge just surfaces it. Also removed the 🚀 rocket emoji prefix from estimate rows.
+
+**3. Backend CO tax rate — reads from contractor settings.**
+Both CO routes were hardcoded to WI 5.5% (`0.055`). Fixed both to read `tax_rate` from the contractor's Firestore `settings/config` doc (falling back to 5.5% if not set), consistent with how the invoice and estimate routes handle taxes. Field renamed from `wi_sales_tax` → `sales_tax` in both generate and update routes (and the PUT response JSON). The `configSnap` was already loaded in both routes (for `defaultLaborRate`), so no extra Firestore read.
+
+**4. TypeScript TS1005 fix — ChangeOrderModal ternary.**
+The blocking-reason message panel had a malformed nested ternary (`? ... : ? ...` with no final branch), which broke `tsc -b`. Simplified to a two-branch ternary: the outer guard `(!validPhone || !hasItems)` already covers both cases, so the inner `!validPhone ?` condition was redundant.
+
+**5. Final Invoice flow (prior session — already deployed, documented here for completeness).**
+`POST /api/estimates/:id/generate-invoice` — takes `deposit_amount`, `payment_terms`, `payment_method_note`; reads approved CO totals; renders a Puppeteer PDF; emails to contractor; marks estimate `status: 'invoiced'` in Firestore. `InvoiceModal.tsx` — deposit input with live balance preview, payment terms select, payment instructions field, delivery disclosure showing contractor email, confirmation screen. `App.tsx` — "Generate Invoice" button in the action bar, `onSuccess` handler updates local estimate state to `invoiced`.
+
+#### Files modified
+```
+ui/src/App.tsx                          — coDispatchedInfo state; durable CO sent card; CheckCircle import
+ui/src/components/ChangeOrderModal.tsx  — onDispatched passes phone; ternary TS fix
+ui/src/components/EstimateList.tsx      — invoiced badge; FileCheck import; removed rocket emoji
+src/server.js                           — CO generate + PUT routes: tax_rate from settings, wi_sales_tax→sales_tax
+```
+
+#### Backend routes touched
+| Method | Path | Change |
+|---|---|---|
+| POST | `/api/change-orders/generate` | tax_rate read from settings; field renamed sales_tax |
+| PUT | `/api/change-orders/:id` | tax_rate read from settings; field renamed sales_tax |
+| POST | `/api/estimates/:id/generate-invoice` | new — PDF + email + status:invoiced (prior session) |
+
+---
 
 ### Session: 2026-06-07 — Phase 1 Housekeeping (Remove Legacy Monolith + Finish Type-Scale Migration)
 

@@ -16,6 +16,7 @@ import {
   Maximize,
   Wrench,
   FileText,
+  CheckCircle,
 } from "lucide-react";
 import type { Estimate, FramingIntent, MaterialItem, LaborItem, ChangeOrder, ContractorUserSettings } from "./types";
 // Three.js material yard is heavy (~Three core + addons); load it on demand so
@@ -26,6 +27,7 @@ import EstimateList from "./components/EstimateList";
 import LedgerTable from "./components/LedgerTable";
 import PDFPreviewModal from "./components/PDFPreviewModal";
 import ChangeOrderModal from "./components/ChangeOrderModal";
+import ChangeOrderInputModal from "./components/ChangeOrderInputModal";
 import InvoiceModal from "./components/InvoiceModal";
 
 // ── CUSTOM PROCEDURAL STARFIELD BACKGROUND COMPONENT ──
@@ -193,6 +195,8 @@ export default function App() {
   const [derivedChangeOrder, setDerivedChangeOrder] = useState<ChangeOrder | null>(null);
   const [changeOrderLoading, setChangeOrderLoading] = useState(false);
   const [changeOrderModalOpen, setChangeOrderModalOpen] = useState(false);
+  const [changeOrderInputModalOpen, setChangeOrderInputModalOpen] = useState(false);
+  const [coDispatchedInfo, setCoDispatchedInfo] = useState<{ id: string; total: number; phone: string } | null>(null);
   const [invoiceModal, setInvoiceModal] = useState<{
     estimateId: string;
     estimateTotal: number;
@@ -433,17 +437,14 @@ export default function App() {
     const nextId = "est-" + Date.now().toString(16);
     const newEst: Estimate = {
       id: nextId,
-      project_name: `Project Run #${estimates.length + 1}`,
-      scope_of_work: "Continuous wood-framed wall telemetry, integrated structural materials takeoff ledger.",
-      items: [
-        { name: "2x4x8ft Basic Wood Stud", quantity: 32, unit: "pcs", trade: "framing", unit_price: 5.75, total: 184.00, price_source: "ai", type: "material" },
-        { role: "Framing installation crew", hours: 6, rate: settings.default_labor_rate, total: settings.default_labor_rate * 6, type: "labor" }
-      ],
-      total_amount: 184.00 + (settings.default_labor_rate * 6),
-      item_count: 2,
-      client_name: "Bruce Sterling",
-      client_address: "Eagle River, WI",
-      client_phone: "+17155550192"
+      project_name: `New Estimate`,
+      scope_of_work: "",
+      items: [],
+      total_amount: 0,
+      item_count: 0,
+      client_name: "",
+      client_address: "",
+      client_phone: ""
     };
     setEstimates([...estimates, newEst]);
     setActiveEstimateId(nextId);
@@ -704,6 +705,7 @@ export default function App() {
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.error || 'Generation failed');
       setDerivedChangeOrder({ id: data.changeOrderId, ...data });
+      setChangeOrderInputModalOpen(false);
       setChangeOrderModalOpen(true);
     } catch (e: any) {
       setStatusFlash('Change order failed: ' + e.message);
@@ -715,11 +717,11 @@ export default function App() {
 
   if (appLoading) {
     return (
-      <div className="flex h-screen w-full items-center justify-center bg-[#050810]">
+      <div className="flex h-screen w-full items-center justify-center bg-void-black">
         <Starfield />
         <div className="text-center space-y-4 z-10">
-          <div className="h-12 w-12 rounded-full border-2 border-cool-blue border-t-transparent animate-spin mx-auto" style={{ borderColor: '#6eb5ff', borderTopColor: 'transparent' }} />
-          <p className="text-mini font-mono font-bold tracking-widest text-[#6eb5ff] uppercase">Initializing Orbit...</p>
+          <div className="h-12 w-12 rounded-full border-2 border-cool-blue border-t-transparent animate-spin mx-auto" />
+          <p className="text-mini font-mono font-bold tracking-widest text-cool-blue uppercase">Initializing Orbit...</p>
         </div>
       </div>
     );
@@ -745,24 +747,24 @@ export default function App() {
 
       {/* Subscription gate overlay */}
       {subscriptionGate && (
-        <div className="fixed inset-0 z-[60] bg-[#050810]/95 backdrop-blur-lg flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[60] bg-void-black/95 backdrop-blur-lg flex items-center justify-center p-4">
           <div className="glass-panel border-white/15 max-w-sm w-full rounded-2xl p-8 text-center space-y-5 shadow-2xl">
             <div className="h-14 w-14 rounded-full bg-gradient-to-tr from-cool-blue to-soft-violet mx-auto flex items-center justify-center">
               <span className="text-void-black font-black text-lg">LR</span>
             </div>
             <div>
               <h2 className="text-lg font-black text-white uppercase tracking-wide">Unlock Lone Ranger</h2>
-              <p className="text-mini text-[#e2e8f0]/60 mt-1">Subscribe to access AI estimating, PDF generation, and the 3D material yard.</p>
+              <p className="text-mini text-starlight/60 mt-1">Subscribe to access AI estimating, PDF generation, and the 3D material yard.</p>
             </div>
             <a
               href="/dashboard#subscribe"
-              className="block w-full py-3 bg-gradient-to-r from-cool-blue to-soft-violet text-[#050810] font-black rounded-full text-mini uppercase tracking-widest"
+              className="block w-full py-3 bg-gradient-to-r from-cool-blue to-soft-violet text-void-black font-black rounded-full text-mini uppercase tracking-widest"
             >
               Subscribe — $50/mo
             </a>
             <button
               onClick={() => setSubscriptionGate(false)}
-              className="text-mini text-[#e2e8f0]/40 hover:text-white font-mono uppercase tracking-wider"
+              className="text-mini text-starlight/40 hover:text-white font-mono uppercase tracking-wider"
             >
               Continue in demo mode
             </button>
@@ -771,15 +773,18 @@ export default function App() {
       )}
 
       {/* ── 1. TOP RAIL (exactly 48px / h-12) ── */}
-      <header className="h-12 border-b border-white/8 bg-[#0a0f1e]/80 backdrop-blur-md flex items-center justify-between px-6 shrink-0 relative z-40 select-none">
+      <header className="h-12 border-b border-white/8 bg-deep-navy/80 backdrop-blur-md flex items-center justify-between px-6 shrink-0 relative z-40 select-none">
         
         {/* Project trigger dropdown indicator */}
         <div className="relative">
           <button
             onClick={() => setProjectDropdownOpen(!projectDropdownOpen)}
-            className="flex items-center gap-2 hover:text-[#ffffff] transition-colors focus:outline-none cursor-pointer"
+            aria-haspopup="true"
+            aria-expanded={projectDropdownOpen}
+            aria-label="Switch estimate workspace"
+            className="flex items-center gap-2 hover:text-starlight transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cool-blue/50 rounded cursor-pointer"
           >
-            <span className="text-mini font-black tracking-widest text-[#ffffff] uppercase font-mono">
+            <span className="text-mini font-black tracking-widest text-starlight uppercase font-mono">
               {activeEstimate?.project_name ?? 'No Project'}
             </span>
             <span className="text-mini text-cool-blue/70 font-mono">▼</span>
@@ -819,7 +824,8 @@ export default function App() {
         <div>
           <button
             onClick={() => setSettingsOpen(true)}
-            className="h-8 w-8 rounded-full flex items-center justify-center bg-white/5 hover:bg-white/10 border border-white/10 text-starlight hover:text-[#ffffff] transition-all cursor-pointer"
+            aria-label="Open settings"
+            className="h-11 w-11 rounded-full flex items-center justify-center bg-white/5 hover:bg-white/10 border border-white/10 text-starlight hover:text-starlight transition-all cursor-pointer"
             id="settings-gear-button"
           >
             <Settings className="w-4 h-4 text-cool-blue" />
@@ -835,8 +841,8 @@ export default function App() {
           vizSize === 'mini'
             ? 'fixed z-30 flex flex-col items-end touch-none select-none'
             : vizSize === 'medium'
-            ? 'fixed top-12 left-0 right-0 h-[40vh] sm:h-[45vh] z-30 border-b border-white/10 shadow-2xl bg-[#050810]'
-            : 'fixed inset-0 z-50 bg-[#050810]'
+            ? 'fixed top-12 left-0 right-0 h-[40vh] sm:h-[45vh] z-30 border-b border-white/10 shadow-2xl bg-void-black'
+            : 'fixed inset-0 z-50 bg-void-black'
         }
         style={vizSize === 'mini' ? (pipPos
           ? { left: `${pipPos.x}px`, top: `${pipPos.y}px` }
@@ -850,7 +856,7 @@ export default function App() {
         {/* Canvas container — overflow-hidden clips the Three.js renderer */}
         <div className={
           vizSize === 'mini'
-            ? 'relative w-[150px] h-[100px] sm:w-[240px] sm:h-[160px] rounded-2xl overflow-hidden shadow-2xl border border-white/15 bg-[#050810]'
+            ? 'relative w-[150px] h-[100px] sm:w-[240px] sm:h-[160px] rounded-2xl overflow-hidden shadow-2xl border border-white/15 bg-void-black'
             : 'relative w-full h-full'
         }>
           <Suspense fallback={
@@ -876,7 +882,7 @@ export default function App() {
           {vizSize === 'medium' && (
             <div
               className="absolute bottom-0 left-0 right-0 pointer-events-none z-10"
-              style={{ height: '4rem', background: 'linear-gradient(to bottom, transparent 0%, #050810 100%)' }}
+              style={{ height: '4rem', background: 'linear-gradient(to bottom, transparent 0%, var(--color-void-black) 100%)' }}
             />
           )}
 
@@ -884,7 +890,7 @@ export default function App() {
           {vizSize !== 'mini' && arToggle && (
             <button
               onClick={arToggle}
-              className="absolute bottom-4 right-4 z-10 h-9 w-9 rounded-full bg-void-black/80 hover:bg-soft-violet/25 text-soft-violet border border-soft-violet/35 text-micro font-black flex items-center justify-center backdrop-blur-md shadow-lg transition-colors cursor-pointer"
+              className="absolute bottom-4 right-4 z-10 h-11 w-11 rounded-full bg-void-black/80 hover:bg-soft-violet/25 text-soft-violet border border-soft-violet/35 text-micro font-black flex items-center justify-center backdrop-blur-md shadow-lg transition-colors cursor-pointer"
               title={isARActive ? 'Exit AR' : 'View in AR'}
               aria-label={isARActive ? 'Exit AR' : 'View in AR'}
             >
@@ -898,7 +904,8 @@ export default function App() {
               <button
                 onClick={() => setVizSize('medium')}
                 onPointerDown={(e) => e.stopPropagation()}
-                className="h-7 w-7 rounded-full bg-void-black/80 hover:bg-cool-blue/30 text-cool-blue flex items-center justify-center backdrop-blur border border-white/20 cursor-pointer"
+                aria-label="Expand visualizer"
+                className="h-9 w-9 rounded-full bg-void-black/80 hover:bg-cool-blue/30 text-cool-blue flex items-center justify-center backdrop-blur border border-white/20 cursor-pointer"
                 title="Expand"
               >
                 <Maximize2 className="w-3.5 h-3.5" />
@@ -908,14 +915,16 @@ export default function App() {
               <>
                 <button
                   onClick={() => setVizSize('mini')}
-                  className="h-9 w-9 rounded-full bg-void-black/80 hover:bg-cool-blue/30 text-cool-blue flex items-center justify-center backdrop-blur border border-white/20 cursor-pointer"
+                  aria-label="Shrink visualizer to mini"
+                  className="h-11 w-11 rounded-full bg-void-black/80 hover:bg-cool-blue/30 text-cool-blue flex items-center justify-center backdrop-blur border border-white/20 cursor-pointer"
                   title="Shrink to mini"
                 >
                   <Minimize2 className="w-4 h-4" />
                 </button>
                 <button
                   onClick={() => setVizSize('full')}
-                  className="h-9 w-9 rounded-full bg-void-black/80 hover:bg-cool-blue/30 text-cool-blue flex items-center justify-center backdrop-blur border border-white/20 cursor-pointer"
+                  aria-label="Expand visualizer to fullscreen"
+                  className="h-11 w-11 rounded-full bg-void-black/80 hover:bg-cool-blue/30 text-cool-blue flex items-center justify-center backdrop-blur border border-white/20 cursor-pointer"
                   title="Fullscreen"
                 >
                   <Maximize className="w-4 h-4" />
@@ -925,6 +934,7 @@ export default function App() {
             {vizSize === 'full' && (
               <button
                 onClick={() => setVizSize('mini')}
+                aria-label="Exit fullscreen"
                 className="h-11 w-11 rounded-full bg-void-black/80 hover:bg-alert-rose/30 text-cool-blue flex items-center justify-center backdrop-blur border border-white/20 cursor-pointer"
                 title="Close fullscreen"
               >
@@ -983,6 +993,8 @@ export default function App() {
                     setLedgerExpanded(false);
                   }
                 }}
+                aria-label={item.tooltip}
+                aria-pressed={active}
                 className={`h-11 w-11 rounded-xl flex items-center justify-center transition-all cursor-pointer relative group ${
                   active
                     ? "bg-gradient-to-tr from-cool-blue to-soft-violet text-void-black shadow-lg shadow-cool-blue/25 scale-105 border-none"
@@ -991,9 +1003,9 @@ export default function App() {
                 title={item.tooltip}
               >
                 <item.icon className="w-4 h-4" />
-                
+
                 {/* Micro tooltip */}
-                <span className="absolute left-[54px] top-1/2 -translate-y-1/2 bg-[#050810]/95 border border-white/10 px-2.5 py-1 text-micro font-bold tracking-widest text-starlight uppercase rounded-lg shadow-xl opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity font-mono w-max">
+                <span className="absolute left-[54px] top-1/2 -translate-y-1/2 bg-void-black/95 border border-white/10 px-2.5 py-1 text-micro font-bold tracking-widest text-starlight uppercase rounded-lg shadow-xl opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity font-mono w-max">
                   {item.tooltip}
                 </span>
                 
@@ -1022,23 +1034,52 @@ export default function App() {
           <div className="fixed z-50 inset-x-3 bottom-3 max-h-[70vh] md:absolute md:inset-auto md:left-20 md:top-20 md:bottom-auto md:w-80 md:max-h-[70vh] overflow-y-auto glass-panel border-white/15 rounded-2xl p-5 shadow-2xl pointer-events-auto select-none animate-fade-in animate-slide-in">
           
           <div className="flex items-center justify-between border-b border-white/8 pb-3 mb-4">
-            <h3 className="text-mini font-black uppercase tracking-widest text-[#ffffff] flex items-center gap-1.5">
+            <h3 className="text-mini font-black uppercase tracking-widest text-starlight flex items-center gap-1.5">
               {activeInstrument === "pricing" && <DollarSign className="w-3.5 h-3.5 text-cool-blue" />}
               {activeInstrument === "change" && <Receipt className="w-3.5 h-3.5 text-cool-blue" />}
               {activeInstrument === "layers" && <Layers className="w-3.5 h-3.5 text-soft-violet" />}
-              
+              {activeInstrument === "sliders" && <Wrench className="w-3.5 h-3.5 text-cool-blue" />}
+
               {activeInstrument === "pricing" && "Prices & Supplier Sheet"}
               {activeInstrument === "change" && "Change Order Engine"}
               {activeInstrument === "layers" && "Visualization Specs"}
+              {activeInstrument === "sliders" && "Tools"}
             </h3>
             
             <button
               onClick={() => setActiveInstrument(null)}
-              className="text-starlight/50 hover:text-alert-rose transition-colors p-1"
+              aria-label="Close panel"
+              className="text-starlight/50 hover:text-alert-rose transition-colors p-2"
             >
               <X className="w-3.5 h-3.5" />
             </button>
           </div>
+
+          {/* MOBILE INSTRUMENT PICKER — shown when FAB opens the panel on small screens */}
+          {activeInstrument === "sliders" && (
+            <div className="space-y-2 font-mono">
+              <p className="text-micro text-starlight/50 font-sans mb-3">Choose a tool:</p>
+              {[
+                { id: "pricing" as const, icon: DollarSign, label: "Prices & Supplier Sheet", desc: "Override prices or upload a supplier CSV" },
+                { id: "change" as const, icon: Receipt, label: "Change Order Engine", desc: "Add scope changes and send to the client" },
+                { id: "layers" as const, icon: Layers, label: "Visualization Settings", desc: "Configure the 3D material yard" },
+              ].map((tool) => (
+                <button
+                  key={tool.id}
+                  onClick={() => setActiveInstrument(tool.id)}
+                  className="w-full flex items-center gap-3 p-3 rounded-xl border border-white/8 hover:border-cool-blue/30 hover:bg-cool-blue/5 text-left transition-all cursor-pointer group"
+                >
+                  <div className="h-9 w-9 rounded-lg bg-void-black/60 flex items-center justify-center shrink-0 border border-white/8 group-hover:border-cool-blue/30 transition-colors">
+                    <tool.icon className="w-4 h-4 text-cool-blue" />
+                  </div>
+                  <div>
+                    <span className="block text-mini font-black text-starlight tracking-wide">{tool.label}</span>
+                    <span className="block text-micro text-starlight/50 font-sans mt-0.5">{tool.desc}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* PRICES & SUPPLIER SHEET PANEL */}
           {activeInstrument === "pricing" && (
@@ -1117,46 +1158,70 @@ export default function App() {
           {/* 3. CHANGE ORDER FORMULATION PANEL */}
           {activeInstrument === "change" && (
             <div className="space-y-4 font-mono text-mini">
-              
-              <div className="space-y-1">
-                <span className="block text-micro font-black uppercase text-soft-violet tracking-wider">
-                  Describe the change
-                </span>
-                <textarea
-                  value={changeOrderInput}
-                  onChange={(e) => setChangeOrderInput(e.target.value)}
-                  placeholder="e.g., Add 12 sheets of OSB and 4 hours of framing labor..."
-                  className="w-full bg-[#050810]/80 h-16 border border-white/10 rounded-xl p-2.5 outline-none focus:border-cool-blue/60 focus:ring-1 focus:ring-cool-blue/10 backdrop-blur-md font-mono text-mini text-starlight"
-                />
-              </div>
 
-              <button
-                onClick={handleGenerateChangeOrder}
-                disabled={!changeOrderInput.trim() || changeOrderLoading || !activeEstimateId}
-                className="w-full py-2 border border-cool-blue/30 hover:border-cool-blue bg-cool-blue/10 hover:bg-cool-blue/20 transition-all font-black uppercase tracking-widest text-micro rounded-full text-cool-blue flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40"
-              >
-                {changeOrderLoading ? (
-                  <RefreshCw className="w-3 h-3 animate-spin" />
-                ) : (
-                  <Sparkles className="w-3.5 h-3.5 text-soft-violet" />
-                )}
-                {changeOrderLoading ? 'Creating…' : 'Create change order'}
-              </button>
-
-              {derivedChangeOrder && !changeOrderModalOpen && (
-                <div className="border border-white/10 bg-void-black/60 rounded-xl p-3.5 mt-2">
-                  <div className="flex justify-between items-center text-micro font-bold uppercase tracking-wider text-soft-violet">
-                    <span>Change order ready</span>
-                    <span className="text-cool-blue">{derivedChangeOrder.id}</span>
+              {coDispatchedInfo ? (
+                /* Durable sent-confirmation card — visible until user starts another CO */
+                <div className="border border-live-emerald/25 bg-live-emerald/5 rounded-xl p-3.5 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4 text-live-emerald shrink-0" />
+                    <span className="text-micro font-black uppercase tracking-wider text-live-emerald">Sent</span>
+                    <span className="text-micro text-starlight/40 font-mono ml-auto">{coDispatchedInfo.id}</span>
+                  </div>
+                  <div className="text-mini text-starlight/70 leading-snug">
+                    <span className="text-starlight font-black">${coDispatchedInfo.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    {' '}change order texted to{' '}
+                    <span className="text-cool-blue font-black">{coDispatchedInfo.phone}</span>
                   </div>
                   <button
-                    onClick={() => setChangeOrderModalOpen(true)}
-                    className="w-full mt-3 py-2 bg-gradient-to-r from-cool-blue to-soft-violet text-void-black font-black uppercase tracking-widest text-micro rounded-full transition-transform hover:scale-105 flex items-center justify-center gap-1.5 cursor-pointer"
+                    onClick={() => setCoDispatchedInfo(null)}
+                    className="w-full py-1.5 border border-white/10 hover:bg-white/5 text-starlight/60 hover:text-starlight text-micro font-black uppercase tracking-widest rounded-full transition-all cursor-pointer"
                   >
-                    <Send className="w-3.5 h-3.5" />
-                    Review &amp; send
+                    Create another
                   </button>
                 </div>
+              ) : (
+                <>
+                  <div className="space-y-1">
+                    <span className="block text-micro font-black uppercase text-soft-violet tracking-wider">
+                      Describe the change
+                    </span>
+                    <textarea
+                      value={changeOrderInput}
+                      onChange={(e) => setChangeOrderInput(e.target.value)}
+                      placeholder="e.g., Add 12 sheets of OSB and 4 hours of framing labor..."
+                      className="w-full bg-void-black/80 h-16 border border-white/10 rounded-xl p-2.5 outline-none focus:border-cool-blue/60 focus:ring-1 focus:ring-cool-blue/10 backdrop-blur-md font-mono text-mini text-starlight"
+                    />
+                  </div>
+
+                  <button
+                    onClick={handleGenerateChangeOrder}
+                    disabled={!changeOrderInput.trim() || changeOrderLoading || !activeEstimateId}
+                    className="w-full py-2 border border-cool-blue/30 hover:border-cool-blue bg-cool-blue/10 hover:bg-cool-blue/20 transition-all font-black uppercase tracking-widest text-micro rounded-full text-cool-blue flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40"
+                  >
+                    {changeOrderLoading ? (
+                      <RefreshCw className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <Sparkles className="w-3.5 h-3.5 text-soft-violet" />
+                    )}
+                    {changeOrderLoading ? 'Creating…' : 'Create change order'}
+                  </button>
+
+                  {derivedChangeOrder && !changeOrderModalOpen && (
+                    <div className="border border-white/10 bg-void-black/60 rounded-xl p-3.5 mt-2">
+                      <div className="flex justify-between items-center text-micro font-bold uppercase tracking-wider text-soft-violet">
+                        <span>Change order ready</span>
+                        <span className="text-cool-blue">{derivedChangeOrder.id}</span>
+                      </div>
+                      <button
+                        onClick={() => setChangeOrderModalOpen(true)}
+                        className="w-full mt-3 py-2 bg-gradient-to-r from-cool-blue to-soft-violet text-void-black font-black uppercase tracking-widest text-micro rounded-full transition-transform hover:scale-105 flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                        Review &amp; send
+                      </button>
+                    </div>
+                  )}
+                </>
               )}
 
             </div>
@@ -1238,8 +1303,8 @@ export default function App() {
                   onClick={toggleRecording}
                   className={`h-14 w-14 rounded-full flex items-center justify-center transition-all duration-300 border cursor-pointer ${
                     isRecording ? "bg-gradient-to-tr from-rose-500 to-soft-violet border-rose-300 scale-105"
-                      : aiProcessing ? "bg-[#0a0f1e] border-[#273a5a]"
-                      : "bg-gradient-to-tr from-[#121829] to-[#3a2254] border-[#614582] shadow-xl shadow-cool-blue/10"
+                      : aiProcessing ? "bg-deep-navy border-orb-processing"
+                      : "bg-gradient-to-tr from-orb-dark to-orb-violet border-orb-rim shadow-xl shadow-cool-blue/10"
                   }`}
                 >
                   {aiProcessing
@@ -1256,7 +1321,7 @@ export default function App() {
                   onChange={(e) => setTextPrompt(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleProcessNLP(textPrompt)}
                   placeholder="Type & enter..."
-                  className="w-full bg-[#050810]/80 border border-white/10 rounded-full py-1.5 px-3 text-mini text-starlight placeholder-starlight/30 focus:ring-1 focus:ring-cool-blue focus:outline-none font-mono"
+                  className="w-full bg-void-black/80 border border-white/10 rounded-full py-1.5 px-3 text-mini text-starlight placeholder-starlight/50 focus:ring-1 focus:ring-cool-blue focus:outline-none font-mono"
                 />
               </div>
             </div>
@@ -1319,7 +1384,7 @@ export default function App() {
             {[1, 2, 3, 4, 5, 4, 3, 2, 1].map((_bar, index) => (
               <span
                 key={index}
-                className="w-1 bg-[#6eb5ff] rounded-full animate-wave-bar"
+                className="w-1 bg-cool-blue rounded-full animate-wave-bar"
                 style={{
                   animationDelay: `${index * 0.1}s`,
                   height: "4px"
@@ -1348,8 +1413,8 @@ export default function App() {
               isRecording 
                 ? "bg-gradient-to-tr from-rose-500 to-soft-violet border-rose-300 scale-105" 
                 : aiProcessing
-                  ? "bg-[#0a0f1e] text-white border-[#273a5a]"
-                  : "bg-gradient-to-tr from-[#121829] to-[#3a2254] hover:from-[#1b2641] hover:to-[#4e316d] border-[#614582] shadow-xl shadow-cool-blue/5"
+                  ? "bg-deep-navy text-white border-orb-processing"
+                  : "bg-gradient-to-tr from-orb-dark to-orb-violet hover:from-orb-dark-hover hover:to-orb-violet-hover border-orb-rim shadow-xl shadow-cool-blue/5"
             }`}
             id="floating-voice-orb-button"
           >
@@ -1362,11 +1427,11 @@ export default function App() {
         </div>
 
         {/* State Label description text */}
-        <div className="bg-[#050810]/75 border border-white/5 px-4 py-1.5 rounded-full shadow-lg backdrop-blur-md">
-          <span className="text-micro font-black tracking-widest text-[#ffffff] uppercase font-mono block">
+        <div className="bg-void-black/75 border border-white/5 px-4 py-1.5 rounded-full shadow-lg backdrop-blur-md">
+          <span className="text-micro font-black tracking-widest text-starlight uppercase font-mono block">
             {isRecording ? "LISTENING..." : aiProcessing ? "BUILDING ESTIMATE..." : "DESCRIBE YOUR JOB"}
           </span>
-          <span className="text-micro text-[#e2e8f0]/60 italic font-sans max-w-xs line-clamp-1">
+          <span className="text-micro text-starlight/60 italic font-sans max-w-xs line-clamp-1">
             {isRecording ? "Speak naturally — materials, dimensions, openings..." : aiProcessing ? "Extracting materials and pricing..." : (activeEstimate?.scope_of_work ?? 'Tap orb or type below to start your estimate')}
           </span>
         </div>
@@ -1383,7 +1448,7 @@ export default function App() {
               }
             }}
             placeholder="Describe materials, dimensions, or scope..."
-            className="w-full bg-[#050810]/80 frosted-input border-white/10 rounded-full py-1.5 px-4 text-mini tracking-wide text-starlight placeholder-starlight/40 focus:ring-1 focus:ring-cool-blue focus:outline-none backdrop-blur-md font-mono"
+            className="w-full bg-void-black/80 frosted-input border-white/10 rounded-full py-1.5 px-4 text-mini tracking-wide text-starlight placeholder-starlight/50 focus:ring-1 focus:ring-cool-blue focus:outline-none backdrop-blur-md font-mono"
             style={{ paddingRight: "3rem" }}
           />
           {textPrompt.trim() !== "" && (
@@ -1400,7 +1465,7 @@ export default function App() {
       </section>
 
       {/* ── 4. LEDGER — inline below voice section ── */}
-      <section id="estimate-ledger-section" className="rounded-2xl border border-white/10 bg-[#0a0f1e]/60 backdrop-blur-md overflow-hidden">
+      <section id="estimate-ledger-section" className="rounded-2xl border border-white/10 bg-deep-navy/60 backdrop-blur-md overflow-hidden">
 
         {/* Total summary header bar */}
         <div className="flex items-center justify-between px-4 sm:px-6 py-3 bg-void-black/40 border-b border-white/5 select-none">
@@ -1412,18 +1477,29 @@ export default function App() {
           </div>
           <div className="flex items-center gap-3">
             {activeEstimate && (
-              <button
-                onClick={() => setInvoiceModal({
-                  estimateId: activeEstimate.id,
-                  estimateTotal: grandTotal,
-                  approvedCoTotal: 0,
-                  clientName: activeEstimate.client_name ?? '',
-                })}
-                className="flex items-center gap-1.5 px-3 py-1 border border-cool-blue/30 hover:border-cool-blue bg-cool-blue/5 hover:bg-cool-blue/15 rounded-full text-micro font-black uppercase tracking-widest text-cool-blue transition-all cursor-pointer"
-              >
-                <FileText className="w-3 h-3" />
-                Invoice
-              </button>
+              <>
+                <button
+                  onClick={() => setChangeOrderInputModalOpen(true)}
+                  aria-label="Create change order"
+                  className="flex items-center gap-1.5 px-3 py-2 min-h-[2.75rem] border border-soft-violet/30 hover:border-soft-violet bg-soft-violet/5 hover:bg-soft-violet/15 rounded-full text-micro font-black uppercase tracking-widest text-soft-violet transition-all cursor-pointer"
+                >
+                  <Wrench className="w-3 h-3" />
+                  Change Order
+                </button>
+                <button
+                  onClick={() => setInvoiceModal({
+                    estimateId: activeEstimate.id,
+                    estimateTotal: grandTotal,
+                    approvedCoTotal: 0,
+                    clientName: activeEstimate.client_name ?? '',
+                  })}
+                  aria-label="Generate invoice"
+                  className="flex items-center gap-1.5 px-3 py-2 min-h-[2.75rem] border border-cool-blue/30 hover:border-cool-blue bg-cool-blue/5 hover:bg-cool-blue/15 rounded-full text-micro font-black uppercase tracking-widest text-cool-blue transition-all cursor-pointer"
+                >
+                  <FileText className="w-3 h-3" />
+                  Invoice
+                </button>
+              </>
             )}
             <div className="text-right">
               <span className="text-micro text-starlight/40 font-bold tracking-widest uppercase block leading-none mb-0.5">
@@ -1579,19 +1655,34 @@ export default function App() {
         }}
       />
 
+      {changeOrderInputModalOpen && (
+        <ChangeOrderInputModal
+          value={changeOrderInput}
+          onChange={setChangeOrderInput}
+          onSubmit={handleGenerateChangeOrder}
+          loading={changeOrderLoading}
+          disabled={!changeOrderInput.trim() || !activeEstimateId}
+          onClose={() => setChangeOrderInputModalOpen(false)}
+        />
+      )}
+
       <ChangeOrderModal
         open={changeOrderModalOpen}
         changeOrder={derivedChangeOrder}
         clients={clients}
         authToken={authToken}
         activeEstimateId={activeEstimateId}
+        taxRate={settings.tax_rate / 100}
         onClose={() => { setChangeOrderModalOpen(false); setDerivedChangeOrder(null); setChangeOrderInput(''); }}
-        onDispatched={() => {
+        onDispatched={(phone) => {
           setChangeOrderModalOpen(false);
+          setCoDispatchedInfo({
+            id: derivedChangeOrder?.id ?? '',
+            total: derivedChangeOrder?.change_order_total ?? 0,
+            phone,
+          });
           setDerivedChangeOrder(null);
           setChangeOrderInput('');
-          setStatusFlash('Change order dispatched to client');
-          setTimeout(() => setStatusFlash(null), 5000);
         }}
       />
 
@@ -1601,6 +1692,7 @@ export default function App() {
           estimateTotal={invoiceModal.estimateTotal}
           approvedCoTotal={invoiceModal.approvedCoTotal}
           clientName={invoiceModal.clientName}
+          contractorEmail={settings.contact_email ?? ''}
           authToken={authToken ?? ''}
           onClose={() => setInvoiceModal(null)}
           onSuccess={(result) => {

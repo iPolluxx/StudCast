@@ -2915,11 +2915,12 @@ app.post('/api/change-orders/generate', requireAuth, requireSubscription, async 
             return { ...l, rate, total, type: 'labor' };
         });
 
-        // ── 5. Calculate change order total (materials + labor + 5.5% WI tax on materials) ──
+        // ── 5. Calculate change order total (materials + labor + contractor's configured tax rate) ──
         const matsSubtotal = pricedMaterials.reduce((s, m) => s + (m.total || 0), 0);
         const laborSubtotal = pricedLabor.reduce((s, l) => s + (l.total || 0), 0);
-        const wiSalesTax = Math.round(matsSubtotal * 0.055 * 100) / 100;
-        const changeOrderTotal = Math.round((matsSubtotal + laborSubtotal + wiSalesTax) * 100) / 100;
+        const taxRate = configSnap.exists ? ((configSnap.data().tax_rate || 5.5) / 100) : 0.055;
+        const salesTax = Math.round(matsSubtotal * taxRate * 100) / 100;
+        const changeOrderTotal = Math.round((matsSubtotal + laborSubtotal + salesTax) * 100) / 100;
 
         // ── 6. Cryptographic approval token ───────────────────────────
         const approvalToken = crypto.randomBytes(16).toString('hex');
@@ -2935,7 +2936,7 @@ app.post('/api/change-orders/generate', requireAuth, requireSubscription, async 
             exclusions: extracted.exclusions || [],
             materials_subtotal: Math.round(matsSubtotal * 100) / 100,
             labor_subtotal: Math.round(laborSubtotal * 100) / 100,
-            wi_sales_tax: wiSalesTax,
+            sales_tax: salesTax,
             change_order_total: changeOrderTotal,
             approval_token: approvalToken,
             status: 'pending',
@@ -3017,8 +3018,12 @@ app.put('/api/change-orders/:id', requireAuth, requireSubscription, async (req, 
 
         const matsSubtotal = materials.reduce((s, m) => s + (m.total || 0), 0);
         const laborSubtotal = labor.reduce((s, l) => s + (l.total || 0), 0);
-        const wiSalesTax = Math.round(matsSubtotal * 0.055 * 100) / 100;
-        const changeOrderTotal = Math.round((matsSubtotal + laborSubtotal + wiSalesTax) * 100) / 100;
+
+        // Regenerate the PDF so the client sees the edited line items
+        const configSnap = await db.collection('users').doc(userPhone).collection('settings').doc('config').get();
+        const coTaxRate = configSnap.exists ? ((configSnap.data().tax_rate || 5.5) / 100) : 0.055;
+        const salesTax = Math.round(matsSubtotal * coTaxRate * 100) / 100;
+        const changeOrderTotal = Math.round((matsSubtotal + laborSubtotal + salesTax) * 100) / 100;
 
         const coDoc = {
             ...coSnap.data(),
@@ -3026,12 +3031,9 @@ app.put('/api/change-orders/:id', requireAuth, requireSubscription, async (req, 
             added_labor: labor,
             materials_subtotal: Math.round(matsSubtotal * 100) / 100,
             labor_subtotal: Math.round(laborSubtotal * 100) / 100,
-            wi_sales_tax: wiSalesTax,
+            sales_tax: salesTax,
             change_order_total: changeOrderTotal,
         };
-
-        // Regenerate the PDF so the client sees the edited line items
-        const configSnap = await db.collection('users').doc(userPhone).collection('settings').doc('config').get();
         const profile = configSnap.exists ? configSnap.data() : {};
         try {
             coDoc.pdf_base64 = await renderChangeOrderPdf({ coDoc, parentEstimateId, profile, user: req.authedUser });
@@ -3047,7 +3049,7 @@ app.put('/api/change-orders/:id', requireAuth, requireSubscription, async (req, 
             change_order_total: changeOrderTotal,
             materials_subtotal: coDoc.materials_subtotal,
             labor_subtotal: coDoc.labor_subtotal,
-            wi_sales_tax: wiSalesTax,
+            sales_tax: salesTax,
         });
     } catch (err) {
         console.error(`[${userPhone}] change-orders update error:`, err.message);

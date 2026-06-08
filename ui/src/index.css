@@ -18,6 +18,15 @@
   --color-navy-deep: #20346a;     /* secondary-CTA gradient start */
   --color-navy-violet: #2e1d52;   /* secondary-CTA gradient end */
 
+  /* Orb-specific palette — the voice orb has its own micro-palette that sits */
+  /* between void-black and deep-navy. Tokenized so the orb identity is legible. */
+  --color-orb-dark: #121829;      /* orb body gradient start */
+  --color-orb-violet: #3a2254;    /* orb body gradient end */
+  --color-orb-dark-hover: #1b2641; /* orb body gradient start (hover) */
+  --color-orb-violet-hover: #4e316d; /* orb body gradient end (hover) */
+  --color-orb-rim: #614582;       /* orb resting border */
+  --color-orb-processing: #273a5a; /* orb border while AI is running */
+
   /* Type scale — fixed rem, ~1.18 ratio, 11px floor. Dense "instrument" tier below
      Tailwind's text-sm. Named (not numbered) so we commit to a scale, and rem so it
      respects user zoom. micro = labels/eyebrows/badges/headers; mini = data/body-small. */
