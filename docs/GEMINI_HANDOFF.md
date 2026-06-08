@@ -341,7 +341,7 @@ From `ui/dist/` (built by Dockerfile):
 - **Perf:** `ThreeVisualizer` is now `React.lazy` + `Suspense` — initial JS bundle dropped **852 kB → 294 kB**; Three.js loads on demand.
 - **Tokens/motion:** new `--color-stale-amber` token (drift flag); global `@media (prefers-reduced-motion: reduce)` guard added to `index.css`.
 
-**Deployed:** revision deploying this session (supersedes `00058-bjf`).
+**Deployed:** revision `lone-ranger-app-00059-545` (serving 100%; supersedes `00058-bjf`).
 
 #### Files created/modified
 ```
