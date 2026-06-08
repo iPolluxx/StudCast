@@ -20,7 +20,7 @@ const SEVERITIES = ['info', 'warn', 'critical'];
  * @returns {{ reviewLedger: (priced: object, ctx?: object) => Promise<ReviewResult> }}
  *
  * @typedef {{ itemId: string, severity: 'info'|'warn'|'critical', message: string }} Warning
- * @typedef {{ ledger: object, warnings: Warning[], status: 'ok'|'flagged' }} ReviewResult
+ * @typedef {{ ledger: object, warnings: Warning[], status: 'ok'|'flagged', usage: object }} ReviewResult
  */
 function createReviewer({ ai }) {
 
@@ -51,12 +51,14 @@ function createReviewer({ ai }) {
             `{ "warnings": [ { "itemId": "must match a line item itemId, or 'TOTAL'", "severity": "info|warn|critical", "message": "short human explanation" } ] }`;
 
         let warnings = [];
+        let usage = {};
         try {
             const response = await ai.models.generateContent({
                 model:    MODEL,
                 config:   { temperature: 0 },
                 contents: { role: 'user', parts: [{ text: prompt }] },
             });
+            usage = response.usageMetadata || {};
             const parsed = parseGeminiJSON(response.text);
             if (Array.isArray(parsed.warnings)) {
                 warnings = parsed.warnings
@@ -79,6 +81,7 @@ function createReviewer({ ai }) {
             ledger:   priced,                 // unchanged — non-destructive by contract
             warnings,
             status:   flagged ? 'flagged' : 'ok',
+            usage,                            // LLM #2 token usage (empty {} if the call failed)
         };
     }
 

@@ -66,13 +66,19 @@ function makeAi({ extraction, review, laborRate } = {}) {
     const generateContent = jest.fn((req) => {
         const text = JSON.stringify(req.contents);
         if (text.includes('final QA pass')) {
-            return Promise.resolve({ text: review ?? '{ "warnings": [] }' });
+            return Promise.resolve({
+                text: review ?? '{ "warnings": [] }',
+                usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 20, totalTokenCount: 120 },
+            });
         }
         if (text.includes('standard market hourly rate')) {
             return Promise.resolve({ text: laborRate ?? '{ "rate": 60 }' });
         }
         // default: Stage 1 extraction
-        return Promise.resolve({ text: extraction ?? '{ "projectName": "General", "materials": [], "labor": [] }' });
+        return Promise.resolve({
+            text: extraction ?? '{ "projectName": "General", "materials": [], "labor": [] }',
+            usageMetadata: { promptTokenCount: 200, candidatesTokenCount: 50, totalTokenCount: 250 },
+        });
     });
     return { models: { generateContent } };
 }
@@ -122,6 +128,12 @@ describe('pipeline — happy path', () => {
         // Stage 3 produced a verdict
         expect(result.status).toBe('ok');
         expect(result.warnings).toEqual([]);
+
+        // Token usage is aggregated across both LLM boundaries (Estimator + Reviewer)
+        // so the caller can record real cost/token metrics. Pricer adds none here.
+        expect(result.usage.promptTokenCount).toBe(300);     // 200 + 100
+        expect(result.usage.candidatesTokenCount).toBe(70);  // 50 + 20
+        expect(result.usage.totalTokenCount).toBe(370);      // 250 + 120
     });
 
     test('CRITICAL: Pricer spends ZERO AI tokens when a default labor rate exists', async () => {

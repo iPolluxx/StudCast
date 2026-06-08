@@ -20,7 +20,6 @@ const cors = require('cors');
 const { parseGeminiJSON, sanitizeItemId, normalizePhone, sanitizePhase1Intent } = require('./lib/sanitize');
 const { createPricingEngine } = require('./lib/pricingEngine');
 const { createPipeline } = require('./lib/pipeline');
-const { EXTRACTION_PROMPT, VALID_TRADES } = require('./lib/estimator');
 
 // ── Twilio Client (outbound SMS) ──────────────────────────────────────
 const twilio = require('twilio');
@@ -82,8 +81,8 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 // ── Pricing engine (db + ai injected so the functions are unit-testable) ─
 const { assignUnitPrice, assignLaborRate } = createPricingEngine({ db, ai });
 
-// V2 deterministic 3-stage pipeline (Estimator → Pricer → Reviewer).
-// Gated behind the PIPELINE_V2 env flag; see POST /api/process-text.
+// V2 deterministic 3-stage pipeline (Estimator → Pricer → Reviewer) — the sole
+// extraction path for all ingestion routes (text, SMS webhook, audio).
 const pipeline = createPipeline({ db, ai });
 
 // ── Google OAuth — serverless-first, file-based fallback ─────────────
@@ -277,6 +276,20 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// ── Token/cost accounting ─────────────────────────────────────────────
+// Turns an aggregated Gemini `usageMetadata` rollup (summed across the
+// pipeline's Estimator + Reviewer LLM calls) into the { llmTokens, cost }
+// pair logged per interaction and surfaced on the gateway dashboard.
+// Pricing matches the legacy formula: $1.50 / 1M input, $9.00 / 1M output.
+function computeLlmCost(usage = {}) {
+    const promptTokens = usage.promptTokenCount || 0;
+    const outputTokens = usage.candidatesTokenCount || 0;
+    return {
+        llmTokens: usage.totalTokenCount || (promptTokens + outputTokens),
+        cost:      (promptTokens * 1.50 + outputTokens * 9.00) / 1000000,
+    };
+}
 
 // ── Log AI Interaction to Firestore ──────────────────────────────────
 async function logInteraction({ source, inputType, processingTimeMs, cost, status, callerId, transcript, llmTokens, error }) {
@@ -541,30 +554,10 @@ async function requireSubscription(req, res, next) {
 // ══════════════════════════════════════════════════════════════════════
 
 /**
- * Prices extracted items, then merges them into the Firestore estimates collection
- * under the authenticated user's phone number document.
- *
- * @param {object} extracted  - { projectName, materials, labor }
- * @param {string} phone      - Authenticated user's E.164 phone number.
- * @param {string} zipCode    - User's zip code, passed to pricing engine.
- * @param {string} estimateId - Optional active estimate ID to merge into.
- */
-async function mergeIntoLedger(extracted, phone, zipCode, estimateId = null) {
-    const { projectName = 'General', scope_of_work = '', materials = [], labor = [] } = extracted;
-
-    // Legacy inline pricing, then hand off to the shared persistence layer below.
-    const [pricedMaterials, pricedLabor] = await Promise.all([
-        Promise.all(materials.map(item => assignUnitPrice(item, zipCode, phone))),
-        Promise.all(labor.map(item => assignLaborRate(item, phone))),
-    ]);
-
-    return persistLedger({ projectName, scope_of_work, pricedMaterials, pricedLabor }, phone, estimateId);
-}
-
-/**
  * Shared persistence layer — merges ALREADY-PRICED materials and labor into the
- * user's Firestore estimates collection. Used by BOTH the legacy mergeIntoLedger
- * path and the V2 pipeline path, so item pricing is never run twice.
+ * user's Firestore estimates collection. Used by all three ingestion routes
+ * (text, SMS webhook, audio), which price via the V2 pipeline before calling in,
+ * so item pricing is never run twice.
  *
  * @param {{ projectName: string, scope_of_work: string, pricedMaterials: object[], pricedLabor: object[] }} priced
  * @param {string} phone      - Authenticated user's E.164 phone number.
@@ -665,8 +658,8 @@ async function persistLedger({ projectName = 'General', scope_of_work = '', pric
 
 // ══════════════════════════════════════════════════════════════════════
 //  EXTRACTION SYSTEM PROMPT + VALID_TRADES
-//  Moved to src/lib/estimator.js (single source of truth, shared by the
-//  legacy monolith path below and the V2 pipeline). Imported at the top.
+//  Live in src/lib/estimator.js (single source of truth, used by the V2
+//  pipeline's Estimator stage). No longer referenced directly by server.js.
 // ══════════════════════════════════════════════════════════════════════
 
 // ══════════════════════════════════════════════════════════════════════
@@ -736,44 +729,22 @@ app.post('/api/webhook', async (req, res) => {
     let transcript = `User: ${text}`;
 
     try {
-        let responseMsg;
+        console.log(`[${from}] webhook: running pipeline (Estimator → Pricer → Reviewer)...`);
+        const reviewed = await pipeline.runPipeline(
+            { type: 'text', payload: text },
+            { userPhone: from, zipCode: user.zipCode }
+        );
+        const result = await persistLedger({
+            projectName:     reviewed.projectName,
+            scope_of_work:   reviewed.scope_of_work,
+            pricedMaterials: reviewed.materials,
+            pricedLabor:     reviewed.labor,
+        }, from, null);
 
-        if (process.env.PIPELINE_V2 === 'true') {
-            console.log(`[${from}] webhook: running PIPELINE_V2 (Estimator → Pricer → Reviewer)...`);
-            const reviewed = await pipeline.runPipeline(
-                { type: 'text', payload: text },
-                { userPhone: from, zipCode: user.zipCode }
-            );
-            const result = await persistLedger({
-                projectName:     reviewed.projectName,
-                scope_of_work:   reviewed.scope_of_work,
-                pricedMaterials: reviewed.materials,
-                pricedLabor:     reviewed.labor,
-            }, from, null);
-
-            status = 'Completed';
-            responseMsg = `Added ${result.itemCount} item(s) to "${result.projectName}". Ledger updated.`;
-            transcript = `User: ${text}\nAI: [v2] ${responseMsg} (${reviewed.warnings.length} warning(s))`;
-        } else {
-            // ── LEGACY monolithic path (delete after V2 validated in prod) ──
-            console.log(`Twilio Webhook: extracting items from text sent by ${from} (${user.companyName})...`);
-            const response = await ai.models.generateContent({
-                model: 'gemini-3.5-flash',
-                contents: { role: 'user', parts: [{ text: text + '\n\n' + EXTRACTION_PROMPT }] },
-            });
-            const usage = response.usageMetadata || {};
-            const promptTokens = usage.promptTokenCount || 0;
-            const outputTokens = usage.candidatesTokenCount || 0;
-            llmTokens = usage.totalTokenCount || (promptTokens + outputTokens);
-            cost = (promptTokens * 1.50 + outputTokens * 9.00) / 1000000;
-
-            const extracted = parseGeminiJSON(response.text);
-            const result    = await mergeIntoLedger(extracted, from, user.zipCode);
-
-            status = 'Completed';
-            responseMsg = `Added ${result.itemCount} item(s) to "${result.projectName}". Ledger updated.`;
-            transcript = `User: ${text}\nAI: ${responseMsg}`;
-        }
+        ({ llmTokens, cost } = computeLlmCost(reviewed.usage));
+        status = 'Completed';
+        const responseMsg = `Added ${result.itemCount} item(s) to "${result.projectName}". Ledger updated.`;
+        transcript = `User: ${text}\nAI: ${responseMsg} (${reviewed.warnings.length} warning(s))`;
 
         const twiml = new MessagingResponse();
         twiml.message(responseMsg);
@@ -829,46 +800,24 @@ app.post('/api/process-text', requireAuth, requireSubscription, async (req, res)
     let transcript = `User: ${text}`;
 
     try {
-        // ── V2 deterministic 3-stage pipeline (flag-gated) ──────────────────
+        // ── V2 deterministic 3-stage pipeline ───────────────────────────────
         // Estimator → Pricer → Reviewer, then the shared persistence layer.
-        if (process.env.PIPELINE_V2 === 'true') {
-            console.log(`[${phone}] process-text: running PIPELINE_V2 (Estimator → Pricer → Reviewer)...`);
-            const reviewed = await pipeline.runPipeline(
-                { type: 'text', payload: text },
-                { userPhone: phone, zipCode: user.zipCode }
-            );
-            const result = await persistLedger({
-                projectName:     reviewed.projectName,
-                scope_of_work:   reviewed.scope_of_work,
-                pricedMaterials: reviewed.materials,
-                pricedLabor:     reviewed.labor,
-            }, phone, estimateId);
+        console.log(`[${phone}] process-text: running pipeline (Estimator → Pricer → Reviewer)...`);
+        const reviewed = await pipeline.runPipeline(
+            { type: 'text', payload: text },
+            { userPhone: phone, zipCode: user.zipCode }
+        );
+        const result = await persistLedger({
+            projectName:     reviewed.projectName,
+            scope_of_work:   reviewed.scope_of_work,
+            pricedMaterials: reviewed.materials,
+            pricedLabor:     reviewed.labor,
+        }, phone, estimateId);
 
-            status = 'Completed';
-            transcript = `User: ${text}\nAI: [v2] "${result.projectName}" — review ${reviewed.status}, ${reviewed.warnings.length} warning(s).`;
-            return res.json({ success: true, ...result, warnings: reviewed.warnings, review_status: reviewed.status });
-        }
-
-        // ── LEGACY monolithic path (delete after V2 validated in prod) ──────
-        console.log(`[${phone}] process-text: extracting items...`);
-        const response = await ai.models.generateContent({
-            model: 'gemini-3.5-flash',
-            contents: { role: 'user', parts: [{ text: text + '\n\n' + EXTRACTION_PROMPT }] },
-        });
-        const usage = response.usageMetadata || {};
-        const promptTokens = usage.promptTokenCount || 0;
-        const outputTokens = usage.candidatesTokenCount || 0;
-        llmTokens = usage.totalTokenCount || (promptTokens + outputTokens);
-        cost = (promptTokens * 1.50 + outputTokens * 9.00) / 1000000;
-
-        const extracted = parseGeminiJSON(response.text);
-        const result    = await mergeIntoLedger(extracted, phone, user.zipCode, estimateId);
-
+        ({ llmTokens, cost } = computeLlmCost(reviewed.usage));
         status = 'Completed';
-        const responseMsg = `Successfully parsed estimate for "${result.projectName}" with ${result.itemCount} items.`;
-        transcript = `User: ${text}\nAI: ${responseMsg}`;
-
-        res.json({ success: true, ...result });
+        transcript = `User: ${text}\nAI: "${result.projectName}" — review ${reviewed.status}, ${reviewed.warnings.length} warning(s).`;
+        res.json({ success: true, ...result, warnings: reviewed.warnings, review_status: reviewed.status });
     } catch (err) {
         console.error('process-text error:', err);
         status = 'Failed';
@@ -922,32 +871,28 @@ app.post('/api/process', upload.single('audio'), requireAuth, requireSubscriptio
         });
         console.log(`Uploaded as ${geminiFile.name}`);
 
-        const response = await ai.models.generateContent({
-            model: 'gemini-3.5-flash',
-            contents: {
-                role: 'user',
-                parts: [
-                    createPartFromUri(geminiFile.uri, geminiFile.mimeType),
-                    { text: EXTRACTION_PROMPT },
-                ],
-            },
-        });
-
-        const usage = response.usageMetadata || {};
-        const promptTokens = usage.promptTokenCount || 0;
-        const outputTokens = usage.candidatesTokenCount || 0;
-        llmTokens = usage.totalTokenCount || (promptTokens + outputTokens);
-        cost = (promptTokens * 1.50 + outputTokens * 9.00) / 1000000;
-
-        const extracted = parseGeminiJSON(response.text);
+        // ── V2 deterministic 3-stage pipeline ───────────────────────────────
+        // The uploaded audio is passed through as a multimodal Gemini part; the
+        // Estimator handles extraction identically to text/voice transcripts.
+        console.log(`[${phone}] process (audio): running pipeline (Estimator → Pricer → Reviewer)...`);
+        const reviewed = await pipeline.runPipeline(
+            { type: 'image', payload: createPartFromUri(geminiFile.uri, geminiFile.mimeType) },
+            { userPhone: phone, zipCode: user.zipCode }
+        );
         const estimateId = req.body.estimateId || null;
-        const result    = await mergeIntoLedger(extracted, phone, user.zipCode, estimateId);
+        const result = await persistLedger({
+            projectName:     reviewed.projectName,
+            scope_of_work:   reviewed.scope_of_work,
+            pricedMaterials: reviewed.materials,
+            pricedLabor:     reviewed.labor,
+        }, phone, estimateId);
 
+        ({ llmTokens, cost } = computeLlmCost(reviewed.usage));
         status = 'Completed';
         const responseMsg = `Successfully parsed estimate for "${result.projectName}" with ${result.itemCount} items.`;
-        transcript = `User: (Audio Input - ${extracted.scope_of_work || 'Estimating materials/labor'})\nAI: ${responseMsg}`;
+        transcript = `User: (Audio Input - ${reviewed.scope_of_work || 'Estimating materials/labor'})\nAI: ${responseMsg} — review ${reviewed.status}, ${reviewed.warnings.length} warning(s).`;
 
-        res.json({ success: true, ...result });
+        res.json({ success: true, ...result, warnings: reviewed.warnings, review_status: reviewed.status });
 
     } catch (err) {
         console.error('process (audio) error:', err);
@@ -1917,7 +1862,7 @@ app.get('/api/estimates/:id', requireAuth, async (req, res) => {
 const saveEstimateHandler = async (req, res) => {
     const userPhone = req.userPhone;
     const estimateId = req.params.id;
-    const { project_name, items = [], total_amount, item_count, client_name, client_address, client_phone, scope_of_work } = req.body;
+    const { project_name, items = [], total_amount, item_count, client_name, client_address, client_phone, scope_of_work, status, deposit_amount } = req.body;
 
     try {
         const docRef = db.collection('users').doc(userPhone).collection('estimates').doc(estimateId);
@@ -1939,6 +1884,12 @@ const saveEstimateHandler = async (req, res) => {
         }
         if (scope_of_work !== undefined) {
             updateObj.scope_of_work = scope_of_work;
+        }
+        if (status !== undefined) {
+            updateObj.status = status;
+        }
+        if (deposit_amount !== undefined) {
+            updateObj.deposit_amount = Number(deposit_amount) || 0;
         }
         await docRef.set(updateObj, { merge: true });
 
@@ -2670,6 +2621,248 @@ async function renderChangeOrderPdf({ coDoc, parentEstimateId, profile, user }) 
         if (browser) { try { await browser.close(); } catch (_) {} }
     }
 }
+
+async function renderInvoicePdf(invoiceData, estimateData, contractorSettings) {
+    const {
+        invoice_number, invoice_date, due_date, payment_terms, payment_method_note,
+        balance_due, estimate_total, approved_co_total, deposit_amount,
+        client_name, client_address, scope_of_work,
+    } = invoiceData;
+    const { project_name, items = [] } = estimateData;
+    const companyName = contractorSettings.company_name || 'Lone Ranger Contracting';
+    const licenseNumber = contractorSettings.license_number || '';
+    const companyAddress = contractorSettings.company_address || '';
+
+    const materialsSubtotal = items
+        .filter(i => i && (i.type === 'material' || !i.role))
+        .reduce((s, i) => s + (i.total || 0), 0);
+    const laborSubtotal = items
+        .filter(i => i && i.type === 'labor')
+        .reduce((s, i) => s + (i.total || 0), 0);
+
+    const fmtDate = (d) => new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    const fmtCurrency = (n) => `$${Number(n || 0).toFixed(2)}`;
+    const paymentTermsLabel = payment_terms === 'net_15' ? 'Net 15' : payment_terms === 'net_30' ? 'Net 30' : 'Due on Receipt';
+
+    const htmlContent = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font-family: Arial, sans-serif; font-size: 10pt; color: #1e2533; margin: 0; padding: 20px; }
+  h1 { font-size: 18pt; color: #521880; margin: 0 0 4px 0; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; border-bottom: 2px solid #521880; padding-bottom: 12px; }
+  .section { margin-bottom: 14px; }
+  .label { font-size: 8pt; color: #888; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 2px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+  th { background: #f3e8ff; padding: 8px 10px; text-align: left; font-size: 9pt; }
+  td { padding: 7px 10px; border-bottom: 1px solid #e9d5ff; font-size: 9.5pt; }
+  .amount { text-align: right; }
+  .total-row td { font-weight: bold; background: #f3e8ff; }
+  .balance-due { font-size: 20pt; font-weight: bold; color: #521880; margin: 14px 0 8px 0; }
+  .footer { font-size: 8pt; color: #888; text-align: center; margin-top: 24px; border-top: 1px solid #e9d5ff; padding-top: 8px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>INVOICE</h1>
+    <div style="font-weight:bold;">${escapeHtml(companyName)}</div>
+    ${companyAddress ? `<div style="font-size:9pt;">${escapeHtml(companyAddress)}</div>` : ''}
+    ${licenseNumber ? `<div style="color:#521880;font-size:8.5pt;">License: ${escapeHtml(licenseNumber)}</div>` : ''}
+  </div>
+  <div style="text-align:right;font-size:9.5pt;">
+    <div><strong>Invoice #:</strong> ${escapeHtml(invoice_number)}</div>
+    <div><strong>Invoice Date:</strong> ${fmtDate(invoice_date)}</div>
+    <div><strong>Due Date:</strong> ${fmtDate(due_date)}</div>
+    <div><strong>Terms:</strong> ${escapeHtml(paymentTermsLabel)}</div>
+  </div>
+</div>
+
+<div style="display:flex;justify-content:space-between;margin-bottom:16px;">
+  <div class="section">
+    <div class="label">Bill To</div>
+    <div style="font-weight:bold;">${escapeHtml(client_name || 'Client')}</div>
+    ${client_address ? `<div style="font-size:9pt;">${escapeHtml(client_address)}</div>` : ''}
+  </div>
+  <div class="section" style="text-align:right;">
+    <div class="label">Project</div>
+    <div style="font-size:9.5pt;">${escapeHtml(project_name || '')}</div>
+  </div>
+</div>
+
+${scope_of_work ? `<div class="section"><div class="label">Scope of Work</div><p style="font-size:9.5pt;font-style:italic;margin:2px 0;">${escapeHtml(scope_of_work)}</p></div>` : ''}
+
+<table>
+  <thead><tr><th>Description</th><th class="amount">Amount</th></tr></thead>
+  <tbody>
+    <tr><td>Materials Subtotal</td><td class="amount">${fmtCurrency(materialsSubtotal)}</td></tr>
+    <tr><td>Labor Subtotal</td><td class="amount">${fmtCurrency(laborSubtotal)}</td></tr>
+    ${approved_co_total > 0 ? `<tr><td>Approved Change Orders</td><td class="amount">${fmtCurrency(approved_co_total)}</td></tr>` : ''}
+    <tr class="total-row"><td>Estimate Total</td><td class="amount">${fmtCurrency(estimate_total)}</td></tr>
+    <tr><td>Deposit Paid</td><td class="amount">(${fmtCurrency(deposit_amount)})</td></tr>
+  </tbody>
+</table>
+
+<div class="balance-due">Balance Due: ${fmtCurrency(balance_due)}</div>
+
+${payment_method_note ? `<div class="section"><div class="label">Payment Instructions</div><p style="font-size:9.5pt;margin:2px 0;">${escapeHtml(payment_method_note)}</p></div>` : ''}
+
+<div class="footer">&copy; ${new Date().getFullYear()} ${escapeHtml(companyName)}${licenseNumber ? ` &bull; License: ${escapeHtml(licenseNumber)}` : ''}</div>
+</body>
+</html>`;
+
+    let browser;
+    try {
+        browser = await puppeteer.launch({
+            headless: true,
+            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/google-chrome',
+            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+        });
+        const page = await browser.newPage();
+        await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
+        const pdfBuffer = await page.pdf({ format: 'Letter', printBackground: true, margin: { top: '0.4in', bottom: '0.4in', left: '0.4in', right: '0.4in' } });
+        await browser.close();
+        browser = null;
+        return pdfBuffer.toString('base64');
+    } finally {
+        if (browser) { try { await browser.close(); } catch (_) {} }
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  ENDPOINT: POST /api/estimates/:id/generate-invoice
+//  Requires: requireAuth, requireSubscription
+//  Body: { payment_terms, payment_method_note }
+//  Writes to: users/{phone}/estimates/{id}/invoice/final
+// ══════════════════════════════════════════════════════════════════════
+const { calculateInvoice } = require('./lib/invoiceCalc');
+
+app.post('/api/estimates/:id/generate-invoice', requireAuth, requireSubscription, async (req, res) => {
+    const userPhone = req.userPhone;
+    const estimateId = req.params.id;
+    const { payment_terms, payment_method_note } = req.body;
+
+    try {
+        // ── 1. Read estimate ──────────────────────────────────────────
+        const estimateRef = db.collection('users').doc(userPhone).collection('estimates').doc(estimateId);
+        const estimateSnap = await estimateRef.get();
+        if (!estimateSnap.exists) return res.status(404).json({ error: 'Estimate not found.' });
+        const estimateData = estimateSnap.data();
+        const { total_amount, client_name, client_phone: clientPhone, client_address, scope_of_work, items = [] } = estimateData;
+        const deposit_amount = estimateData.deposit_amount || 0;
+
+        // ── 2. Read settings/config ───────────────────────────────────
+        const configRef = db.collection('users').doc(userPhone).collection('settings').doc('config');
+        const configSnap = await configRef.get();
+        const contractorSettings = configSnap.exists ? configSnap.data() : {};
+
+        // ── 3. Increment invoiceCount in Firestore transaction ────────
+        let invoice_number;
+        try {
+            const nextCount = await db.runTransaction(async (transaction) => {
+                const doc = await transaction.get(configRef);
+                let count = 0;
+                if (doc.exists) count = doc.data().invoiceCount || 0;
+                count += 1;
+                transaction.set(configRef, { invoiceCount: count }, { merge: true });
+                return count;
+            });
+            const year = new Date().getFullYear();
+            invoice_number = `INV-${year}-${String(nextCount).padStart(4, '0')}`;
+        } catch (counterErr) {
+            console.error(`[${userPhone}] Failed to increment invoiceCount:`, counterErr.message);
+            invoice_number = `INV-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`;
+        }
+
+        // ── 4. Sum approved change orders ─────────────────────────────
+        const coSnap = await db.collection('users').doc(userPhone)
+            .collection('estimates').doc(estimateId)
+            .collection('change_orders')
+            .where('status', '==', 'approved')
+            .get();
+        const approved_co_total = coSnap.docs.reduce((sum, d) => sum + (d.data().change_order_total || 0), 0);
+
+        // ── 5. Calculate balance due ──────────────────────────────────
+        const { balance_due } = calculateInvoice({ total_amount, approved_co_total, deposit_amount });
+
+        // ── 6. Compute due_date ───────────────────────────────────────
+        const now = new Date();
+        let due_date;
+        if (payment_terms === 'net_15') {
+            due_date = new Date(now.getTime() + 15 * 24 * 60 * 60 * 1000);
+        } else if (payment_terms === 'net_30') {
+            due_date = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+        } else {
+            due_date = now;
+        }
+
+        // ── 7. Render PDF ─────────────────────────────────────────────
+        const invoiceData = {
+            invoice_number, invoice_date: now, due_date,
+            payment_terms, payment_method_note,
+            balance_due, estimate_total: total_amount,
+            approved_co_total, deposit_amount,
+            client_name, client_address, scope_of_work,
+        };
+        const pdfBase64 = await renderInvoicePdf(invoiceData, estimateData, contractorSettings);
+
+        // ── 8. Write invoice/final ────────────────────────────────────
+        const invoiceRef = db.collection('users').doc(userPhone)
+            .collection('estimates').doc(estimateId)
+            .collection('invoice').doc('final');
+        await invoiceRef.set({
+            invoice_number,
+            invoice_date: FieldValue.serverTimestamp(),
+            due_date,
+            payment_terms,
+            payment_method_note,
+            balance_due,
+            estimate_total: total_amount,
+            approved_co_total,
+            deposit_amount,
+            status: 'sent',
+            sent_at: FieldValue.serverTimestamp(),
+            pdf_base64: pdfBase64,
+        }, { merge: true });
+
+        // ── 9. Update parent estimate status ──────────────────────────
+        await estimateRef.set({ status: 'invoiced' }, { merge: true });
+
+        // ── 10. Email PDF to contractor ───────────────────────────────
+        const user = req.authedUser;
+        const contractorEmail = (contractorSettings.contact_email || user.email || '').trim();
+        if (contractorEmail) {
+            const transporter = nodemailer.createTransport({
+                service: 'gmail',
+                auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+            });
+            await transporter.sendMail({
+                from:    `"${user.companyName}" <${process.env.EMAIL_USER}>`,
+                to:      contractorEmail,
+                subject: `Invoice ${invoice_number}: ${estimateData.project_name || 'Project'}`,
+                text:    `Hello,\n\nPlease find attached Invoice ${invoice_number}.\n\nBalance Due: $${balance_due.toFixed(2)}\n\nThank you,\n${user.companyName}`,
+                html: `
+                    <div style="font-family: Arial, sans-serif; max-width: 600px;">
+                        <h2 style="color: #1e2533;">${user.companyName}</h2>
+                        <p>Hello,</p>
+                        <p>Please find attached <strong>Invoice ${invoice_number}</strong> for project <strong>${estimateData.project_name || ''}</strong>.</p>
+                        <p style="font-size: 20px; font-weight: bold; color: #521880;">Balance Due: $${balance_due.toFixed(2)}</p>
+                        <p>Thank you,<br/>${user.companyName}</p>
+                    </div>
+                `,
+                attachments: [{ filename: `Invoice_${invoice_number}.pdf`, content: Buffer.from(pdfBase64, 'base64') }],
+            });
+            console.log(`[${userPhone}] Invoice email sent to ${contractorEmail}`);
+        }
+
+        res.json({ success: true, balance_due, invoice_number });
+    } catch (err) {
+        console.error(`[${userPhone}] generate-invoice error:`, err.message);
+        res.status(500).json({ error: err.message || 'Failed to generate invoice.' });
+    }
+});
 
 // ══════════════════════════════════════════════════════════════════════
 //  ENDPOINT: POST /api/change-orders/generate

@@ -34,7 +34,7 @@ export default function SettingsModal({ open, settings, onSettingsChange, onClos
             : raw;
           onSettingsChange({ ...settings, [key]: val });
         }}
-        className="w-full bg-void-black border border-white/10 rounded-xl px-3 py-2 text-starlight outline-none focus:border-cool-blue text-xs font-mono"
+        className="w-full bg-void-black border border-white/10 rounded-xl px-3 py-2 text-starlight outline-none focus:border-cool-blue text-mini font-mono"
       />
     </div>
   );
@@ -45,18 +45,18 @@ export default function SettingsModal({ open, settings, onSettingsChange, onClos
 
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 text-starlight/50 hover:text-rose-400 transition-colors cursor-pointer focus:outline-none"
+          className="absolute top-4 right-4 text-starlight/50 hover:text-alert-rose transition-colors cursor-pointer focus:outline-none"
         >
           <X className="w-5 h-5" />
         </button>
 
         {/* Header */}
         <div className="mb-5">
-          <h2 className="text-lg font-black text-[#ffffff] flex items-center gap-2 uppercase tracking-wide">
+          <h2 className="text-lg font-black text-starlight flex items-center gap-2 uppercase tracking-wide">
             <Building className="w-5 h-5 text-cool-blue" />
             Contractor Profile Setup
           </h2>
-          <p className="text-xs text-starlight/70 mt-1">
+          <p className="text-micro text-starlight/70 mt-1">
             Configure default values, license registries, and profit multipliers.
           </p>
         </div>
@@ -65,14 +65,14 @@ export default function SettingsModal({ open, settings, onSettingsChange, onClos
         <div className="flex gap-1 mb-5 bg-white/5 rounded-xl p-1 w-fit">
           <button
             onClick={() => setActiveTab("profile")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all cursor-pointer ${activeTab === "profile" ? "bg-cool-blue/20 text-cool-blue border border-cool-blue/30" : "text-starlight/50 hover:text-starlight"}`}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-micro font-black uppercase tracking-widest transition-all cursor-pointer ${activeTab === "profile" ? "bg-cool-blue/20 text-cool-blue border border-cool-blue/30" : "text-starlight/50 hover:text-starlight"}`}
           >
             <Building className="w-3 h-3" />
             Profile
           </button>
           <button
             onClick={() => setActiveTab("prices")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all cursor-pointer ${activeTab === "prices" ? "bg-cool-blue/20 text-cool-blue border border-cool-blue/30" : "text-starlight/50 hover:text-starlight"}`}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-micro font-black uppercase tracking-widest transition-all cursor-pointer ${activeTab === "prices" ? "bg-cool-blue/20 text-cool-blue border border-cool-blue/30" : "text-starlight/50 hover:text-starlight"}`}
           >
             <BookOpen className="w-3 h-3" />
             Price Sheet
@@ -82,7 +82,7 @@ export default function SettingsModal({ open, settings, onSettingsChange, onClos
         {/* Profile tab */}
         {activeTab === "profile" && (
           <>
-            <div className="grid grid-cols-2 gap-4 font-mono text-[10px]">
+            <div className="grid grid-cols-2 gap-4 font-mono text-micro">
 
               {/* ── Logo upload ── */}
               <div className="col-span-2 flex items-center gap-4 pb-2 border-b border-white/10">
@@ -102,8 +102,8 @@ export default function SettingsModal({ open, settings, onSettingsChange, onClos
                   )}
                 </div>
                 <div className="flex flex-col gap-1.5 min-w-0">
-                  <label className="uppercase font-bold text-starlight/60 text-[10px]">Company Logo</label>
-                  <label className={`inline-flex items-center gap-1.5 px-3 py-1.5 border border-cool-blue/30 hover:border-cool-blue/60 rounded-xl cursor-pointer transition-all hover:bg-cool-blue/5 text-cool-blue text-[10px] font-black uppercase tracking-widest ${logoUploading ? 'opacity-50 pointer-events-none' : ''}`}>
+                  <label className="uppercase font-bold text-starlight/60 text-micro">Company Logo</label>
+                  <label className={`inline-flex items-center gap-1.5 px-3 py-1.5 border border-cool-blue/30 hover:border-cool-blue/60 rounded-xl cursor-pointer transition-all hover:bg-cool-blue/5 text-cool-blue text-micro font-black uppercase tracking-widest ${logoUploading ? 'opacity-50 pointer-events-none' : ''}`}>
                     <input
                       type="file"
                       accept="image/png,image/jpeg,image/webp,image/svg+xml"
@@ -138,9 +138,9 @@ export default function SettingsModal({ open, settings, onSettingsChange, onClos
                     {logoUploading ? <RefreshCw className="w-3 h-3 animate-spin" /> : <ImagePlus className="w-3 h-3" />}
                     {logoUploading ? 'Uploading…' : 'Upload Logo'}
                   </label>
-                  {logoError && <span className="text-[10px] text-alert-rose font-mono">{logoError}</span>}
+                  {logoError && <span className="text-micro text-alert-rose font-mono">{logoError}</span>}
                   {settings.company_logo_url && !logoError && (
-                    <span className="text-[10px] text-live-emerald font-mono">Logo saved</span>
+                    <span className="text-micro text-live-emerald font-mono">Logo saved</span>
                   )}
                 </div>
               </div>
@@ -159,13 +159,13 @@ export default function SettingsModal({ open, settings, onSettingsChange, onClos
             <div className="flex justify-end gap-3 pt-4 mt-4 border-t border-white/10">
               <button
                 onClick={onClose}
-                className="px-5 py-2 border border-white/10 text-starlight/70 hover:bg-white/5 rounded-full text-xs font-bold transition-all cursor-pointer uppercase font-mono text-[9px] tracking-wider"
+                className="px-5 py-2 border border-white/10 text-starlight/70 hover:bg-white/5 rounded-full font-bold transition-all cursor-pointer uppercase font-mono text-micro tracking-wider"
               >
                 Cancel
               </button>
               <button
                 onClick={onSave}
-                className="px-6 py-2 bg-gradient-to-r from-cool-blue to-soft-violet text-void-black rounded-full text-xs font-black transition-all cursor-pointer uppercase font-mono text-[9px] tracking-wider"
+                className="px-6 py-2 bg-gradient-to-r from-cool-blue to-soft-violet text-void-black rounded-full font-black transition-all cursor-pointer uppercase font-mono text-micro tracking-wider"
               >
                 Complete Update
               </button>

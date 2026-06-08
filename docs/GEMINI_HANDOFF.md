@@ -1,7 +1,7 @@
 # Lone Ranger Estimator — Live Project Context
 > **Purpose:** This document is the handoff bridge between Gemini brainstorming sessions and Claude Code
 > implementation sessions. Update it after every meaningful work session.
-> **Last updated:** 2026-06-07 — Live microphone wired to `/api/process`; client details captured in the PDF preview; real change orders via a new editable `ChangeOrderModal` (client picker + `PUT /api/change-orders/:id` to persist edits + Twilio dispatch); full impeccable design pass (a11y, type tokens, focus traps, code-split Three.js 852→294 kB). Earlier same day: master price sheet UI + 5 price-book routes.
+> **Last updated:** 2026-06-07 — Phase 1 housekeeping: removed the legacy extraction monolith + `mergeIntoLedger`; the V2 pipeline is now the **sole, unconditional** extraction path across all three ingestion routes (text, SMS webhook, **and audio** — the audio route was migrated to the pipeline). Frontend type-scale migration finished (`SettingsModal`/`EstimateList`/`ThreeVisualizer` → `text-micro`/`text-mini` + semantic colors); no components remain on ad-hoc sizes. Earlier same day: live microphone wired to `/api/process`; client details in the PDF preview; real change orders via `ChangeOrderModal` (+ `PUT /api/change-orders/:id`); full impeccable design pass (a11y, type tokens, focus traps, code-split Three.js 852→294 kB); master price sheet UI + 5 price-book routes.
 
 ---
 
@@ -16,10 +16,12 @@
 5. Clicks "Generate PDF" → Puppeteer renders a professional estimate, emails it to the contractor
 6. Stripe handles subscriptions; Firestore is the database
 
-> **Two extraction/pricing paths (steps 2–3).** `POST /api/process-text` forks on the `PIPELINE_V2` env flag:
-> the **legacy monolith** (one Gemini `EXTRACTION_PROMPT` call → `mergeIntoLedger`) or, when `PIPELINE_V2=true`,
-> the **deterministic 3-stage pipeline** (Estimator → Pricer → Reviewer; `src/lib/pipeline.js` → `createPipeline`).
-> Both share the `persistLedger()` helper. Full detail in **§ Sprint 2** below.
+> **One extraction/pricing path (steps 2–3).** As of 2026-06-07 the legacy monolith is gone. All three
+> ingestion routes — `POST /api/process-text`, `POST /api/webhook` (SMS), and `POST /api/process` (audio) —
+> run the **deterministic 3-stage pipeline** unconditionally (Estimator → Pricer → Reviewer;
+> `src/lib/pipeline.js` → `createPipeline`), then persist via the shared `persistLedger()` helper. The
+> `PIPELINE_V2` env flag, the `mergeIntoLedger` function, and the per-route legacy branches no longer exist.
+> Full detail in **§ Sprint 2** below.
 
 **Primary user:** Small independent contractors (plumbers, framers, roofers, general contractors) who currently
 do estimates by hand or in spreadsheets. The killer feature is voice → bid in under 60 seconds from a job site.
@@ -53,10 +55,11 @@ Two fully separate layers. Unity WebGL was abandoned 2026-05-31 in favor of nati
 
 ---
 
-## Sprint 2: Deterministic 3-Stage Pipeline (`PIPELINE_V2`)
+## Sprint 2: Deterministic 3-Stage Pipeline (now the sole extraction path)
 
-The monolithic "one big Gemini extract-and-price call" is being replaced by a deterministic pipeline that
-quarantines non-determinism to exactly **two auditable LLM boundaries**, with pure math in the middle.
+The monolithic "one big Gemini extract-and-price call" has been **fully replaced** by a deterministic
+pipeline that quarantines non-determinism to exactly **two auditable LLM boundaries**, with pure math in
+the middle. (The legacy monolith and the `PIPELINE_V2` flag were retired 2026-06-07.)
 
 | Stage | Module | Type | Responsibility |
 |-------|--------|------|----------------|
@@ -69,17 +72,25 @@ quarantines non-determinism to exactly **two auditable LLM boundaries**, with pu
 `assignLaborRate` Priority 3 has a *latent* AI fallback that fires only when a labor item has neither an
 explicit rate nor a configured `default_labor_rate`. With a default rate set, the stage is fully offline.
 
-**Rollout:** Gated behind the `PIPELINE_V2` env flag. `POST /api/process-text` has a single fork:
-`PIPELINE_V2 === 'true'` → pipeline; else the legacy monolith (fenced with a
-`// LEGACY: delete after V2 validated in prod` marker). Both paths share the new `persistLedger()` helper
-(extracted from `mergeIntoLedger`) so item pricing never runs twice.
-**Removal trigger:** once V2 runs clean in prod, delete the legacy branch + `mergeIntoLedger`.
+**Rollout (complete):** All three ingestion routes call `pipeline.runPipeline(...)` unconditionally, then
+the shared `persistLedger()` helper:
+- `POST /api/process-text` — `{ type: 'text', payload: text }`
+- `POST /api/webhook` (SMS) — `{ type: 'text', payload: text }`
+- `POST /api/process` (audio) — `{ type: 'image', payload: createPartFromUri(file.uri, file.mimeType) }`
+  (the uploaded audio is passed as a multimodal Gemini part; the Estimator handles it identically).
+
+`persistLedger()` receives already-priced materials/labor, so item pricing never runs twice. The legacy
+`mergeIntoLedger` function and the `// LEGACY` branches have been deleted; the `PIPELINE_V2` env flag is
+gone (no longer read anywhere).
+
+**Token/cost metrics (fixed 2026-06-07):** `reviewer.js` now returns its `usageMetadata`, `pipeline.js`
+sums it with the Estimator's into a `usage` rollup on the `runPipeline` result, and all three routes feed
+that through the new `computeLlmCost(usage)` helper into `logInteraction`. So `llmTokens`/`cost` (and thus
+the gateway dashboard's LLM-cost KPI + per-call columns) now report **real** numbers, summed across both
+LLM boundaries — strictly better than the old monolith, which only counted its single call.
 
 **Tests:** `__tests__/pipeline.test.js` — fully offline ($0 API), mocks Gemini + Firestore. Asserts the
 end-to-end flow and that the Pricer makes zero AI calls when a default labor rate is present.
-
-**Enable locally:** `PIPELINE_V2=true npm start`. **Enable in prod:**
-`gcloud run services update lone-ranger-app --region us-central1 --update-env-vars PIPELINE_V2=true`.
 
 ---
 
@@ -320,6 +331,41 @@ From `ui/dist/` (built by Dockerfile):
 
 ## Work Session Log
 
+### Session: 2026-06-07 — Phase 1 Housekeeping (Remove Legacy Monolith + Finish Type-Scale Migration)
+
+**Goal:** Lock the codebase before Mode 2. Two cleanups.
+
+#### 1. Backend — legacy monolith removed, V2 is the sole path (`src/server.js`)
+- Deleted the `// LEGACY` extraction branches in `POST /api/process-text` and `POST /api/webhook`; both now run `pipeline.runPipeline({ type: 'text', payload })` → `persistLedger()` **unconditionally** (the `if (PIPELINE_V2 === 'true')` guard is gone).
+- **Migrated `POST /api/process` (audio) to the pipeline too.** This route was *not* in the original task list — it called `mergeIntoLedger` with no `PIPELINE_V2` fork, so deleting `mergeIntoLedger` would have broken the live-mic path. It now uploads the audio to the Gemini File API and passes the part to `pipeline.runPipeline({ type: 'image', payload: createPartFromUri(...) })` → `persistLedger()`. The Estimator's `image` branch already handled multimodal parts, so this is functionally equivalent to the old inline `generateContent` call, but adds the Pricer + Reviewer stages.
+- **Deleted `mergeIntoLedger`** entirely (dead code once all three routes price via the pipeline). `persistLedger()` stays — the shared persistence layer for all three.
+- Removed the now-unused `const { EXTRACTION_PROMPT, VALID_TRADES } = require('./lib/estimator')` import (both only lived in that import + comments after the cleanup; still exported from `estimator.js` for the Estimator's own use). `createPartFromUri` import retained (audio route). Refreshed the two stale comment blocks.
+
+#### 1b. Token/cost metrics restored (the gateway-dashboard tie-in)
+Migrating the audio route to the pipeline would have zeroed its `cost`/`llmTokens` (the pipeline swallowed `usageMetadata`), and text/SMS were already 0 under V2 — which would have shown `$0.00` on the gateway dashboard's LLM-cost KPI + per-call columns. Fixed it properly: `reviewer.js` now returns `usageMetadata`; `pipeline.js` sums Estimator + Reviewer usage into a `usage` field on the `runPipeline` result; a new `computeLlmCost(usage)` helper in `server.js` converts that to `{ llmTokens, cost }` ($1.50/1M in, $9.00/1M out) which all three routes feed to `logInteraction`. Now reports real numbers across **both** LLM calls. Added a token-aggregation assertion to the pipeline happy-path test (mock now carries `usageMetadata`).
+
+#### 2. Frontend — type-scale migration finished
+Migrated the last three components off ad-hoc sizes onto the design system:
+- `SettingsModal.tsx`, `EstimateList.tsx`, `ThreeVisualizer.tsx`: every `text-[9/10/11px]` / `text-xs` → `text-micro` (labels/badges/secondary) or `text-mini` (data/body rows). Raw `rose-400` → `alert-rose`; `text-[#ffffff]` → `text-starlight`; ThreeVisualizer HUD `text-purple-200` → `text-soft-violet`, tooltip `text-slate-100` → `text-starlight`. Non-text WebGL-overlay chrome (`bg-slate-900/*`, `border-purple-500/*`) left as-is. **No components remain on ad-hoc text sizes.**
+
+#### Verified
+- `npm test` — **66/66 green** (3 suites; the original task's "56" was stale). Tests target `src/lib/*` only, unaffected by the route edits.
+- `cd ui && npm run build` — `tsc -b` clean (no type errors) + Vite build succeeds. (Pre-existing 560 kB chunk warning is the lazy-loaded `ThreeVisualizer` bundle.)
+
+#### Files modified
+```
+src/server.js                            — removed legacy branches + mergeIntoLedger; audio→pipeline; computeLlmCost() + per-route cost wiring; import/comment cleanup
+src/lib/reviewer.js                       — return usageMetadata
+src/lib/pipeline.js                       — sumUsage() helper; usage rollup on runPipeline result
+__tests__/pipeline.test.js                — mock usageMetadata + token-aggregation assertion
+ui/src/components/SettingsModal.tsx       — type-scale + color tokens
+ui/src/components/EstimateList.tsx        — type-scale + color tokens
+ui/src/components/ThreeVisualizer.tsx     — type-scale + color tokens (HUD/tooltip text)
+docs/GEMINI_HANDOFF.md                    — this entry + Sprint 2 / header sync
+```
+
+---
+
 ### Session: 2026-06-07 — Live Mic, Real Change Orders + Client Capture, Design Pass
 
 #### What was built
@@ -558,7 +604,7 @@ public/sms-optin.html   — redirect to /dashboard-legacy
 
 #### 2. Design tokens — `ui/src/index.css` `@theme` (Tailwind v4)
 - **Semantic colors** (were hard-coded): `live-emerald` #34d399 (status/source), `alert-rose` #fb7185 (destructive/error only), `navy-deep`/`navy-violet` (secondary-CTA gradient). Color meaning: `cool-blue`=trust (money/primary), `soft-violet`=AI/intelligence only.
-- **Type scale** — fixed `rem`, ~1.18 ratio, **11px floor**: `text-micro` (0.6875rem) for labels/badges, `text-mini` (0.8125rem) for data/body, below Tailwind's `text-base`/`lg`/`xl`. Replaced all ad-hoc `text-[Npx]`. Applied in `LedgerTable.tsx` + `App.tsx`; `SettingsModal`/`EstimateList`/`ThreeVisualizer` **not yet migrated**.
+- **Type scale** — fixed `rem`, ~1.18 ratio, **11px floor**: `text-micro` (0.6875rem) for labels/badges, `text-mini` (0.8125rem) for data/body, below Tailwind's `text-base`/`lg`/`xl`. Replaced all ad-hoc `text-[Npx]`. Applied in `LedgerTable.tsx` + `App.tsx`; `SettingsModal`/`EstimateList`/`ThreeVisualizer` **migrated 2026-06-07** (Phase 1 housekeeping) — type-scale rollout now complete across all components.
 - **Ledger keyboard focus** rule (`#estimate-ledger-section :is(input,textarea):focus-visible`) for WCAG 2.4.7.
 
 #### 3. `LedgerTable.tsx` overhaul (the critique arc)
@@ -597,7 +643,7 @@ docs/GEMINI_HANDOFF.md              — this entry
 
 #### Open follow-ups (from this session)
 - **Wire the React demo simulations to their real backend routes:** the voice orb (real mic capture → `/api/process`), the Change Order panel (`/api/change-orders/generate` + `/send`), and the client approval portal (`/approve`). All three are client-side sims today; endpoints already exist. (Documented in `docs/app-features.md` status banner.)
-- **Finish the type-scale migration:** `SettingsModal.tsx`, `EstimateList.tsx`, `ThreeVisualizer.tsx` still use raw `text-[Npx]`; migrate to `text-micro`/`text-mini` (+ semantic color tokens) like `LedgerTable.tsx`/`App.tsx`.
+- ~~**Finish the type-scale migration:** `SettingsModal.tsx`, `EstimateList.tsx`, `ThreeVisualizer.tsx`~~ — **DONE 2026-06-07** (Phase 1 housekeeping).
 - **Optional ledger refinements** (critique P3s, non-blocking): duplicate-row / bulk-delete, undo-after-delete, inline markup/tax help.
 - **Dev-only conveniences to be aware of:** `App.tsx` DEV auth bypass and `vite.config.ts` `NGROK_HOST` opt-in — both guarded, no prod impact.
 - **README.md** still says "React 18" and documents a removed "Build Layer" — minor, worth a cleanup pass.

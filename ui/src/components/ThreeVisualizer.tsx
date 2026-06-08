@@ -952,14 +952,14 @@ export default function ThreeVisualizer({
     >
       {/* 3D Legend/Metrics Overlay — hidden in mini mode */}
       {showOverlay && mode === "stack" && (
-        <div className="absolute top-4 left-4 bg-slate-900/90 border border-purple-500/20 px-3 py-2 rounded-lg text-xs font-semibold text-purple-200 backdrop-blur-md pointer-events-none space-y-1">
+        <div className="absolute top-4 left-4 bg-slate-900/90 border border-purple-500/20 px-3 py-2 rounded-lg text-mini font-semibold text-soft-violet backdrop-blur-md pointer-events-none space-y-1">
           <div className="flex items-center gap-1.5 text-amber-500 font-extrabold uppercase tracking-wider">
             <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
             Material Yard
           </div>
           <div>Cargo Weight: <span className="text-white font-bold">{totalWeight.toLocaleString()} lbs</span></div>
           {totalWeight > TRAILER_MAX_LBS && (
-            <div className="text-[10px] text-rose-400 font-bold">
+            <div className="text-micro text-alert-rose font-bold">
               🚚 {Math.ceil(totalWeight / TRAILER_MAX_LBS)} flatbeds required
             </div>
           )}
@@ -969,7 +969,7 @@ export default function ThreeVisualizer({
       {/* Tooltip Popup */}
       {tooltipText && (
         <div
-          className="absolute z-20 pointer-events-none bg-slate-900/95 border border-purple-500/40 p-3 rounded-lg text-slate-100 text-xs shadow-xl backdrop-blur-md leading-relaxed"
+          className="absolute z-20 pointer-events-none bg-slate-900/95 border border-purple-500/40 p-3 rounded-lg text-starlight text-mini shadow-xl backdrop-blur-md leading-relaxed"
           style={{
             left: `${tooltipPos.x}px`,
             top: `${tooltipPos.y}px`,

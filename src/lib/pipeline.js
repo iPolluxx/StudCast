@@ -22,8 +22,25 @@ const { createReviewer }  = require('./reviewer');
  * @param {{ db: import('@google-cloud/firestore').Firestore, ai: import('@google/genai').GoogleGenAI }} deps
  * @returns {{ runPipeline: (input: object, ctx?: object) => Promise<PipelineResult> }}
  *
- * @typedef {{ projectName: string, scope_of_work: string, materials: object[], labor: object[], totals: object, warnings: object[], status: 'ok'|'flagged', source: string }} PipelineResult
+ * @typedef {{ projectName: string, scope_of_work: string, materials: object[], labor: object[], totals: object, warnings: object[], status: 'ok'|'flagged', source: string, usage: object }} PipelineResult
  */
+/**
+ * Sum Gemini `usageMetadata` objects from each LLM stage into a single rollup.
+ * Tolerates missing/partial objects (a failed stage returns `{}`).
+ * @param {...object} usages
+ * @returns {{ promptTokenCount: number, candidatesTokenCount: number, totalTokenCount: number }}
+ */
+function sumUsage(...usages) {
+    const acc = { promptTokenCount: 0, candidatesTokenCount: 0, totalTokenCount: 0 };
+    for (const u of usages) {
+        if (!u) continue;
+        acc.promptTokenCount     += u.promptTokenCount     || 0;
+        acc.candidatesTokenCount += u.candidatesTokenCount || 0;
+        acc.totalTokenCount      += u.totalTokenCount      || (u.promptTokenCount || 0) + (u.candidatesTokenCount || 0);
+    }
+    return acc;
+}
+
 function createPipeline({ db, ai }) {
     const estimator = createEstimator({ ai });
     const pricer    = createPricer({ db, ai });
@@ -47,6 +64,12 @@ function createPipeline({ db, ai }) {
         // ── Stage 3: review ──────────────────────────────────────────────
         const reviewed = await reviewer.reviewLedger(priced, ctx);
 
+        // Aggregate token usage across both LLM boundaries (Estimator + Reviewer)
+        // so the caller can record real cost/token metrics. The Pricer is
+        // deterministic and contributes none (its latent AI fallback only fires
+        // without a default labor rate).
+        const usage = sumUsage(scope.usage, reviewed.usage);
+
         return {
             projectName:   scope.projectName,
             scope_of_work: scope.scope_of_work,
@@ -56,6 +79,7 @@ function createPipeline({ db, ai }) {
             warnings:      reviewed.warnings,
             status:        reviewed.status,
             source:        scope.source,
+            usage,
         };
     }
 

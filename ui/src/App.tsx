@@ -15,6 +15,7 @@ import {
   Minimize2,
   Maximize,
   Wrench,
+  FileText,
 } from "lucide-react";
 import type { Estimate, FramingIntent, MaterialItem, LaborItem, ChangeOrder, ContractorUserSettings } from "./types";
 // Three.js material yard is heavy (~Three core + addons); load it on demand so
@@ -25,6 +26,7 @@ import EstimateList from "./components/EstimateList";
 import LedgerTable from "./components/LedgerTable";
 import PDFPreviewModal from "./components/PDFPreviewModal";
 import ChangeOrderModal from "./components/ChangeOrderModal";
+import InvoiceModal from "./components/InvoiceModal";
 
 // ── CUSTOM PROCEDURAL STARFIELD BACKGROUND COMPONENT ──
 export function Starfield() {
@@ -191,6 +193,12 @@ export default function App() {
   const [derivedChangeOrder, setDerivedChangeOrder] = useState<ChangeOrder | null>(null);
   const [changeOrderLoading, setChangeOrderLoading] = useState(false);
   const [changeOrderModalOpen, setChangeOrderModalOpen] = useState(false);
+  const [invoiceModal, setInvoiceModal] = useState<{
+    estimateId: string;
+    estimateTotal: number;
+    approvedCoTotal: number;
+    clientName: string;
+  } | null>(null);
 
   // Price Override matrix configuration
   const [priceSheet, setPriceSheet] = useState({
@@ -1402,13 +1410,29 @@ export default function App() {
               Estimate Ledger
             </span>
           </div>
-          <div className="text-right">
-            <span className="text-micro text-starlight/40 font-bold tracking-widest uppercase block leading-none mb-0.5">
-              total
-            </span>
-            <span className="text-base sm:text-lg font-black text-cool-blue font-mono leading-none">
-              ${grandTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </span>
+          <div className="flex items-center gap-3">
+            {activeEstimate && (
+              <button
+                onClick={() => setInvoiceModal({
+                  estimateId: activeEstimate.id,
+                  estimateTotal: grandTotal,
+                  approvedCoTotal: 0,
+                  clientName: activeEstimate.client_name ?? '',
+                })}
+                className="flex items-center gap-1.5 px-3 py-1 border border-cool-blue/30 hover:border-cool-blue bg-cool-blue/5 hover:bg-cool-blue/15 rounded-full text-micro font-black uppercase tracking-widest text-cool-blue transition-all cursor-pointer"
+              >
+                <FileText className="w-3 h-3" />
+                Invoice
+              </button>
+            )}
+            <div className="text-right">
+              <span className="text-micro text-starlight/40 font-bold tracking-widest uppercase block leading-none mb-0.5">
+                total
+              </span>
+              <span className="text-base sm:text-lg font-black text-cool-blue font-mono leading-none">
+                ${grandTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -1570,6 +1594,25 @@ export default function App() {
           setTimeout(() => setStatusFlash(null), 5000);
         }}
       />
+
+      {invoiceModal && (
+        <InvoiceModal
+          estimateId={invoiceModal.estimateId}
+          estimateTotal={invoiceModal.estimateTotal}
+          approvedCoTotal={invoiceModal.approvedCoTotal}
+          clientName={invoiceModal.clientName}
+          authToken={authToken ?? ''}
+          onClose={() => setInvoiceModal(null)}
+          onSuccess={(result) => {
+            setEstimates(prev => prev.map(e =>
+              e.id === invoiceModal.estimateId ? { ...e, status: 'invoiced' } : e
+            ));
+            setInvoiceModal(null);
+            setStatusFlash(`Invoice ${result.invoice_number} sent · Balance $${result.balance_due.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+            setTimeout(() => setStatusFlash(null), 6000);
+          }}
+        />
+      )}
 
     </div>
   );
