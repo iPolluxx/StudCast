@@ -333,6 +333,8 @@ From `ui/dist/` (built by Dockerfile):
 
 ### Session: 2026-06-10 — Production-Ready Fixes (persistence, naming, price sheet, labor rates, CO email, invoice PDF)
 
+**Deployed:** revision `lone-ranger-app-00065-spq` — CI green, smoke-tested (landing 200, dashboard 200, API auth gate 401).
+
 > Note: the 2026-06-09 pipeline changes (`sanitize.js` hardening, `responseMimeType`,
 > `persistLedger` merge rework) were **reverted by the owner** — the jest suite asserts the original
 > behavior. Those files are now guarded: do not modify `sanitize.js`/`parseGeminiJSON`, the 3-stage
