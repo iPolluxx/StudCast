@@ -93,44 +93,6 @@ export function Starfield() {
   );
 }
 
-// ── DEFAULT PROJECTS FOR COMPLIANCE ──
-const initialEstimates: Estimate[] = [
-  {
-    id: "est-eagle-river-garage",
-    project_name: "Eagle River Garage Complex",
-    scope_of_work: "Construction of a detached 24x36-foot residential garage wood-framed envelope with engineered trusses and fiber-cement board siding.",
-    items: [
-      { name: "2x4x10ft Standard Studs (Bunk Drop)", quantity: 154, unit: "pcs", trade: "framing", unit_price: 6.25, total: 962.50, price_source: "database", type: "material" },
-      { name: "7/16\" OSB Sheathing panels (bunk)", quantity: 45, unit: "pcs", trade: "framing", unit_price: 21.00, total: 945.00, price_source: "ai", type: "material" },
-      { name: "2x4x16ft Pressure Treated Sill Plate", quantity: 12, unit: "pcs", trade: "framing", unit_price: 16.50, total: 198.00, price_source: "override", type: "material" },
-      { role: "Garage framing specialist (crew of 2)", hours: 24, rate: 55, total: 1320.00, type: "labor" },
-      { role: "Sill sealing/Anchor bolt configuration", hours: 4, rate: 55, total: 220.00, type: "labor" }
-    ],
-    total_amount: 3645.50,
-    item_count: 5,
-    client_name: "Bruce Sterling",
-    client_address: "1024 Lake Thompson Dr, Eagle River, WI 54521",
-    client_phone: "+17155550192",
-    updatedAt: new Date().toISOString()
-  },
-  {
-    id: "est-rhinelander-master",
-    project_name: "Rhinelander Partition Addition",
-    scope_of_work: "A dual-partitioned master closet addition, includes 1/2\" Type X drywall, taping, mudding, and finishing on a 16-foot framing structure.",
-    items: [
-      { name: "2x4x8ft Standard Wood Stud", quantity: 48, unit: "pcs", trade: "framing", unit_price: 5.75, total: 276.00, price_source: "database", type: "material" },
-      { name: "1/2\" Regular Drywall 4x8 Panels", quantity: 22, unit: "pcs", trade: "drywall", unit_price: 15.50, total: 341.00, price_source: "database", type: "material" },
-      { role: "Drywall hanging & structural taping segment", hours: 14, rate: 50, total: 700.00, type: "labor" }
-    ],
-    total_amount: 1317.00,
-    item_count: 3,
-    client_name: "Genevieve Dubois",
-    client_address: "419 River Bend Rd, Rhinelander, WI 54501",
-    client_phone: "+17155550241",
-    updatedAt: new Date().toISOString()
-  }
-];
-
 const defaultSettings: ContractorUserSettings = {
   company_name: "Lone Ranger Framing LLC",
   company_address: "814 Pine Tree Rd, Rhinelander, WI 54501",
@@ -226,22 +188,72 @@ export default function App() {
 
   const activeEstimate = estimates.find(e => e.id === activeEstimateId) || estimates[0] || null;
 
+  // Memoized derived ledger state — stable identities so downstream consumers
+  // (ledger, visualizer) only react to real ledger changes, not every render.
+  const items = useMemo(() => activeEstimate?.items ?? [], [activeEstimate]);
+  const materials = useMemo(
+    () => items.filter(i => i.type === "material") as unknown as MaterialItem[],
+    [items]
+  );
+  const labor = useMemo(
+    () => items.filter(i => i.type === "labor") as unknown as LaborItem[],
+    [items]
+  );
+
   // Auth headers helper
   const apiHeaders = (token: string) => ({
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${token}`,
   });
 
+  // ── Durable ledger persistence ──
+  // Every estimate mutation queues a debounced full-document save to
+  // POST /api/estimates/:id/save; the queue is flushed BEFORE any AI extraction
+  // call so the server-side merge always reads a Firestore state that already
+  // includes the user's manual grid edits.
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSaveRef = useRef<{ id: string; payload: Record<string, unknown> } | null>(null);
+
+  const flushPendingSave = async () => {
+    if (saveTimerRef.current) { clearTimeout(saveTimerRef.current); saveTimerRef.current = null; }
+    const pending = pendingSaveRef.current;
+    pendingSaveRef.current = null;
+    if (!pending || !authToken) return;
+    try {
+      await fetch(`/api/estimates/${pending.id}/save`, {
+        method: 'POST',
+        headers: apiHeaders(authToken),
+        body: JSON.stringify(pending.payload),
+      });
+    } catch { /* offline — local state stays authoritative until next flush */ }
+  };
+
+  const queueEstimateSave = (est: Estimate) => {
+    if (!est?.id) return;
+    // Always send the complete document: the save route treats absent fields
+    // as resets (items -> [], name -> 'Untitled Project'), so partial payloads
+    // must never originate from here.
+    pendingSaveRef.current = {
+      id: est.id,
+      payload: {
+        project_name: est.project_name,
+        items: est.items ?? [],
+        total_amount: est.total_amount,
+        item_count: est.item_count,
+        scope_of_work: est.scope_of_work ?? '',
+      },
+    };
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => { void flushPendingSave(); }, 900);
+  };
+
   // Boot: verify auth token, load estimates + settings
   useEffect(() => {
-    // DEV-only: skip the auth/backend dance entirely and render built-in demo data, so the
-    // dashboard is analyzable locally without a login or a running backend. (Hitting /api with
-    // no real token returns 401, whose handler redirects to '/', which loops.) Guarded by
-    // import.meta.env.DEV — compiled out of production builds, where real auth runs below.
-    if (import.meta.env.DEV) {
+    // DEV-only: skip the auth redirect (no token in dev means '/' would loop the
+    // reload), but seed NOTHING — the ledger starts strictly empty, matching
+    // production behavior when Firestore has no records.
+    if (import.meta.env.DEV && !localStorage.getItem('authBearerToken')) {
       setAuthToken('demo');
-      setEstimates(initialEstimates);
-      setActiveEstimateId(initialEstimates[0].id);
       setAppLoading(false);
       return;
     }
@@ -298,14 +310,10 @@ export default function App() {
           const merged = [full, ...summaries.slice(1)];
           setEstimates(merged);
           setActiveEstimateId(full.id);
-        } else {
-          setEstimates(initialEstimates);
-          setActiveEstimateId(initialEstimates[0].id);
         }
+        // No records in Firestore -> estimates stays strictly [] (no mock data)
       } catch {
-        // Network down — fall back to demo data so the UI still loads
-        setEstimates(initialEstimates);
-        setActiveEstimateId(initialEstimates[0].id);
+        // Network down — leave the workspace empty rather than show fake data
       } finally {
         setAppLoading(false);
       }
@@ -361,23 +369,28 @@ export default function App() {
     }
   }, [activeEstimateId]);
 
-  // Estimate materials & labor update helper
+  // Estimate materials & labor update helper — updates local state AND queues
+  // the debounced Firestore save so grid edits survive a page refresh.
   const updateEstimateItems = (updater: (prevItems: any[]) => any[]) => {
+    let mutated: Estimate | null = null;
     const updated = estimates.map(e => {
       if (e.id === activeEstimateId) {
-        const nextItems = updater(e.items);
+        const nextItems = updater(e.items ?? []);
         const subtotal = nextItems.reduce((sum, item) => sum + (item.total || 0), 0);
-        return {
+        const next: Estimate = {
           ...e,
           items: nextItems,
           total_amount: Math.round(subtotal * 100) / 100,
           item_count: nextItems.length,
           updatedAt: new Date().toISOString()
         };
+        mutated = next;
+        return next;
       }
       return e;
     });
     setEstimates(updated);
+    if (mutated) queueEstimateSave(mutated);
   };
 
   // Inline grid cell update
@@ -476,6 +489,10 @@ export default function App() {
   const handleProcessNLP = async (textToParse: string) => {
     if (!textToParse.trim()) return;
     setAiProcessing(true);
+
+    // Land any in-flight manual edits in Firestore first — the server-side
+    // merge reads from Firestore, so unsaved local rows would be lost.
+    await flushPendingSave();
 
     try {
       const headers = authToken
@@ -634,6 +651,9 @@ export default function App() {
         }
 
         setAiProcessing(true);
+        // Same flush as the text path: manual edits must reach Firestore before
+        // the server merges the voice extraction into it.
+        await flushPendingSave();
         try {
           const ext = cleanMime.includes('ogg') ? '.ogg' : cleanMime.includes('mp4') ? '.mp4' : '.webm';
           const fd = new FormData();
@@ -727,11 +747,7 @@ export default function App() {
     );
   }
 
-  // Safe to compute — appLoading is false so estimates is populated
-  const items = activeEstimate?.items ?? [];
-  const materials = items.filter(i => i.type === "material") as unknown as MaterialItem[];
-  const labor    = items.filter(i => i.type === "labor")    as unknown as LaborItem[];
-
+  // items / materials / labor are memoized above (before the early return)
   const materialsSubtotal = materials.reduce((s, i) => s + (i.total || 0), 0);
   const laborSubtotal     = labor.reduce((s, i) => s + (i.total || 0), 0);
   const markupAmount      = materialsSubtotal * (settings.global_markup_percent / 100);
@@ -1533,17 +1549,9 @@ export default function App() {
               setEstimates(prev => prev.map(e =>
                 e.id === activeEstimateId ? { ...e, scope_of_work: val } : e
               ));
-              // Persist to Firestore on change (debounced via natural typing pause)
-              if (authToken && activeEstimate?.id) {
-                clearTimeout((window as any)._scopeTimer);
-                (window as any)._scopeTimer = setTimeout(() => {
-                  fetch(`/api/estimates/${activeEstimate.id}/save`, {
-                    method: 'POST',
-                    headers: apiHeaders(authToken),
-                    body: JSON.stringify({ scope_of_work: val }),
-                  }).catch(() => {});
-                }, 1200);
-              }
+              // Debounced full-document save (shared path with grid edits) — a
+              // scope-only POST would hit the route's defaults and wipe items.
+              if (activeEstimate) queueEstimateSave({ ...activeEstimate, scope_of_work: val });
             }}
             onPreview={() => setPreviewOpen(true)}
             onPublish={async () => {
