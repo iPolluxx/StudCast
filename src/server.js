@@ -2655,7 +2655,10 @@ async function renderChangeOrderPdf({ coDoc, parentEstimateId, profile, user }) 
         const pdfBuffer = await page.pdf({ format: 'Letter', printBackground: true, margin: { top: '0.4in', bottom: '0.4in', left: '0.4in', right: '0.4in' } });
         await browser.close();
         browser = null;
-        return pdfBuffer.toString('base64');
+        // Puppeteer v22+ returns a Uint8Array, whose toString() ignores the
+        // 'base64' argument and emits comma-joined decimals — the actual cause
+        // of the blank/corrupt PDF attachments. Wrap in a Buffer first.
+        return Buffer.from(pdfBuffer).toString('base64');
     } finally {
         if (browser) { try { await browser.close(); } catch (_) {} }
     }
@@ -2672,16 +2675,37 @@ async function renderInvoicePdf(invoiceData, estimateData, contractorSettings) {
     const licenseNumber = contractorSettings.license_number || '';
     const companyAddress = contractorSettings.company_address || '';
 
-    const materialsSubtotal = items
-        .filter(i => i && (i.type === 'material' || !i.role))
-        .reduce((s, i) => s + (i.total || 0), 0);
-    const laborSubtotal = items
-        .filter(i => i && i.type === 'labor')
-        .reduce((s, i) => s + (i.total || 0), 0);
+    // Current ledger item structures: materials are { name, quantity, unit,
+    // unit_price, total, type: 'material' }, labor is { role, hours, rate,
+    // total, type: 'labor' }. Older rows may lack `type`, so fall back to the
+    // role-field heuristic used everywhere else in this file.
+    const materialItems = items.filter(i => i && (i.type === 'material' || (!i.type && !i.role)));
+    const laborItems    = items.filter(i => i && (i.type === 'labor'    || (!i.type && i.role)));
+
+    const materialsSubtotal = materialItems.reduce((s, i) => s + (Number(i.total) || 0), 0);
+    const laborSubtotal     = laborItems.reduce((s, i) => s + (Number(i.total) || 0), 0);
 
     const fmtDate = (d) => new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
     const fmtCurrency = (n) => `$${Number(n || 0).toFixed(2)}`;
     const paymentTermsLabel = payment_terms === 'net_15' ? 'Net 15' : payment_terms === 'net_30' ? 'Net 30' : 'Due on Receipt';
+
+    // Per-line semantic table rows — the invoice previously printed only the
+    // two subtotal rows, which rendered as an effectively blank document.
+    const materialRowsHtml = materialItems.map(i => `
+      <tr>
+        <td>${escapeHtml(i.name || 'Material')}</td>
+        <td class="amount">${Number(i.quantity) || 0} ${escapeHtml(i.unit || '')}</td>
+        <td class="amount">${fmtCurrency(i.unit_price)}</td>
+        <td class="amount">${fmtCurrency(i.total)}</td>
+      </tr>`).join('');
+
+    const laborRowsHtml = laborItems.map(i => `
+      <tr>
+        <td>${escapeHtml(i.role || 'Labor')}</td>
+        <td class="amount">${Number(i.hours) || 0}</td>
+        <td class="amount">${fmtCurrency(i.rate)}/hr</td>
+        <td class="amount">${fmtCurrency(i.total)}</td>
+      </tr>`).join('');
 
     const htmlContent = `<!DOCTYPE html>
 <html>
@@ -2733,6 +2757,27 @@ async function renderInvoicePdf(invoiceData, estimateData, contractorSettings) {
 
 ${scope_of_work ? `<div class="section"><div class="label">Scope of Work</div><p style="font-size:9.5pt;font-style:italic;margin:2px 0;">${escapeHtml(scope_of_work)}</p></div>` : ''}
 
+${materialItems.length > 0 ? `
+<div class="label">Materials</div>
+<table>
+  <thead><tr><th>Description</th><th class="amount">Qty</th><th class="amount">Unit Price</th><th class="amount">Line Total</th></tr></thead>
+  <tbody>
+    ${materialRowsHtml}
+    <tr class="total-row"><td colspan="3">Materials Subtotal</td><td class="amount">${fmtCurrency(materialsSubtotal)}</td></tr>
+  </tbody>
+</table>` : ''}
+
+${laborItems.length > 0 ? `
+<div class="label">Labor</div>
+<table>
+  <thead><tr><th>Role</th><th class="amount">Hours</th><th class="amount">Rate</th><th class="amount">Line Total</th></tr></thead>
+  <tbody>
+    ${laborRowsHtml}
+    <tr class="total-row"><td colspan="3">Labor Subtotal</td><td class="amount">${fmtCurrency(laborSubtotal)}</td></tr>
+  </tbody>
+</table>` : ''}
+
+<div class="label">Summary</div>
 <table>
   <thead><tr><th>Description</th><th class="amount">Amount</th></tr></thead>
   <tbody>
@@ -2764,7 +2809,10 @@ ${payment_method_note ? `<div class="section"><div class="label">Payment Instruc
         const pdfBuffer = await page.pdf({ format: 'Letter', printBackground: true, margin: { top: '0.4in', bottom: '0.4in', left: '0.4in', right: '0.4in' } });
         await browser.close();
         browser = null;
-        return pdfBuffer.toString('base64');
+        // Puppeteer v22+ returns a Uint8Array, whose toString() ignores the
+        // 'base64' argument and emits comma-joined decimals — the actual cause
+        // of the blank/corrupt PDF attachments. Wrap in a Buffer first.
+        return Buffer.from(pdfBuffer).toString('base64');
     } finally {
         if (browser) { try { await browser.close(); } catch (_) {} }
     }
