@@ -27,7 +27,7 @@ Served at `/dashboard` (built inside the Dockerfile, output to `ui/dist/`). "Cos
 
 Components:
 - `ui/src/App.tsx` — orchestrator: auth bootstrap (reads `authBearerToken` from localStorage, redirects to `/` on 401), API wiring, state.
-- `ui/src/components/ThreeVisualizer.tsx` — WebGL material yard (**Stack mode only**).
+- `ui/src/components/ThreeVisualizer.tsx` — WebGL material yard (**Stack mode only**): ledger items classified into physically-dimensioned stacks (`visualizer/catalog.ts`), procedural textures (`visualizer/textures.ts`), instanced per-piece geometry, shelf-packed layout, raycast tooltips.
 - `ui/src/components/LedgerTable.tsx` — materials/labor tables (mobile cards + desktop table), scope-of-work, publish button.
 - `ui/src/components/SettingsModal.tsx`, `EstimateList.tsx` — profile modal, project switcher (with delete).
 - `ui/src/types.ts` — shared interfaces.
@@ -36,7 +36,7 @@ Components:
 - **`PRODUCT.md`** (strategic) + **`DESIGN.md`** (visual) at the repo root are the source of truth for the "Command Bridge" cosmic-glass system: register, brand voice, anti-references, color/type rules, component specs. `.impeccable/design.json` is the machine-readable sidecar. Generated/maintained via the `impeccable` skill.
 - **Design tokens live in `ui/src/index.css` `@theme`** (Tailwind v4). Use them, don't hard-code:
   - **Color:** `cool-blue` = trust (money/totals/primary actions), `soft-violet` = AI/intelligence only; `live-emerald` = status/"from the source", `alert-rose` = destructive/error only; `navy-deep`/`navy-violet` = secondary-CTA gradient. Don't use raw Tailwind `emerald-*`/`rose-*` or hex.
-  - **Type:** fixed `rem` scale with an **11px floor** — `text-micro` (11px, labels/badges) and `text-mini` (13px, data/body) below Tailwind's `text-base`/`lg`/`xl`. No ad-hoc `text-[Npx]`. Fully applied in `LedgerTable.tsx` + `App.tsx`; `SettingsModal`/`EstimateList`/`ThreeVisualizer` are not yet migrated.
+  - **Type:** fixed `rem` scale with an **11px floor** — `text-micro` (11px, labels/badges) and `text-mini` (13px, data/body) below Tailwind's `text-base`/`lg`/`xl`. No ad-hoc `text-[Npx]`. Fully applied in `LedgerTable.tsx`, `App.tsx` + `ThreeVisualizer.tsx`; `SettingsModal`/`EstimateList` are not yet migrated.
 
 ### Legacy onboarding — `public/dashboard.html` at `/dashboard-legacy`
 The hardened registration flow (Google OAuth → phone OTP → profile wizard) still lives here. After auth completes, `activateDashboard()` redirects into the React app at `/dashboard`. Landing page is `public/index.html` at `/`.
