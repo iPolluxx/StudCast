@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { RefreshCw, Trash2, ArrowDownToLine, Plus } from "lucide-react";
+import { RefreshCw, Trash2, ArrowDownToLine, Plus, Upload } from "lucide-react";
 
 interface PriceBookEntry {
   itemId: string;
@@ -46,6 +46,7 @@ export default function PriceSheetPanel({ authToken }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [flash, setFlash] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
 
   const authHeaders = { Authorization: `Bearer ${authToken}` };
 
@@ -144,6 +145,27 @@ export default function PriceSheetPanel({ authToken }: Props) {
     }
   }
 
+  async function uploadCsv(file: File) {
+    setUploading(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const r = await fetch("/api/upload-csv", {
+        method: "POST",
+        headers: authHeaders,
+        body: form,
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error);
+      showFlash(`${d.saved ?? "?"} prices imported from CSV`);
+      await load();
+    } catch (e: any) {
+      showFlash("Upload failed: " + e.message);
+    } finally {
+      setUploading(false);
+    }
+  }
+
   async function saveMarketItem(item: MarketOnlyItem) {
     if (item.price === null) return;
     setSavingItem(item.key);
@@ -196,14 +218,30 @@ export default function PriceSheetPanel({ authToken }: Props) {
             )}
           </p>
         </div>
-        <button
-          onClick={syncAll}
-          disabled={syncing || syncableCount === 0}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-cool-blue/10 border border-cool-blue/30 hover:border-cool-blue/60 text-cool-blue rounded-xl text-micro font-black uppercase tracking-widest transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <ArrowDownToLine className={`w-3 h-3 ${syncing ? "animate-spin" : ""}`} />
-          {syncing ? "Syncing…" : `Sync all from Menards (${syncableCount})`}
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <label className={`flex items-center gap-1.5 px-3 py-1.5 bg-soft-violet/10 border border-soft-violet/30 hover:border-soft-violet/60 text-soft-violet rounded-xl text-micro font-black uppercase tracking-widest transition-all cursor-pointer ${uploading ? "opacity-40 pointer-events-none" : ""}`}>
+            <input
+              type="file"
+              accept=".csv"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) uploadCsv(file);
+                e.target.value = "";
+              }}
+            />
+            <Upload className={`w-3 h-3 ${uploading ? "animate-spin" : ""}`} />
+            {uploading ? "Importing…" : "Import supplier CSV"}
+          </label>
+          <button
+            onClick={syncAll}
+            disabled={syncing || syncableCount === 0}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-cool-blue/10 border border-cool-blue/30 hover:border-cool-blue/60 text-cool-blue rounded-xl text-micro font-black uppercase tracking-widest transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <ArrowDownToLine className={`w-3 h-3 ${syncing ? "animate-spin" : ""}`} />
+            {syncing ? "Syncing…" : `Sync all from Menards (${syncableCount})`}
+          </button>
+        </div>
       </div>
 
       {flash && (

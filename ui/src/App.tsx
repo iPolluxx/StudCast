@@ -167,7 +167,9 @@ export default function App() {
   } | null>(null);
 
   // Price Override matrix configuration
-  const [priceSheet, setPriceSheet] = useState({
+  // Internal defaults still used by the quick-add row and the offline fallback
+  // parser; the editing UI was replaced by the Labor Rates (employee wages) grid.
+  const [priceSheet] = useState({
     stud: 6.25,
     treated: 16.50,
     plate: 12.00,
@@ -447,10 +449,17 @@ export default function App() {
 
   // Add new blank estimate
   const handleNewProject = () => {
+    // Ask for a name up front; blank falls back to a dated default, Cancel aborts.
+    const entered = window.prompt('Name this estimate:', '');
+    if (entered === null) {
+      setProjectDropdownOpen(false);
+      return;
+    }
+    const projectName = entered.trim() || `Estimate - ${new Date().toLocaleDateString('en-US')}`;
     const nextId = "est-" + Date.now().toString(16);
     const newEst: Estimate = {
       id: nextId,
-      project_name: `New Estimate`,
+      project_name: projectName,
       scope_of_work: "",
       items: [],
       total_amount: 0,
@@ -462,6 +471,7 @@ export default function App() {
     setEstimates([...estimates, newEst]);
     setActiveEstimateId(nextId);
     setProjectDropdownOpen(false);
+    queueEstimateSave(newEst); // persist the custom name to Firestore
   };
 
   // ── Draggable mini PIP handlers ──
@@ -993,8 +1003,8 @@ export default function App() {
       <nav className={`hidden md:flex fixed left-4 top-20 z-30 flex-col gap-3 h-auto select-none pointer-events-auto ${vizSize === 'full' ? 'invisible' : ''}`}>
         <div className="glass-panel border-white/10 rounded-2xl p-1.5 flex flex-col gap-2.5 shadow-2xl">
           {[
-            { id: "pricing" as const, icon: DollarSign, tooltip: "Lumber Price Overrides" },
-            { id: "change" as const, icon: Receipt, tooltip: "AI Change Orders" },
+            { id: "pricing" as const, icon: DollarSign, tooltip: "Labor Rates" },
+            { id: "change" as const, icon: Receipt, tooltip: "Change Orders" },
             { id: "layers" as const, icon: Layers, tooltip: "Visualization Settings" }
           ].map((item) => {
             const active = activeInstrument === item.id;
@@ -1056,8 +1066,8 @@ export default function App() {
               {activeInstrument === "layers" && <Layers className="w-3.5 h-3.5 text-soft-violet" />}
               {activeInstrument === "sliders" && <Wrench className="w-3.5 h-3.5 text-cool-blue" />}
 
-              {activeInstrument === "pricing" && "Prices & Supplier Sheet"}
-              {activeInstrument === "change" && "Change Order Engine"}
+              {activeInstrument === "pricing" && "Labor Rates"}
+              {activeInstrument === "change" && "Change Orders"}
               {activeInstrument === "layers" && "Visualization Specs"}
               {activeInstrument === "sliders" && "Tools"}
             </h3>
@@ -1076,8 +1086,8 @@ export default function App() {
             <div className="space-y-2 font-mono">
               <p className="text-micro text-starlight/50 font-sans mb-3">Choose a tool:</p>
               {[
-                { id: "pricing" as const, icon: DollarSign, label: "Prices & Supplier Sheet", desc: "Override prices or upload a supplier CSV" },
-                { id: "change" as const, icon: Receipt, label: "Change Order Engine", desc: "Add scope changes and send to the client" },
+                { id: "pricing" as const, icon: DollarSign, label: "Labor Rates", desc: "Set employee wages and positions" },
+                { id: "change" as const, icon: Receipt, label: "Change Orders", desc: "Add scope changes and send to the client" },
                 { id: "layers" as const, icon: Layers, label: "Visualization Settings", desc: "Configure the 3D material yard" },
               ].map((tool) => (
                 <button
@@ -1097,77 +1107,89 @@ export default function App() {
             </div>
           )}
 
-          {/* PRICES & SUPPLIER SHEET PANEL */}
+          {/* LABOR RATES PANEL — employee wages grid */}
           {activeInstrument === "pricing" && (
             <div className="space-y-4 font-mono text-mini">
 
-              {/* Supplier CSV upload */}
-              <div className="space-y-2">
+              <div className="space-y-1">
                 <span className="block text-micro font-black uppercase text-soft-violet tracking-wider">
-                  Supplier Price Sheet
+                  Employee Labor Rates
                 </span>
                 <p className="text-micro text-starlight/50 font-sans leading-relaxed">
-                  Upload a CSV from your supplier with <span className="text-starlight/80 font-bold">name</span> and <span className="text-starlight/80 font-bold">price</span> columns. Prices are saved to your account and used automatically in future estimates.
+                  Track each crew member's position and hourly wage. Saved to your business profile.
+                  (Supplier CSV upload now lives in <span className="text-starlight/80 font-bold">Settings → Price Sheet</span>.)
                 </p>
-                <label className="flex items-center justify-center gap-2 w-full py-3 border border-dashed border-cool-blue/30 hover:border-cool-blue/60 rounded-xl cursor-pointer transition-all hover:bg-cool-blue/5 text-cool-blue text-micro font-black uppercase tracking-widest">
-                  <input
-                    type="file"
-                    accept=".csv"
-                    className="hidden"
-                    onChange={async (e) => {
-                      const file = e.target.files?.[0];
-                      if (!file || !authToken) return;
-                      const form = new FormData();
-                      form.append('file', file);
-                      const r = await fetch('/api/upload-csv', {
-                        method: 'POST',
-                        headers: { 'Authorization': `Bearer ${authToken}` },
-                        body: form,
-                      });
-                      const d = await r.json();
-                      if (r.ok) {
-                        setStatusFlash(`${d.saved ?? '?'} prices imported`);
-                      } else {
-                        setStatusFlash(`Upload failed: ${d.error}`);
-                      }
-                      setTimeout(() => setStatusFlash(null), 4000);
-                      e.target.value = '';
-                    }}
-                  />
-                  ↑ Upload Supplier CSV
-                </label>
               </div>
 
-              <hr className="border-white/5" />
-
-              {/* Manual price overrides */}
-              <span className="block text-micro font-black uppercase text-soft-violet tracking-wider">
-                Manual Rate Overrides
-              </span>
-
-              {[
-                { label: "2x4 SPF Stud (ea)", val: priceSheet.stud, target: "stud" },
-                { label: "2x4 PT Bottom Plate (ea)", val: priceSheet.treated, target: "treated" },
-                { label: "2x4 16ft Plate (ea)", val: priceSheet.plate, target: "plate" },
-                { label: "1/2\" Drywall (ea)", val: priceSheet.drywall, target: "drywall" },
-                { label: "16-D Nails Box (ea)", val: priceSheet.nails, target: "nails" },
-                { label: "Framing Labor (/hr)", val: priceSheet.laborFrame, target: "laborFrame" },
-                { label: "Drywall Labor (/hr)", val: priceSheet.laborDrywall, target: "laborDrywall" },
-              ].map((item, idx) => (
-                <div key={idx} className="flex items-center justify-between bg-void-black/40 p-2 rounded-xl border border-white/5">
-                  <span className="text-starlight/80">{item.label}</span>
-                  <div className="flex items-center gap-1 font-sans">
-                    <span className="text-starlight/45">$</span>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={item.val}
-                      onChange={(e) => setPriceSheet({ ...priceSheet, [item.target]: parseFloat(e.target.value) || 0 })}
-                      className="w-14 bg-void-black border border-white/10 text-right font-bold text-cool-blue px-1.5 py-0.5 rounded focus:outline-none focus:border-cool-blue/50"
-                    />
-                  </div>
+              {(settings.employee_wages ?? []).map((w, idx) => (
+                <div key={idx} className="flex items-center gap-2 bg-void-black/40 p-2 rounded-xl border border-white/5">
+                  <input
+                    type="text"
+                    value={w.name}
+                    placeholder="Name / Position"
+                    aria-label="Employee name or position"
+                    onChange={(e) => setSettings(s => ({
+                      ...s,
+                      employee_wages: (s.employee_wages ?? []).map((row, i) => i === idx ? { ...row, name: e.target.value } : row),
+                    }))}
+                    className="flex-1 min-w-0 bg-void-black border border-white/10 text-starlight px-2 py-1 rounded focus:outline-none focus:border-cool-blue/50"
+                  />
+                  <span className="text-starlight/45 font-sans">$</span>
+                  <input
+                    type="number"
+                    step="0.50"
+                    min="0"
+                    value={w.hourly_wage}
+                    aria-label="Hourly wage"
+                    onChange={(e) => setSettings(s => ({
+                      ...s,
+                      employee_wages: (s.employee_wages ?? []).map((row, i) => i === idx ? { ...row, hourly_wage: parseFloat(e.target.value) || 0 } : row),
+                    }))}
+                    className="w-16 bg-void-black border border-white/10 text-right font-bold text-cool-blue px-1.5 py-1 rounded focus:outline-none focus:border-cool-blue/50"
+                  />
+                  <span className="text-starlight/40 text-micro">/hr</span>
+                  <button
+                    onClick={() => setSettings(s => ({
+                      ...s,
+                      employee_wages: (s.employee_wages ?? []).filter((_row, i) => i !== idx),
+                    }))}
+                    aria-label={`Remove ${w.name || 'employee'}`}
+                    className="h-8 w-8 shrink-0 flex items-center justify-center rounded hover:bg-alert-rose/10 text-alert-rose/60 hover:text-alert-rose transition-colors cursor-pointer"
+                  >
+                    ×
+                  </button>
                 </div>
               ))}
+
+              {(settings.employee_wages ?? []).length === 0 && (
+                <p className="text-micro text-starlight/40 font-sans italic">No employees yet — add your crew below.</p>
+              )}
+
+              <button
+                onClick={() => setSettings(s => ({
+                  ...s,
+                  employee_wages: [...(s.employee_wages ?? []), { name: '', hourly_wage: s.default_labor_rate || 0 }],
+                }))}
+                className="w-full py-2 border border-dashed border-cool-blue/30 hover:border-cool-blue/60 rounded-xl text-cool-blue text-micro font-black uppercase tracking-widest transition-all hover:bg-cool-blue/5 cursor-pointer"
+              >
+                + Add employee
+              </button>
+
+              <button
+                onClick={async () => {
+                  if (!authToken) return;
+                  const r = await fetch('/api/settings', {
+                    method: 'POST',
+                    headers: apiHeaders(authToken),
+                    body: JSON.stringify({ employee_wages: settings.employee_wages ?? [] }),
+                  }).catch(() => null);
+                  setStatusFlash(r?.ok ? 'Labor rates saved' : 'Save failed — try again');
+                  setTimeout(() => setStatusFlash(null), 3500);
+                }}
+                className="w-full py-2 border border-cool-blue/30 hover:border-cool-blue bg-cool-blue/10 hover:bg-cool-blue/20 rounded-full text-cool-blue text-micro font-black uppercase tracking-widest transition-all cursor-pointer"
+              >
+                Save rates
+              </button>
             </div>
           )}
 

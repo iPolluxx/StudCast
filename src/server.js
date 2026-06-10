@@ -1952,6 +1952,7 @@ app.get('/api/settings', requireAuth, async (req, res) => {
             license_number: '',
             contact_email: '',
             default_labor_rate: 55,
+            employee_wages: [],
             global_markup_percent: 0,
             tax_rate: 5.5,
             estimateCount: 0,
@@ -1971,6 +1972,7 @@ app.get('/api/settings', requireAuth, async (req, res) => {
             license_number: data.license_number !== undefined ? data.license_number : defaultSettings.license_number,
             contact_email: data.contact_email !== undefined ? data.contact_email : defaultSettings.contact_email,
             default_labor_rate: data.default_labor_rate !== undefined ? Number(data.default_labor_rate) : defaultSettings.default_labor_rate,
+            employee_wages: Array.isArray(data.employee_wages) ? data.employee_wages : [],
             global_markup_percent: data.global_markup_percent !== undefined ? Number(data.global_markup_percent) : defaultSettings.global_markup_percent,
             tax_rate: data.tax_rate !== undefined ? Number(data.tax_rate) : defaultSettings.tax_rate,
             isOnboarded: data.isOnboarded !== undefined ? Boolean(data.isOnboarded) : defaultSettings.isOnboarded,
@@ -1993,6 +1995,7 @@ app.post('/api/settings', requireAuth, async (req, res) => {
         license_number,
         contact_email,
         default_labor_rate,
+        employee_wages,
         global_markup_percent,
         tax_rate,
         isOnboarded
@@ -2029,6 +2032,22 @@ app.post('/api/settings', requireAuth, async (req, res) => {
                 return res.status(400).json({ error: 'Tax rate must be a positive finite number' });
             }
             updateObj.tax_rate = val;
+        }
+
+        if (employee_wages !== undefined) {
+            if (!Array.isArray(employee_wages)) {
+                return res.status(400).json({ error: 'employee_wages must be an array' });
+            }
+            updateObj.employee_wages = employee_wages
+                .filter(w => w && typeof w === 'object')
+                .slice(0, 50) // sane cap for a crew roster
+                .map(w => {
+                    const wage = parseFloat(w.hourly_wage);
+                    return {
+                        name: String(w.name || '').slice(0, 80),
+                        hourly_wage: Number.isFinite(wage) && wage >= 0 ? Math.round(wage * 100) / 100 : 0,
+                    };
+                });
         }
 
         const configRef = db.collection('users').doc(userPhone).collection('settings').doc('config');

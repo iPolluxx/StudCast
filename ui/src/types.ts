@@ -61,6 +61,11 @@ export interface ChangeOrder {
   status: string;
 }
 
+export interface EmployeeWage {
+  name: string;        // employee name and/or position
+  hourly_wage: number;
+}
+
 export interface ContractorUserSettings {
   company_name: string;
   company_address: string;
@@ -68,6 +73,7 @@ export interface ContractorUserSettings {
   license_number: string;
   contact_email: string;
   default_labor_rate: number;
+  employee_wages?: EmployeeWage[];
   global_markup_percent: number;
   tax_rate: number;
   isOnboarded: boolean;
