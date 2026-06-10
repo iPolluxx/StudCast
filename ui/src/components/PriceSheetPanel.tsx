@@ -24,6 +24,7 @@ interface MarketOnlyItem {
 interface PriceSheetData {
   priceBook: PriceBookEntry[];
   marketOnly: MarketOnlyItem[];
+  market?: MarketOnlyItem[]; // full Menards reference list (all cached SKUs)
   lastSync: string | null;
 }
 
@@ -159,8 +160,8 @@ export default function PriceSheetPanel({ authToken }: Props) {
       if (!r.ok) throw new Error(d.error);
       showFlash(`${d.saved ?? "?"} prices imported from CSV`);
       await load();
-    } catch (e: any) {
-      showFlash("Upload failed: " + e.message);
+    } catch (e) {
+      showFlash("Upload failed: " + (e instanceof Error ? e.message : String(e)));
     } finally {
       setUploading(false);
     }
@@ -186,6 +187,16 @@ export default function PriceSheetPanel({ authToken }: Props) {
   }
 
   const syncableCount = data?.priceBook.filter(e => e.marketKey && !e.marketStale && e.marketPrice !== null).length ?? 0;
+
+  // Derived views for the three isolated tables
+  const marketRows = data?.market ?? data?.marketOnly ?? [];
+  const savedMarketKeys = new Set(
+    (data?.priceBook ?? []).map(e => e.marketKey).filter((k): k is string => !!k)
+  );
+  const driftRows = (data?.priceBook ?? [])
+    .filter(e => e.marketPrice !== null)
+    .map(e => ({ entry: e, diff: diffPct(e.savedPrice, e.marketPrice!) }))
+    .filter(({ diff }) => Math.abs(diff) >= 10);
 
   if (loading) {
     return (
@@ -250,11 +261,11 @@ export default function PriceSheetPanel({ authToken }: Props) {
         </div>
       )}
 
-      {/* ── Your saved prices ── */}
+      {/* ── Table 1: Your uploaded CSV catalog (price_book), isolated ── */}
       {data && data.priceBook.length > 0 && (
         <section>
           <h3 className="text-micro font-black uppercase tracking-widest text-starlight/60 mb-2">
-            Your Saved Prices
+            Your Catalog (Price Book)
           </h3>
           <div className="border border-white/10 rounded-xl overflow-hidden">
             <table className="w-full text-mini font-mono">
@@ -262,116 +273,73 @@ export default function PriceSheetPanel({ authToken }: Props) {
                 <tr className="border-b border-white/10 bg-white/3">
                   <th className="text-left px-3 py-2 text-micro font-black uppercase tracking-widest text-starlight/60">Item</th>
                   <th className="text-right px-3 py-2 text-micro font-black uppercase tracking-widest text-starlight/60">Your Price</th>
-                  <th className="text-right px-3 py-2 text-micro font-black uppercase tracking-widest text-starlight/60 hidden sm:table-cell">Menards</th>
-                  <th className="text-right px-3 py-2 text-micro font-black uppercase tracking-widest text-starlight/60 hidden sm:table-cell">Diff</th>
-                  <th className="px-3 py-2 w-20"></th>
+                  <th className="px-3 py-2 w-14"></th>
                 </tr>
               </thead>
               <tbody>
-                {data.priceBook.map((entry, i) => {
-                  const diff = entry.marketPrice !== null ? diffPct(entry.savedPrice, entry.marketPrice) : null;
-                  const stale = diff !== null && Math.abs(diff) >= 10;
-                  return (
-                    <tr
-                      key={entry.itemId}
-                      className={`border-t border-white/5 ${i % 2 === 0 ? "bg-white/2" : ""} hover:bg-white/5 transition-colors`}
-                    >
-                      <td className="px-3 py-2 text-starlight/80 max-w-[180px] truncate">{entry.name}</td>
+                {data.priceBook.map((entry, i) => (
+                  <tr
+                    key={entry.itemId}
+                    className={`border-t border-white/5 ${i % 2 === 0 ? "bg-white/2" : ""} hover:bg-white/5 transition-colors`}
+                  >
+                    <td className="px-3 py-2 text-starlight/80 max-w-[220px] truncate">{entry.name}</td>
 
-                      {/* Editable price */}
-                      <td className="px-3 py-2 text-right">
-                        {editingId === entry.itemId ? (
-                          <input
-                            autoFocus
-                            type="number"
-                            step="0.01"
-                            value={editValue}
-                            onChange={e => setEditValue(e.target.value)}
-                            onBlur={() => commitEdit(entry)}
-                            onKeyDown={e => {
-                              if (e.key === "Enter") commitEdit(entry);
-                              if (e.key === "Escape") setEditingId(null);
-                            }}
-                            className="w-20 bg-void-black border border-cool-blue/50 rounded px-1 py-0.5 text-right text-cool-blue outline-none text-mini"
-                          />
-                        ) : (
-                          <button
-                            onClick={() => { setEditingId(entry.itemId); setEditValue(String(entry.savedPrice)); }}
-                            aria-label={`Edit your price for ${entry.name}`}
-                            className="text-starlight hover:text-cool-blue transition-colors cursor-pointer font-mono"
-                          >
-                            ${entry.savedPrice.toFixed(2)}
-                          </button>
-                        )}
-                      </td>
+                    {/* Editable price */}
+                    <td className="px-3 py-2 text-right">
+                      {editingId === entry.itemId ? (
+                        <input
+                          autoFocus
+                          type="number"
+                          step="0.01"
+                          value={editValue}
+                          onChange={e => setEditValue(e.target.value)}
+                          onBlur={() => commitEdit(entry)}
+                          onKeyDown={e => {
+                            if (e.key === "Enter") commitEdit(entry);
+                            if (e.key === "Escape") setEditingId(null);
+                          }}
+                          className="w-20 bg-void-black border border-cool-blue/50 rounded px-1 py-0.5 text-right text-cool-blue outline-none text-mini"
+                        />
+                      ) : (
+                        <button
+                          onClick={() => { setEditingId(entry.itemId); setEditValue(String(entry.savedPrice)); }}
+                          aria-label={`Edit your price for ${entry.name}`}
+                          className="text-starlight hover:text-cool-blue transition-colors cursor-pointer font-mono"
+                        >
+                          ${entry.savedPrice.toFixed(2)}
+                        </button>
+                      )}
+                    </td>
 
-                      {/* Market price */}
-                      <td className="px-3 py-2 text-right hidden sm:table-cell">
-                        {entry.marketPrice !== null ? (
-                          <span className="text-live-emerald">${entry.marketPrice.toFixed(2)}</span>
-                        ) : entry.marketStale ? (
-                          <span className="text-starlight/60">stale</span>
-                        ) : (
-                          <span className="text-starlight/60">—</span>
-                        )}
-                        {entry.marketAgeH !== null && entry.marketPrice !== null && (
-                          <span className="ml-1 text-micro text-starlight/60">{entry.marketAgeH}h</span>
-                        )}
-                      </td>
-
-                      {/* Diff */}
-                      <td className="px-3 py-2 text-right hidden sm:table-cell">
-                        {diff !== null ? (
-                          <span className={stale ? "text-stale-amber font-black" : "text-starlight/60"}>
-                            {diff > 0 ? "+" : ""}{diff}%
-                          </span>
-                        ) : (
-                          <span className="text-starlight/60">—</span>
-                        )}
-                      </td>
-
-                      {/* Actions */}
-                      <td className="px-3 py-2">
-                        <div className="flex items-center justify-end gap-1.5">
-                          {entry.marketKey && entry.marketPrice !== null && !entry.marketStale && (
-                            <button
-                              onClick={() => syncOne(entry)}
-                              disabled={syncingItem === entry.itemId}
-                              title="Use Menards price"
-                              aria-label={`Use Menards price for ${entry.name}`}
-                              className="flex h-11 w-11 items-center justify-center rounded hover:bg-cool-blue/10 text-cool-blue/60 hover:text-cool-blue transition-all cursor-pointer disabled:opacity-40"
-                            >
-                              <ArrowDownToLine className={`w-3.5 h-3.5 ${syncingItem === entry.itemId ? "animate-spin" : ""}`} />
-                            </button>
-                          )}
-                          <button
-                            onClick={() => deleteEntry(entry.itemId)}
-                            disabled={deletingItem === entry.itemId}
-                            title="Remove from saved prices"
-                            aria-label={`Remove ${entry.name} from saved prices`}
-                            className="flex h-11 w-11 items-center justify-center rounded hover:bg-alert-rose/10 text-alert-rose/60 hover:text-alert-rose transition-all cursor-pointer disabled:opacity-40"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                    <td className="px-3 py-2">
+                      <div className="flex items-center justify-end">
+                        <button
+                          onClick={() => deleteEntry(entry.itemId)}
+                          disabled={deletingItem === entry.itemId}
+                          title="Remove from saved prices"
+                          aria-label={`Remove ${entry.name} from saved prices`}
+                          className="flex h-11 w-11 items-center justify-center rounded hover:bg-alert-rose/10 text-alert-rose/60 hover:text-alert-rose transition-all cursor-pointer disabled:opacity-40"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
           <p className="text-micro text-starlight/60 font-mono mt-1.5 pl-1">
-            Click any price to edit inline. Amber diff = &gt;10% from Menards market.
+            Your uploaded/saved unit prices. Click any price to edit inline.
           </p>
         </section>
       )}
 
-      {/* ── Menards catalog — not yet saved ── */}
-      {data && data.marketOnly.length > 0 && (
+      {/* ── Table 2: Live Menards market reference (read-only catalog) ── */}
+      {marketRows.length > 0 && (
         <section>
           <h3 className="text-micro font-black uppercase tracking-widest text-starlight/60 mb-2">
-            Menards Catalog — Not in Your Price Book
+            Menards Market Reference
           </h3>
           <div className="border border-white/10 rounded-xl overflow-hidden">
             <table className="w-full text-mini font-mono">
@@ -384,7 +352,7 @@ export default function PriceSheetPanel({ authToken }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {data.marketOnly.map((item, i) => (
+                {marketRows.map((item, i) => (
                   <tr
                     key={item.key}
                     className={`border-t border-white/5 ${i % 2 === 0 ? "bg-white/2" : ""} hover:bg-white/5 transition-colors`}
@@ -404,7 +372,9 @@ export default function PriceSheetPanel({ authToken }: Props) {
                       )}
                     </td>
                     <td className="px-3 py-2 text-right">
-                      {item.price !== null && (
+                      {savedMarketKeys.has(item.key) ? (
+                        <span className="text-micro text-starlight/40 pr-2" title="Already in your price book">saved</span>
+                      ) : item.price !== null && (
                         <button
                           onClick={() => saveMarketItem(item)}
                           disabled={savingItem === item.key}
@@ -422,14 +392,67 @@ export default function PriceSheetPanel({ authToken }: Props) {
             </table>
           </div>
           <p className="text-micro text-starlight/60 font-mono mt-1.5 pl-1">
-            These use the Menards market price automatically. Save to your book to lock in a custom price.
+            Live weekly-scraped Menards (Wausau, WI) reference pricing. Unmatched items fall back to this tier automatically.
           </p>
         </section>
       )}
 
-      {data && data.priceBook.length === 0 && data.marketOnly.length === 0 && (
+      {/* ── Table 3: Drift alerts — saved vs market differs >10% ── */}
+      {driftRows.length > 0 && (
+        <section>
+          <h3 className="text-micro font-black uppercase tracking-widest text-stale-amber mb-2">
+            Drift Alerts — &gt;10% From Market
+          </h3>
+          <div className="border border-stale-amber/25 rounded-xl overflow-hidden">
+            <table className="w-full text-mini font-mono">
+              <thead>
+                <tr className="border-b border-white/10 bg-stale-amber/5">
+                  <th className="text-left px-3 py-2 text-micro font-black uppercase tracking-widest text-starlight/60">Item</th>
+                  <th className="text-right px-3 py-2 text-micro font-black uppercase tracking-widest text-starlight/60">Yours</th>
+                  <th className="text-right px-3 py-2 text-micro font-black uppercase tracking-widest text-starlight/60">Menards</th>
+                  <th className="text-right px-3 py-2 text-micro font-black uppercase tracking-widest text-starlight/60">Diff</th>
+                  <th className="px-3 py-2 w-14"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {driftRows.map(({ entry, diff }, i) => (
+                  <tr
+                    key={entry.itemId}
+                    className={`border-t border-white/5 ${i % 2 === 0 ? "bg-white/2" : ""} hover:bg-white/5 transition-colors`}
+                  >
+                    <td className="px-3 py-2 text-starlight/80 max-w-[180px] truncate">{entry.name}</td>
+                    <td className="px-3 py-2 text-right text-starlight">${entry.savedPrice.toFixed(2)}</td>
+                    <td className="px-3 py-2 text-right text-live-emerald">${entry.marketPrice!.toFixed(2)}</td>
+                    <td className="px-3 py-2 text-right">
+                      <span className="text-stale-amber font-black">{diff > 0 ? "+" : ""}{diff}%</span>
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center justify-end">
+                        <button
+                          onClick={() => syncOne(entry)}
+                          disabled={syncingItem === entry.itemId}
+                          title="Use Menards price"
+                          aria-label={`Use Menards price for ${entry.name}`}
+                          className="flex h-11 w-11 items-center justify-center rounded hover:bg-cool-blue/10 text-cool-blue/60 hover:text-cool-blue transition-all cursor-pointer disabled:opacity-40"
+                        >
+                          <ArrowDownToLine className={`w-3.5 h-3.5 ${syncingItem === entry.itemId ? "animate-spin" : ""}`} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-micro text-starlight/60 font-mono mt-1.5 pl-1">
+            Saved prices that have drifted more than 10% from the live market. Tap the arrow to adopt the Menards price.
+          </p>
+        </section>
+      )}
+
+      {data && data.priceBook.length === 0 && marketRows.length === 0 && (
         <div className="py-10 text-center text-starlight/60 text-xs font-mono">
-          No pricing data yet. Generate estimates to build your price book, or trigger a Menards sync.
+          No pricing data yet. Import a supplier CSV, generate estimates to build your price book, or trigger a Menards sync.
         </div>
       )}
     </div>

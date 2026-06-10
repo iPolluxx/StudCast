@@ -1705,9 +1705,29 @@ app.get('/api/price-sheet', requireAuth, async (req, res) => {
             });
         }
 
+        // Full Menards reference list — rendered by the UI as its own isolated
+        // table (market_prices), independent of the contractor's price_book.
+        const market = [];
+        for (const sku of SKUs) {
+            const key = sanitizeItemId(sku.key);
+            const m = marketMap[key];
+            if (!m) continue;
+            market.push({
+                key,
+                name: sku.name,
+                unit: sku.unit,
+                price: m.stale ? null : m.price,
+                marketAgeH: m.scraped_at
+                    ? Math.round((Date.now() - m.scraped_at.toDate()) / 36e5)
+                    : null,
+                stale: m.stale || false,
+            });
+        }
+
         res.json({
             priceBook,
             marketOnly,
+            market,
             lastSync: menardsMeta.last_run ? menardsMeta.last_run.toDate().toISOString() : null,
         });
     } catch (e) {
