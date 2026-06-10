@@ -3099,16 +3099,22 @@ app.put('/api/change-orders/:id', requireAuth, requireSubscription, async (req, 
 // ══════════════════════════════════════════════════════════════════════
 //  ENDPOINT: POST /api/change-orders/send
 //  Requires: requireAuth
-//  Body: { changeOrderId, parentEstimateId, clientPhone }
-//  Dispatches Twilio SMS and persists client_phone to parent estimate.
+//  Body: { changeOrderId, parentEstimateId, clientEmail }
+//  Emails the approval link via the authenticated nodemailer (gmail) stack
+//  and persists client_email to the parent estimate. (Replaced Twilio SMS —
+//  email is not gated by A2P campaign approval.)
 // ══════════════════════════════════════════════════════════════════════
 
 app.post('/api/change-orders/send', requireAuth, requireSubscription, async (req, res) => {
     const userPhone = req.userPhone;
-    const { changeOrderId, parentEstimateId, clientPhone } = req.body;
+    const { changeOrderId, parentEstimateId, clientEmail } = req.body;
 
-    if (!changeOrderId || !parentEstimateId || !clientPhone) {
-        return res.status(400).json({ error: 'changeOrderId, parentEstimateId, and clientPhone are required.' });
+    if (!changeOrderId || !parentEstimateId || !clientEmail) {
+        return res.status(400).json({ error: 'changeOrderId, parentEstimateId, and clientEmail are required.' });
+    }
+    const emailTo = String(clientEmail).trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(emailTo)) {
+        return res.status(400).json({ error: 'clientEmail must be a valid email address.' });
     }
 
     try {
@@ -3122,9 +3128,9 @@ app.post('/api/change-orders/send', requireAuth, requireSubscription, async (req
         }
         const co = coSnap.data();
 
-        // ── 2. Persist client_phone on parent estimate ─────────────────
+        // ── 2. Persist client_email on parent estimate ─────────────────
         const parentRef = db.collection('users').doc(userPhone).collection('estimates').doc(parentEstimateId);
-        await parentRef.set({ client_phone: clientPhone }, { merge: true });
+        await parentRef.set({ client_email: emailTo }, { merge: true });
 
         // ── 3. Build approval URL ──────────────────────────────────────
         const appUrl = process.env.APP_URL || 'http://localhost:8080';
@@ -3135,25 +3141,49 @@ app.post('/api/change-orders/send', requireAuth, requireSubscription, async (req
         });
         const approvalUrl = `${appUrl}/approve?t=${co.approval_token}&r=${encodeURIComponent(changeOrderId)}`;
 
-        // ── 4. Send Twilio SMS ─────────────────────────────────────────
+        // ── 4. Email the approval link ─────────────────────────────────
+        const user = req.authedUser;
+        const companyName = user.companyName || 'Lone Ranger Estimator';
         const totalFormatted = `$${Number(co.change_order_total || 0).toFixed(2)}`;
-        const messageBody = `Lone Ranger Estimator: A Change Order for your project has been issued (Additional: ${totalFormatted}). Review and approve here: ${approvalUrl}`;
-
-        const smsResult = await twilioClient.messages.create({
-            body: messageBody + " Reply STOP to opt out.",
-            [process.env.TWILIO_MESSAGING_SERVICE_SID ? 'messagingServiceSid' : 'from']: process.env.TWILIO_MESSAGING_SERVICE_SID || process.env.TWILIO_PHONE_NUMBER,
-            to: clientPhone,
+        const transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+        });
+        const mailResult = await transporter.sendMail({
+            from:    `"${companyName}" <${process.env.EMAIL_USER}>`,
+            to:      emailTo,
+            subject: `Change Order for your project — ${totalFormatted} (action required)`,
+            text:
+                `Hello,\n\nA change order for your project has been issued by ${companyName} ` +
+                `(additional amount: ${totalFormatted}).\n\nReview and approve it here:\n${approvalUrl}\n\n` +
+                `Thank you,\n${companyName}`,
+            html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px;">
+                    <h2 style="color: #1e2533;">${escapeHtml(companyName)}</h2>
+                    <p>Hello,</p>
+                    <p>A <strong>Change Order</strong> for your project has been issued
+                       (additional amount: <strong>${totalFormatted}</strong>).</p>
+                    <p style="margin: 22px 0;">
+                        <a href="${approvalUrl}"
+                           style="background: #521880; color: #ffffff; padding: 12px 22px; border-radius: 8px; text-decoration: none; font-weight: bold;">
+                            Review &amp; Approve
+                        </a>
+                    </p>
+                    <p style="font-size: 12px; color: #888;">Or open this link: ${approvalUrl}</p>
+                    <p>Thank you,<br/>${escapeHtml(companyName)}</p>
+                </div>
+            `,
         });
 
         // ── 5. Mark as sent in Firestore ──────────────────────────────
-        await coRef.set({ sent_at: new Date().toISOString(), sent_to: clientPhone, twilio_sid: smsResult.sid }, { merge: true });
+        await coRef.set({ sent_at: new Date().toISOString(), sent_to: emailTo, email_message_id: mailResult.messageId || null }, { merge: true });
 
-        console.log(`[${userPhone}] Change order ${changeOrderId} SMS sent to ${clientPhone}. SID: ${smsResult.sid}`);
-        res.json({ success: true, sid: smsResult.sid, sent_to: clientPhone });
+        console.log(`[${userPhone}] Change order ${changeOrderId} emailed to ${emailTo}. MessageId: ${mailResult.messageId}`);
+        res.json({ success: true, message_id: mailResult.messageId || null, sent_to: emailTo });
 
     } catch (err) {
         console.error(`[${userPhone}] change-orders/send error:`, err.message);
-        res.status(500).json({ error: err.message || 'Failed to send change order SMS.' });
+        res.status(500).json({ error: err.message || 'Failed to email change order.' });
     }
 });
 

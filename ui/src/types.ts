@@ -27,6 +27,7 @@ export interface Estimate {
   client_name: string;
   client_address: string;
   client_phone: string;
+  client_email?: string;
   status?: string;
   updatedAt?: string;
 }

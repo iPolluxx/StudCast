@@ -158,7 +158,7 @@ export default function App() {
   const [changeOrderLoading, setChangeOrderLoading] = useState(false);
   const [changeOrderModalOpen, setChangeOrderModalOpen] = useState(false);
   const [changeOrderInputModalOpen, setChangeOrderInputModalOpen] = useState(false);
-  const [coDispatchedInfo, setCoDispatchedInfo] = useState<{ id: string; total: number; phone: string } | null>(null);
+  const [coDispatchedInfo, setCoDispatchedInfo] = useState<{ id: string; total: number; recipient: string } | null>(null);
   const [invoiceModal, setInvoiceModal] = useState<{
     estimateId: string;
     estimateTotal: number;
@@ -713,12 +713,12 @@ export default function App() {
   // Unique clients derived from estimates — used in ChangeOrderModal dropdown
   const clients = useMemo(() =>
     estimates
-      .filter(e => e.client_phone)
+      .filter(e => e.client_email)
       .map(e => ({
-        label: `${e.client_name || 'Unknown'} — ${e.client_phone}`,
-        phone: e.client_phone,
+        label: `${e.client_name || 'Unknown'} — ${e.client_email}`,
+        email: e.client_email as string,
       }))
-      .filter((c, i, arr) => arr.findIndex(x => x.phone === c.phone) === i)
+      .filter((c, i, arr) => arr.findIndex(x => x.email === c.email) === i)
       .sort((a, b) => a.label.localeCompare(b.label)),
     [estimates]
   );
@@ -1207,8 +1207,8 @@ export default function App() {
                   </div>
                   <div className="text-mini text-starlight/70 leading-snug">
                     <span className="text-starlight font-black">${coDispatchedInfo.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                    {' '}change order texted to{' '}
-                    <span className="text-cool-blue font-black">{coDispatchedInfo.phone}</span>
+                    {' '}change order emailed to{' '}
+                    <span className="text-cool-blue font-black">{coDispatchedInfo.recipient}</span>
                   </div>
                   <button
                     onClick={() => setCoDispatchedInfo(null)}
@@ -1704,12 +1704,12 @@ export default function App() {
         activeEstimateId={activeEstimateId}
         taxRate={settings.tax_rate / 100}
         onClose={() => { setChangeOrderModalOpen(false); setDerivedChangeOrder(null); setChangeOrderInput(''); }}
-        onDispatched={(phone) => {
+        onDispatched={(email) => {
           setChangeOrderModalOpen(false);
           setCoDispatchedInfo({
             id: derivedChangeOrder?.id ?? '',
             total: derivedChangeOrder?.change_order_total ?? 0,
-            phone,
+            recipient: email,
           });
           setDerivedChangeOrder(null);
           setChangeOrderInput('');

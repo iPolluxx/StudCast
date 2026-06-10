@@ -5,7 +5,7 @@ import { trapTab } from "../focusTrap";
 
 interface ClientOption {
   label: string;
-  phone: string;
+  email: string;
 }
 
 interface Props {
@@ -16,19 +16,17 @@ interface Props {
   activeEstimateId: string | null;
   taxRate?: number;
   onClose: () => void;
-  onDispatched: (phone: string) => void;
+  onDispatched: (email: string) => void;
 }
 
-function normalizePhone(raw: string): string | null {
-  const digits = raw.replace(/\D/g, '');
-  if (digits.length === 10) return '+1' + digits;
-  if (digits.length === 11 && digits[0] === '1') return '+' + digits;
-  return null;
+function normalizeEmail(raw: string): string | null {
+  const v = raw.trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v) ? v : null;
 }
 
 export default function ChangeOrderModal({ open, changeOrder, clients, authToken, activeEstimateId, taxRate = 0.055, onClose, onDispatched }: Props) {
-  const [selectedPhone, setSelectedPhone] = useState('');
-  const [manualPhone, setManualPhone] = useState('');
+  const [selectedEmail, setSelectedEmail] = useState('');
+  const [manualEmail, setManualEmail] = useState('');
   const [localMaterials, setLocalMaterials] = useState<MaterialItem[]>([]);
   const [localLabor, setLocalLabor] = useState<LaborItem[]>([]);
   const [editingCell, setEditingCell] = useState<string | null>(null);
@@ -45,8 +43,8 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
     if (changeOrder && open) {
       setLocalMaterials(changeOrder.added_materials ?? []);
       setLocalLabor(changeOrder.added_labor ?? []);
-      setSelectedPhone('');
-      setManualPhone('');
+      setSelectedEmail('');
+      setManualEmail('');
       setDirty(false);
       setDispatchError(null);
       // Move focus into the dialog for keyboard + screen-reader users
@@ -69,8 +67,8 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
     return () => document.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
-  const effectivePhone = selectedPhone || manualPhone;
-  const validPhone = normalizePhone(effectivePhone);
+  const effectiveEmail = selectedEmail || manualEmail;
+  const validEmail = normalizeEmail(effectiveEmail);
   const hasItems = localMaterials.length > 0 || localLabor.length > 0;
 
   const matSubtotal = localMaterials.reduce((s, m) => s + (m.total ?? 0), 0);
@@ -110,7 +108,7 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
   }
 
   const handleDispatch = async () => {
-    if (!validPhone || !hasItems || !changeOrder || !authToken) return;
+    if (!validEmail || !hasItems || !changeOrder || !authToken) return;
     setDispatching(true);
     setDispatchError(null);
     try {
@@ -130,19 +128,19 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
         if (!upd.ok) throw new Error(updData.error || 'Failed to save edits');
       }
 
-      // 2. Text the SMS link to the client (sends the regenerated PDF + total)
+      // 2. Email the approval link to the client (review page + total)
       const resp = await fetch('/api/change-orders/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
         body: JSON.stringify({
           changeOrderId: changeOrder.id,
           parentEstimateId: activeEstimateId,
-          clientPhone: validPhone,
+          clientEmail: validEmail,
         }),
       });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.error || 'Send failed');
-      onDispatched(validPhone!);
+      onDispatched(validEmail!);
     } catch (e: any) {
       setDispatchError(e.message);
     } finally {
@@ -199,29 +197,30 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
             {clients.length > 0 && (
               <select
                 id="co-client"
-                value={selectedPhone}
-                onChange={e => { setSelectedPhone(e.target.value); setManualPhone(''); }}
+                value={selectedEmail}
+                onChange={e => { setSelectedEmail(e.target.value); setManualEmail(''); }}
                 style={{ colorScheme: 'dark' }}
                 className="w-full bg-void-black border border-white/10 focus:border-cool-blue rounded-xl px-3 py-2 text-mini font-mono text-starlight outline-none transition-colors cursor-pointer"
               >
                 <option value="">Choose a client…</option>
                 {clients.map(c => (
-                  <option key={c.phone} value={c.phone}>{c.label}</option>
+                  <option key={c.email} value={c.email}>{c.label}</option>
                 ))}
               </select>
             )}
-            {!selectedPhone && (
+            {!selectedEmail && (
               <div>
                 <input
-                  id="co-phone"
-                  aria-label="Client phone number"
-                  value={manualPhone}
-                  onChange={e => setManualPhone(e.target.value)}
-                  placeholder={clients.length > 0 ? 'Or type a phone number: (715) 555-0100' : 'Client phone: (715) 555-0100'}
+                  id="co-email"
+                  type="email"
+                  aria-label="Client email address"
+                  value={manualEmail}
+                  onChange={e => setManualEmail(e.target.value)}
+                  placeholder={clients.length > 0 ? 'Or type an email: client@example.com' : 'Client email: client@example.com'}
                   className="w-full bg-void-black border border-white/10 focus:border-cool-blue rounded-xl px-3 py-2 text-mini font-mono text-starlight outline-none transition-colors"
                 />
-                {manualPhone && !normalizePhone(manualPhone) && (
-                  <p className="text-micro text-alert-rose font-mono mt-1">Enter a full 10-digit US number</p>
+                {manualEmail && !normalizeEmail(manualEmail) && (
+                  <p className="text-micro text-alert-rose font-mono mt-1">Enter a valid email address</p>
                 )}
               </div>
             )}
@@ -383,18 +382,18 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
             </div>
           )}
           {/* Blocking reason — visible and specific when CTA is locked */}
-          {(!validPhone || !hasItems) && !dispatchError && (
+          {(!validEmail || !hasItems) && !dispatchError && (
             <div className="flex items-center gap-2 text-mini font-mono bg-void-black/60 border border-white/8 rounded-xl px-3 py-2 text-starlight/60">
               {!hasItems
                 ? 'No items to send — close and describe the change with specific materials or labor.'
-                : 'Enter a client phone number above to enable sending.'}
+                : 'Enter a client email address above to enable sending.'}
             </div>
           )}
 
           <div className="flex items-center justify-between gap-3">
             <p className="text-micro text-starlight/60 font-mono">
-              {validPhone && hasItems
-                ? <>Will text a review link to <span className="text-cool-blue font-black">{validPhone}</span></>
+              {validEmail && hasItems
+                ? <>Will email a review link to <span className="text-cool-blue font-black">{validEmail}</span></>
                 : null}
             </p>
             <div className="flex items-center gap-3 shrink-0">
@@ -406,13 +405,13 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
               </button>
               <button
                 onClick={handleDispatch}
-                disabled={!validPhone || !hasItems || dispatching}
+                disabled={!validEmail || !hasItems || dispatching}
                 className="bg-gradient-to-r from-cool-blue to-soft-violet text-void-black font-black tracking-widest text-micro px-6 py-2 rounded-full transition-all cursor-pointer flex items-center gap-1.5 uppercase shadow-lg shadow-cool-blue/20 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {dispatching
                   ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                   : <Send className="w-3.5 h-3.5" />}
-                {dispatching ? 'Sending…' : 'Text to client'}
+                {dispatching ? 'Sending…' : 'Email to client'}
               </button>
             </div>
           </div>
