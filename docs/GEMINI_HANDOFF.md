@@ -331,6 +331,26 @@ From `ui/dist/` (built by Dockerfile):
 
 ## Work Session Log
 
+### Session: 2026-06-10 — Production-Ready Fixes (persistence, naming, price sheet, labor rates, CO email, invoice PDF)
+
+> Note: the 2026-06-09 pipeline changes (`sanitize.js` hardening, `responseMimeType`,
+> `persistLedger` merge rework) were **reverted by the owner** — the jest suite asserts the original
+> behavior. Those files are now guarded: do not modify `sanitize.js`/`parseGeminiJSON`, the 3-stage
+> pipeline (`estimator/pricer/reviewer`), or `persistLedger` without explicit direction.
+
+#### What was built (5 incremental commits, jest 69/69 green throughout)
+
+1. **`c708ce9` — Grid persistence + mock-data removal.** `updateEstimateItems` queues a debounced (900 ms) full-document save to `POST /api/estimates/:id/save`, flushed before voice/text extraction; the scope-of-work autosave rides the same full-payload path (its old scope-only POST hit route defaults and wiped `items` in Firestore). The `initialEstimates` demo seed is deleted everywhere — the ledger boots strictly `[]` when Firestore is empty (dev keeps only a no-redirect guard, no data).
+2. **`3b554d6` — Named estimates + toolbar pivot.** "New Estimate" prompts for a name (blank → `Estimate - <date>`, Cancel aborts) and persists it. "AI Change Orders" → "Change Orders". "Lumber Price Overrides" → **Labor Rates**: an editable employee-wages grid (name/position + hourly wage, add/remove rows) saved under `settings.employee_wages` (POST/GET `/api/settings` validate + return it; capped at 50 entries). Supplier CSV upload moved to Settings → Price Sheet.
+3. **`cc282b5` — Price sheet isolation.** `GET /api/price-sheet` additionally returns `market[]` (every cached Menards SKU). `PriceSheetPanel` renders three isolated tables: (1) the contractor's catalog/price_book with inline edit + delete, (2) read-only Menards market reference with save-to-book, (3) drift alerts where saved vs market differs >10 %, with one-tap sync.
+4. **`ddc85f6` — Change Orders via email.** `ChangeOrderModal` swaps the phone input for a validated email input (client dropdown lists estimates with `client_email`; `Estimate` type gains `client_email?`). `POST /api/change-orders/send` now sends the `/approve` token link through the existing gmail nodemailer stack (branded HTML button), persisting `client_email` + `email_message_id`. Twilio SMS removed from this route.
+5. **`a6a49d4` — Invoice PDF fix.** `renderInvoicePdf` adds semantic per-line Materials and Labor tables (legacy untyped rows classified by the role heuristic). **Root cause of the blank PDFs found:** Puppeteer v22+ returns `Uint8Array` from `page.pdf()`, and `uint8.toString('base64')` ignores the encoding arg (emits comma-joined decimals) — both `renderInvoicePdf` AND `renderChangeOrderPdf` were producing corrupt attachments. Both now wrap in `Buffer.from()` first. Verified by extracting the real function and rendering a sample invoice through headless Chrome (fully itemized, correct totals, escaped HTML).
+
+#### Verification
+`tsc -b && vite build` after each frontend commit; eslint clean on new lines; `node --check` + full jest (69/69) after each backend commit; sample invoice PDF rendered end-to-end and visually inspected.
+
+---
+
 ### Session: 2026-06-08 — CO/Invoice Flow Hardening + Backend Tax Fix
 
 #### What was built
