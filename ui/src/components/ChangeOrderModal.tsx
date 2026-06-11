@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { X, Send, RefreshCw, AlertTriangle } from "lucide-react";
+import { X, Send, RefreshCw, AlertTriangle, Camera } from "lucide-react";
 import type { ChangeOrder, MaterialItem, LaborItem } from "../types";
 import { trapTab } from "../focusTrap";
 
@@ -34,8 +34,12 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
   const [dirty, setDirty] = useState(false);
   const [dispatching, setDispatching] = useState(false);
   const [dispatchError, setDispatchError] = useState<string | null>(null);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [imageUploading, setImageUploading] = useState(false);
+  const [imageUploadError, setImageUploadError] = useState<string | null>(null);
 
   const panelRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const editingRef = useRef<string | null>(null);
   editingRef.current = editingCell;
 
@@ -47,6 +51,10 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
       setManualEmail('');
       setDirty(false);
       setDispatchError(null);
+      setImageUrl(null);
+      setImageUploading(false);
+      setImageUploadError(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
       // Move focus into the dialog for keyboard + screen-reader users
       requestAnimationFrame(() => panelRef.current?.focus());
     }
@@ -136,6 +144,7 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
           changeOrderId: changeOrder.id,
           parentEstimateId: activeEstimateId,
           clientEmail: validEmail,
+          image_url: imageUrl,
         }),
       });
       const data = await resp.json();
@@ -145,6 +154,29 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
       setDispatchError(e.message);
     } finally {
       setDispatching(false);
+    }
+  };
+
+  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImageUploading(true);
+    setImageUploadError(null);
+    try {
+      const form = new FormData();
+      form.append('image', file);
+      const resp = await fetch('/api/change-orders/upload-image', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${authToken}` },
+        body: form,
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || 'Upload failed');
+      setImageUrl(data.imageUrl);
+    } catch (err: unknown) {
+      setImageUploadError(err instanceof Error ? err.message : 'Upload failed. Please try again.');
+    } finally {
+      setImageUploading(false);
     }
   };
 
@@ -190,6 +222,55 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
               "{changeOrder.change_summary}"
             </p>
           )}
+
+          {/* Job-site photo */}
+          <section>
+            <p className={labelCls}>Job-site photo</p>
+            {imageUrl ? (
+              <div className="flex flex-col gap-2 items-start">
+                <img
+                  src={imageUrl}
+                  alt="Attached job-site photo"
+                  className="max-h-44 rounded-xl border border-white/10 object-contain"
+                />
+                <button
+                  type="button"
+                  onClick={() => { setImageUrl(null); if (fileInputRef.current) fileInputRef.current.value = ''; }}
+                  className="flex items-center gap-1.5 text-micro text-alert-rose font-mono hover:underline cursor-pointer"
+                >
+                  <X className="w-3 h-3" />
+                  Remove photo
+                </button>
+              </div>
+            ) : (
+              <div>
+                <label
+                  htmlFor="co-photo"
+                  className={`flex items-center gap-2.5 px-4 py-3 border border-dashed ${imageUploading ? 'border-soft-violet/40 opacity-60 cursor-not-allowed' : 'border-white/20 hover:border-soft-violet/50 hover:bg-soft-violet/5 cursor-pointer'} rounded-xl transition-colors`}
+                >
+                  {imageUploading
+                    ? <RefreshCw className="w-4 h-4 text-soft-violet animate-spin shrink-0" />
+                    : <Camera className="w-4 h-4 text-soft-violet shrink-0" />}
+                  <span className="text-mini font-mono text-starlight/70">
+                    {imageUploading ? 'Uploading…' : 'Attach job-site photo (optional)'}
+                  </span>
+                </label>
+                <input
+                  ref={fileInputRef}
+                  id="co-photo"
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  disabled={imageUploading}
+                  onChange={handleImageChange}
+                  className="sr-only"
+                />
+                {imageUploadError && (
+                  <p role="alert" className="text-micro text-alert-rose font-mono mt-1.5">{imageUploadError}</p>
+                )}
+              </div>
+            )}
+          </section>
 
           {/* Client picker */}
           <div className="space-y-2">
@@ -376,16 +457,22 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
         {/* Footer */}
         <div className="px-6 py-4 border-t border-white/10 shrink-0 space-y-3">
           {dispatchError && (
-            <div className="flex items-center gap-2 text-mini text-alert-rose font-mono bg-alert-rose/5 border border-alert-rose/20 rounded-xl px-3 py-2">
+            <div role="alert" className="flex items-center gap-2 text-mini text-alert-rose font-mono bg-alert-rose/5 border border-alert-rose/20 rounded-xl px-3 py-2">
               <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
               {dispatchError}
+            </div>
+          )}
+          {imageUploading && (
+            <div role="status" className="flex items-center gap-2 text-mini text-soft-violet font-mono">
+              <RefreshCw className="w-3 h-3 animate-spin shrink-0" />
+              Uploading photo, please wait…
             </div>
           )}
           {/* Blocking reason — visible and specific when CTA is locked */}
           {(!validEmail || !hasItems) && !dispatchError && (
             <div className="flex items-center gap-2 text-mini font-mono bg-void-black/60 border border-white/8 rounded-xl px-3 py-2 text-starlight/60">
               {!hasItems
-                ? 'No items to send — close and describe the change with specific materials or labor.'
+                ? 'No items to send. Close and describe the change with specific materials or labor.'
                 : 'Enter a client email address above to enable sending.'}
             </div>
           )}
@@ -405,7 +492,7 @@ export default function ChangeOrderModal({ open, changeOrder, clients, authToken
               </button>
               <button
                 onClick={handleDispatch}
-                disabled={!validEmail || !hasItems || dispatching}
+                disabled={!validEmail || !hasItems || dispatching || imageUploading}
                 className="bg-gradient-to-r from-cool-blue to-soft-violet text-void-black font-black tracking-widest text-micro px-6 py-2 rounded-full transition-all cursor-pointer flex items-center gap-1.5 uppercase shadow-lg shadow-cool-blue/20 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {dispatching

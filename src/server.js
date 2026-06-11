@@ -2952,6 +2952,46 @@ app.post('/api/estimates/:id/generate-invoice', requireAuth, requireSubscription
 });
 
 // ══════════════════════════════════════════════════════════════════════
+//  ENDPOINT: POST /api/change-orders/upload-image
+//  Requires: requireAuth, requireSubscription
+//  Body: multipart/form-data, field "image" (image/*)
+//  Returns: { imageUrl: "..." }
+// ══════════════════════════════════════════════════════════════════════
+const { Storage } = require('@google-cloud/storage');
+const coStorage = new Storage();
+const coBucket = coStorage.bucket('lone-ranger-change-orders');
+
+const coImageUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB — job-site photos
+    fileFilter: (_req, file, cb) => {
+        if (!file.mimetype.startsWith('image/')) {
+            return cb(new Error('Only image files are allowed'));
+        }
+        cb(null, true);
+    },
+});
+
+app.post('/api/change-orders/upload-image', coImageUpload.single('image'), requireAuth, requireSubscription, async (req, res) => {
+    const userPhone = req.userPhone;
+    if (!req.file) {
+        return res.status(400).json({ error: 'No image file provided' });
+    }
+    try {
+        const safeName = req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const filename = `${userPhone}/${Date.now()}_${safeName}`;
+        const gcsFile = coBucket.file(filename);
+        await gcsFile.save(req.file.buffer, { metadata: { contentType: req.file.mimetype } });
+        await gcsFile.makePublic();
+        const imageUrl = `https://storage.googleapis.com/lone-ranger-change-orders/${filename}`;
+        res.json({ imageUrl });
+    } catch (err) {
+        console.error(`[${userPhone}] change-orders/upload-image error:`, err.message);
+        res.status(500).json({ error: 'Image upload failed' });
+    }
+});
+
+// ══════════════════════════════════════════════════════════════════════
 //  ENDPOINT: POST /api/change-orders/generate
 //  Requires: requireAuth, requireSubscription
 //  Body: { parentEstimateId, text }
@@ -3155,7 +3195,7 @@ app.put('/api/change-orders/:id', requireAuth, requireSubscription, async (req, 
 
 app.post('/api/change-orders/send', requireAuth, requireSubscription, async (req, res) => {
     const userPhone = req.userPhone;
-    const { changeOrderId, parentEstimateId, clientEmail } = req.body;
+    const { changeOrderId, parentEstimateId, clientEmail, image_url: imageUrl } = req.body;
 
     if (!changeOrderId || !parentEstimateId || !clientEmail) {
         return res.status(400).json({ error: 'changeOrderId, parentEstimateId, and clientEmail are required.' });
@@ -3193,6 +3233,10 @@ app.post('/api/change-orders/send', requireAuth, requireSubscription, async (req
         const user = req.authedUser;
         const companyName = user.companyName || 'Lone Ranger Estimator';
         const totalFormatted = `$${Number(co.change_order_total || 0).toFixed(2)}`;
+        const imageHtml = imageUrl
+            ? `<div style="margin: 16px 0;"><img src="${escapeHtml(String(imageUrl))}" alt="Job-site photo" style="max-width: 100%; border-radius: 8px; margin-top: 15px;" /></div>`
+            : '';
+        const imageText = imageUrl ? `\nJob-site photo: ${imageUrl}\n` : '';
         const transporter = nodemailer.createTransport({
             service: 'gmail',
             auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
@@ -3203,14 +3247,16 @@ app.post('/api/change-orders/send', requireAuth, requireSubscription, async (req
             subject: `Change Order for your project — ${totalFormatted} (action required)`,
             text:
                 `Hello,\n\nA change order for your project has been issued by ${companyName} ` +
-                `(additional amount: ${totalFormatted}).\n\nReview and approve it here:\n${approvalUrl}\n\n` +
-                `Thank you,\n${companyName}`,
+                `(additional amount: ${totalFormatted}).\n\nReview and approve it here:\n${approvalUrl}\n` +
+                imageText +
+                `\nThank you,\n${companyName}`,
             html: `
                 <div style="font-family: Arial, sans-serif; max-width: 600px;">
                     <h2 style="color: #1e2533;">${escapeHtml(companyName)}</h2>
                     <p>Hello,</p>
                     <p>A <strong>Change Order</strong> for your project has been issued
                        (additional amount: <strong>${totalFormatted}</strong>).</p>
+                    ${imageHtml}
                     <p style="margin: 22px 0;">
                         <a href="${approvalUrl}"
                            style="background: #521880; color: #ffffff; padding: 12px 22px; border-radius: 8px; text-decoration: none; font-weight: bold;">
@@ -3224,7 +3270,7 @@ app.post('/api/change-orders/send', requireAuth, requireSubscription, async (req
         });
 
         // ── 5. Mark as sent in Firestore ──────────────────────────────
-        await coRef.set({ sent_at: new Date().toISOString(), sent_to: emailTo, email_message_id: mailResult.messageId || null }, { merge: true });
+        await coRef.set({ sent_at: new Date().toISOString(), sent_to: emailTo, email_message_id: mailResult.messageId || null, ...(imageUrl ? { image_url: imageUrl } : {}) }, { merge: true });
 
         console.log(`[${userPhone}] Change order ${changeOrderId} emailed to ${emailTo}. MessageId: ${mailResult.messageId}`);
         res.json({ success: true, message_id: mailResult.messageId || null, sent_to: emailTo });

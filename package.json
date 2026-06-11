@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@google-cloud/firestore": "^8.6.0",
+    "@google-cloud/storage": "^7.21.0",
     "@google/genai": "^2.5.0",
     "cors": "^2.8.6",
     "csv-parser": "^3.2.1",
