@@ -3231,7 +3231,11 @@ app.post('/api/change-orders/send', requireAuth, requireSubscription, async (req
 
         // ── 4. Email the approval link ─────────────────────────────────
         const user = req.authedUser;
-        const companyName = user.companyName || 'Lone Ranger Estimator';
+        const settingsSnap = await db.collection('users').doc(userPhone).collection('settings').doc('config').get();
+        const settingsData = settingsSnap.exists ? settingsSnap.data() : {};
+        const companyName = settingsData.company_name || user.companyName
+            || (user.email ? user.email.split('@')[0] : null)
+            || 'Your Contractor';
         const totalFormatted = `$${Number(co.change_order_total || 0).toFixed(2)}`;
         const imageHtml = imageUrl
             ? `<div style="margin: 16px 0;"><img src="${escapeHtml(String(imageUrl))}" alt="Job-site photo" style="max-width: 100%; border-radius: 8px; margin-top: 15px;" /></div>`
@@ -3319,6 +3323,11 @@ app.get('/approve', async (req, res) => {
                 <h2>⛔ Forbidden</h2><p>This approval link is invalid or has expired.</p></body></html>`);
         }
 
+        // ── Fetch contractor company name for white-labeling ──────────
+        const approveSettingsSnap = await db.collection('users').doc(userPhone).collection('settings').doc('config').get();
+        const approveSettings = approveSettingsSnap.exists ? approveSettingsSnap.data() : {};
+        const contractorName = approveSettings.company_name || 'Your Contractor';
+
         const isApproved = co.status === 'approved';
         const totalFormatted = `$${Number(co.change_order_total || 0).toFixed(2)}`;
         const pdfDataUrl = co.pdf_base64 ? `data:application/pdf;base64,${co.pdf_base64}` : null;
@@ -3350,13 +3359,14 @@ app.get('/approve', async (req, res) => {
         .approved-banner p { color: #047857; font-size: 13px; }
         .ref { font-size: 11px; color: #9b59d0; margin-top: 20px; text-align: center; }
         #statusMsg { margin-top: 12px; font-size: 13px; text-align: center; color: #521880; min-height: 20px; }
+        .legal-text { font-size: 11px; color: #9b8fb0; line-height: 1.55; text-align: center; margin-bottom: 14px; padding: 0 4px; }
     </style>
 </head>
 <body>
 <div class="card">
     <div class="badge">Change Order</div>
     <h1>Contract Amendment</h1>
-    <p class="subtitle">Ref: ${escapeHtml(changeOrderId)} &mdash; Est. ${escapeHtml(parentEstimateId)}</p>
+    <p class="subtitle">${escapeHtml(contractorName)} &bull; Ref: ${escapeHtml(changeOrderId)}</p>
 
     <div class="amount-box">
         <div class="amount-label">Additional Amount Due</div>
@@ -3372,11 +3382,12 @@ app.get('/approve', async (req, res) => {
 
     ${isApproved
         ? `<div class="approved-banner"><h2>✅ Approved</h2><p>This change order was approved on ${co.approvedAt ? new Date(co.approvedAt).toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'}) : 'record'}.</p></div>`
-        : `<button class="approve-btn" id="approveBtn" onclick="approveChangeOrder()">✓ Approve Change Order</button>
+        : `<p class="legal-text">By clicking &#8216;Approve&#8217;, you agree that this action constitutes a legally binding electronic signature under the ESIGN Act, and you authorize the contractor to proceed with the outlined scope changes and associated costs.</p>
+           <button class="approve-btn" id="approveBtn" onclick="approveChangeOrder()">✓ Approve Change Order</button>
            <div id="statusMsg"></div>`
     }
 
-    <div class="ref">Lone Ranger Estimator &bull; Secure approval link</div>
+    <div class="ref">${escapeHtml(contractorName)} &bull; Secure approval link</div>
 </div>
 
 <script>
@@ -3450,8 +3461,54 @@ app.post('/api/change-orders/approve', async (req, res) => {
             return res.json({ success: true, already_approved: true });
         }
 
-        await coRef.set({ status: 'approved', approvedAt: new Date().toISOString() }, { merge: true });
-        console.log(`[approve] Change order ${changeOrderId} approved by client.`);
+        // ── Capture audit trail ───────────────────────────────────────
+        const clientIp = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'unknown';
+        const approvedAt = new Date().toISOString();
+        const approvalRecord = { ip: clientIp, timestamp: approvedAt };
+
+        await coRef.set({
+            status: 'approved',
+            approvedAt,
+            approval_record: approvalRecord,
+        }, { merge: true });
+
+        // ── Notify contractor ─────────────────────────────────────────
+        try {
+            const notifSettingsSnap = await db.collection('users').doc(userPhone).collection('settings').doc('config').get();
+            const notifSettings = notifSettingsSnap.exists ? notifSettingsSnap.data() : {};
+            const notifCompanyName = notifSettings.company_name || 'Your Contractor';
+            const contractorEmail = notifSettings.contact_email || notifSettings.email || process.env.EMAIL_USER;
+            const totalFormatted = `$${Number(co.change_order_total || 0).toFixed(2)}`;
+            const notifTransporter = nodemailer.createTransport({
+                service: 'gmail',
+                auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+            });
+            await notifTransporter.sendMail({
+                from:    `"Lone Ranger Estimator" <${process.env.EMAIL_USER}>`,
+                to:      contractorEmail,
+                subject: `✅ Change Order Approved: ${changeOrderId}`,
+                text:
+                    `Your client has digitally signed and approved the Change Order for ${totalFormatted}.\n\n` +
+                    `The audit trail (Timestamp: ${approvedAt} and IP: ${clientIp}) has been secured in your ledger.\n\n` +
+                    `Change Order ID: ${changeOrderId}`,
+                html: `
+                    <div style="font-family: Arial, sans-serif; max-width: 600px;">
+                        <h2 style="color: #065f46;">✅ Change Order Approved</h2>
+                        <p>Your client has digitally signed and approved the Change Order for <strong>${totalFormatted}</strong>.</p>
+                        <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 14px 16px; margin: 16px 0; font-size: 13px; color: #14532d; font-family: monospace;">
+                            <strong>Audit Trail</strong><br/>
+                            Timestamp: ${approvedAt}<br/>
+                            IP Address: ${escapeHtml(clientIp)}
+                        </div>
+                        <p style="font-size: 12px; color: #888;">Change Order ID: ${changeOrderId}</p>
+                    </div>
+                `,
+            });
+        } catch (notifErr) {
+            console.warn(`[approve] contractor notification failed (non-fatal):`, notifErr.message);
+        }
+
+        console.log(`[approve] Change order ${changeOrderId} approved by client. IP: ${clientIp}`);
         res.json({ success: true });
 
     } catch (err) {
