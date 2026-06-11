@@ -122,7 +122,7 @@ export default function InvoiceModal({
             <div className="flex flex-col items-center gap-4 py-4 text-center">
               <CheckCircle className="w-10 h-10 text-live-emerald" />
               <div>
-                <p className="text-base font-black text-live-emerald font-mono uppercase tracking-widest">
+                <p role="status" className="text-base font-black text-live-emerald font-mono">
                   Invoice #{result.invoice_number} sent
                 </p>
                 <p className="text-xl font-semibold text-cool-blue font-mono mt-2">
@@ -141,7 +141,7 @@ export default function InvoiceModal({
               {/* Delivery path — show exactly where the invoice goes */}
               {contractorEmail && (
                 <div className="flex items-center gap-2 text-mini font-mono bg-void-black/60 border border-white/8 rounded-xl px-3 py-2">
-                  <span className="text-starlight/50 shrink-0">Invoice sent to</span>
+                  <span className="text-starlight/70 shrink-0">Invoice sent to</span>
                   <span className="text-cool-blue font-black truncate">{contractorEmail}</span>
                 </div>
               )}
@@ -173,7 +173,7 @@ export default function InvoiceModal({
                 <div>
                   <label htmlFor="inv-deposit" className={labelCls}>Deposit received</label>
                   <div className="relative">
-                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-mini text-starlight/40 font-mono pointer-events-none select-none">
+                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-mini text-starlight/70 font-mono pointer-events-none select-none">
                       $
                     </span>
                     <input
@@ -218,7 +218,7 @@ export default function InvoiceModal({
 
               {/* Inline error */}
               {error && (
-                <div className="flex items-center gap-2 text-mini text-alert-rose font-mono bg-alert-rose/5 border border-alert-rose/20 rounded-xl px-3 py-2">
+                <div role="alert" className="flex items-center gap-2 text-mini text-alert-rose font-mono bg-alert-rose/5 border border-alert-rose/20 rounded-xl px-3 py-2">
                   <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
                   {error}
                 </div>

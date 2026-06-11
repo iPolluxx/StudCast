@@ -31,6 +31,10 @@ const clampNum = (v: string) => {
   return Number.isFinite(n) && n > 0 ? n : 0;
 };
 
+// Controlled number inputs render 0 as empty so the field can be cleared and
+// retyped without the stored 0 reappearing under the caret mid-edit.
+const numDisplay = (n: number) => (n === 0 ? "" : n);
+
 // Plain-language labels for where a price came from. The raw values
 // (ai / override / database) are internal jargon; contractors see human words,
 // with the full meaning on hover.
@@ -169,7 +173,7 @@ export default function LedgerTable({
         <textarea
           value={scopeOfWork}
           onChange={(e) => onScopeChange(e.target.value)}
-          placeholder="Describe the project scope — this appears on the PDF estimate sent to your client..."
+          placeholder="Describe the project scope. This appears on the PDF estimate sent to your client..."
           rows={3}
           className="w-full bg-void-black/60 border border-white/10 rounded-xl px-3 py-2.5 text-mini text-starlight font-sans placeholder-starlight/80 outline-none focus:border-cool-blue/50 resize-none leading-relaxed"
         />
@@ -209,7 +213,7 @@ export default function LedgerTable({
                   <div className="grid grid-cols-3 gap-2 text-mini font-mono">
                     <label className="space-y-0.5">
                       <span className="block text-micro text-starlight/70 uppercase tracking-wider">Qty</span>
-                      <input type="number" min={0} step="any" inputMode="decimal" value={item.quantity}
+                      <input type="number" min={0} step="any" inputMode="decimal" value={numDisplay(item.quantity)}
                         onChange={(e) => onCellEdit(origIdx, "quantity", clampNum(e.target.value))}
                         className="w-full bg-void-black/60 border border-white/10 rounded px-2 py-1.5 text-starlight outline-none focus:border-cool-blue/40"
                       />
@@ -223,7 +227,7 @@ export default function LedgerTable({
                     </label>
                     <label className="space-y-0.5">
                       <span className="block text-micro text-starlight/70 uppercase tracking-wider">Unit $</span>
-                      <input type="number" min={0} step="any" inputMode="decimal" value={item.unit_price}
+                      <input type="number" min={0} step="any" inputMode="decimal" value={numDisplay(item.unit_price)}
                         onChange={(e) => onCellEdit(origIdx, "unit_price", clampNum(e.target.value))}
                         className="w-full bg-void-black/60 border border-white/10 rounded px-2 py-1.5 text-cool-blue text-right outline-none focus:border-cool-blue/40"
                       />
@@ -272,7 +276,7 @@ export default function LedgerTable({
                           className="bg-transparent border-b border-white/10 focus:border-cool-blue/40 w-full outline-none py-0.5" />
                       </td>
                       <td className="py-1.5 px-3 text-center">
-                        <input type="number" min={0} step="any" inputMode="decimal" value={item.quantity} aria-label="Quantity"
+                        <input type="number" min={0} step="any" inputMode="decimal" value={numDisplay(item.quantity)} aria-label="Quantity"
                           data-sec="mat" data-row={idx} data-col="quantity"
                           onKeyDown={(e) => handleCellKey(e, "mat", idx, "quantity", materials.length)}
                           onChange={(e) => onCellEdit(origIdx, "quantity", clampNum(e.target.value))}
@@ -287,8 +291,8 @@ export default function LedgerTable({
                       </td>
                       <td className="py-1.5 px-3 text-right text-cool-blue font-semibold">
                         <div className="flex items-center justify-end gap-0.5">
-                          <span className="opacity-40">$</span>
-                          <input type="number" min={0} step="any" inputMode="decimal" value={item.unit_price} aria-label="Unit price"
+                          <span className="opacity-70">$</span>
+                          <input type="number" min={0} step="any" inputMode="decimal" value={numDisplay(item.unit_price)} aria-label="Unit price"
                             data-sec="mat" data-row={idx} data-col="unit_price"
                             onKeyDown={(e) => handleCellKey(e, "mat", idx, "unit_price", materials.length)}
                             onChange={(e) => onCellEdit(origIdx, "unit_price", clampNum(e.target.value))}
@@ -315,7 +319,7 @@ export default function LedgerTable({
 
           {materials.length === 0 && (
             <p className="text-mini text-starlight/70 font-sans italic py-3 text-center">
-              No materials yet — tap the orb to describe the job, or add a line.
+              No materials yet. Tap the orb to describe the job, or add a line.
             </p>
           )}
         </div>
@@ -348,14 +352,14 @@ export default function LedgerTable({
                   <div className="grid grid-cols-2 gap-2 text-mini font-mono">
                     <label className="space-y-0.5">
                       <span className="block text-micro text-starlight/70 uppercase tracking-wider">Hours</span>
-                      <input type="number" min={0} step="any" inputMode="decimal" value={item.hours}
+                      <input type="number" min={0} step="any" inputMode="decimal" value={numDisplay(item.hours)}
                         onChange={(e) => onCellEdit(origIdx, "hours", clampNum(e.target.value))}
                         className="w-full bg-void-black/60 border border-white/10 rounded px-2 py-1.5 text-starlight outline-none focus:border-cool-blue/40"
                       />
                     </label>
                     <label className="space-y-0.5">
                       <span className="block text-micro text-starlight/70 uppercase tracking-wider">Rate $/hr</span>
-                      <input type="number" min={0} step="any" inputMode="decimal" value={item.rate}
+                      <input type="number" min={0} step="any" inputMode="decimal" value={numDisplay(item.rate)}
                         onChange={(e) => onCellEdit(origIdx, "rate", clampNum(e.target.value))}
                         className="w-full bg-void-black/60 border border-white/10 rounded px-2 py-1.5 text-cool-blue text-right outline-none focus:border-cool-blue/40"
                       />
@@ -395,7 +399,7 @@ export default function LedgerTable({
                           className="bg-transparent border-b border-white/10 focus:border-cool-blue/40 w-full outline-none py-0.5" />
                       </td>
                       <td className="py-1.5 px-3 text-center">
-                        <input type="number" min={0} step="any" inputMode="decimal" value={item.hours} aria-label="Hours"
+                        <input type="number" min={0} step="any" inputMode="decimal" value={numDisplay(item.hours)} aria-label="Hours"
                           data-sec="lab" data-row={idx} data-col="hours"
                           onKeyDown={(e) => handleCellKey(e, "lab", idx, "hours", labor.length)}
                           onChange={(e) => onCellEdit(origIdx, "hours", clampNum(e.target.value))}
@@ -403,8 +407,8 @@ export default function LedgerTable({
                       </td>
                       <td className="py-1.5 px-3 text-right text-cool-blue font-semibold">
                         <div className="flex items-center justify-end gap-0.5">
-                          <span className="opacity-40">$</span>
-                          <input type="number" min={0} step="any" inputMode="decimal" value={item.rate} aria-label="Rate per hour"
+                          <span className="opacity-70">$</span>
+                          <input type="number" min={0} step="any" inputMode="decimal" value={numDisplay(item.rate)} aria-label="Rate per hour"
                             data-sec="lab" data-row={idx} data-col="rate"
                             onKeyDown={(e) => handleCellKey(e, "lab", idx, "rate", labor.length)}
                             onChange={(e) => onCellEdit(origIdx, "rate", clampNum(e.target.value))}
@@ -424,7 +428,7 @@ export default function LedgerTable({
 
           {labor.length === 0 && (
             <p className="text-mini text-starlight/70 font-sans italic py-3 text-center">
-              No labor yet — add a row, or include it when you describe the job.
+              No labor yet. Add a row, or include it when you describe the job.
             </p>
           )}
         </div>
@@ -496,7 +500,7 @@ export default function LedgerTable({
 
       {/* Durable publish error — stays put until dismissed or retried, unlike the transient toast */}
       {publishError && (
-        <div className="flex items-center justify-between gap-3 rounded-xl border border-alert-rose/40 bg-alert-rose/10 px-3.5 py-2.5">
+        <div role="alert" className="flex items-center justify-between gap-3 rounded-xl border border-alert-rose/40 bg-alert-rose/10 px-3.5 py-2.5">
           <span className="text-mini text-starlight/90 font-sans leading-snug">
             <span className="font-bold text-alert-rose">Couldn't send the PDF.</span> {publishError}
           </span>

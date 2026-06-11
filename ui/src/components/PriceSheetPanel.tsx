@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
-import { RefreshCw, Trash2, ArrowDownToLine, Plus, Upload } from "lucide-react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { Trash2, ArrowDownToLine, Plus, Upload } from "lucide-react";
 
 interface PriceBookEntry {
   itemId: string;
@@ -67,9 +67,12 @@ export default function PriceSheetPanel({ authToken }: Props) {
 
   useEffect(() => { load(); }, [load]);
 
+  // Single timer so a new flash isn't cleared early by an older one's timeout
+  const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   function showFlash(msg: string) {
     setFlash(msg);
-    setTimeout(() => setFlash(null), 2500);
+    if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+    flashTimerRef.current = setTimeout(() => setFlash(null), 2500);
   }
 
   async function syncAll() {
@@ -119,7 +122,7 @@ export default function PriceSheetPanel({ authToken }: Props) {
         headers: authHeaders,
       });
       if (!r.ok) throw new Error((await r.json()).error);
-      showFlash("Removed — falls back to market/AI tier");
+      showFlash("Removed. Falls back to market/AI tier.");
       await load();
     } catch (e: any) {
       showFlash("Delete failed: " + e.message);
@@ -199,10 +202,14 @@ export default function PriceSheetPanel({ authToken }: Props) {
     .filter(({ diff }) => Math.abs(diff) >= 10);
 
   if (loading) {
+    // Skeleton rows instead of a spinner: the layout doesn't jump when data lands
     return (
-      <div className="flex items-center justify-center py-16 text-starlight/60">
-        <RefreshCw className="w-4 h-4 animate-spin mr-2" />
-        <span className="text-xs font-mono">Loading price sheet…</span>
+      <div className="space-y-3 py-2" aria-busy="true">
+        <span className="sr-only">Loading price sheet…</span>
+        <div className="h-8 w-2/3 rounded-xl bg-white/5 animate-pulse" />
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="h-10 rounded-xl bg-white/5 animate-pulse" />
+        ))}
       </div>
     );
   }
@@ -210,7 +217,7 @@ export default function PriceSheetPanel({ authToken }: Props) {
   if (error) {
     return (
       <div className="py-8 text-center">
-        <p className="text-xs text-alert-rose font-mono">{error}</p>
+        <p role="alert" className="text-mini text-alert-rose font-mono">{error}</p>
         <button onClick={load} className="mt-3 text-mini text-cool-blue underline cursor-pointer">Retry</button>
       </div>
     );
@@ -256,7 +263,7 @@ export default function PriceSheetPanel({ authToken }: Props) {
       </div>
 
       {flash && (
-        <div className="text-mini font-mono text-live-emerald bg-live-emerald/10 border border-live-emerald/20 rounded-xl px-3 py-2">
+        <div role="status" className="text-mini font-mono text-live-emerald bg-live-emerald/10 border border-live-emerald/20 rounded-xl px-3 py-2">
           {flash}
         </div>
       )}
@@ -373,7 +380,7 @@ export default function PriceSheetPanel({ authToken }: Props) {
                     </td>
                     <td className="px-3 py-2 text-right">
                       {savedMarketKeys.has(item.key) ? (
-                        <span className="text-micro text-starlight/40 pr-2" title="Already in your price book">saved</span>
+                        <span className="text-micro text-starlight/70 pr-2" title="Already in your price book">saved</span>
                       ) : item.price !== null && (
                         <button
                           onClick={() => saveMarketItem(item)}
@@ -401,7 +408,7 @@ export default function PriceSheetPanel({ authToken }: Props) {
       {driftRows.length > 0 && (
         <section>
           <h3 className="text-micro font-black uppercase tracking-widest text-stale-amber mb-2">
-            Drift Alerts — &gt;10% From Market
+            Drift Alerts
           </h3>
           <div className="border border-stale-amber/25 rounded-xl overflow-hidden">
             <table className="w-full text-mini font-mono">
@@ -451,7 +458,7 @@ export default function PriceSheetPanel({ authToken }: Props) {
       )}
 
       {data && data.priceBook.length === 0 && marketRows.length === 0 && (
-        <div className="py-10 text-center text-starlight/60 text-xs font-mono">
+        <div className="py-10 text-center text-starlight/60 text-mini font-mono">
           No pricing data yet. Import a supplier CSV, generate estimates to build your price book, or trigger a Menards sync.
         </div>
       )}

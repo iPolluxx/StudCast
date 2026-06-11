@@ -1,8 +1,9 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700;800&family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
+/* Fonts load from index.html (<link rel="preconnect"> + stylesheet) so they
+   don't chain behind the bundled CSS. Weights are pruned to what the UI uses. */
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
   
   --color-void-black: #050810;
@@ -26,6 +27,8 @@
   --color-orb-violet-hover: #4e316d; /* orb body gradient end (hover) */
   --color-orb-rim: #614582;       /* orb resting border */
   --color-orb-processing: #273a5a; /* orb border while AI is running */
+  --color-orb-recording: #f43f5e; /* orb body while listening (rose voice) */
+  --color-orb-recording-rim: #fda4af; /* orb border while listening */
 
   /* Type scale — fixed rem, ~1.18 ratio, 11px floor. Dense "instrument" tier below
      Tailwind's text-sm. Named (not numbered) so we commit to a scale, and rem so it

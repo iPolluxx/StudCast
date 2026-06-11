@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { X, Building, ImagePlus, RefreshCw, BookOpen } from "lucide-react";
 import type { ContractorUserSettings } from "../types";
 import PriceSheetPanel from "./PriceSheetPanel";
+import { trapTab } from "../focusTrap";
 
 interface Props {
   open: boolean;
@@ -17,13 +18,28 @@ export default function SettingsModal({ open, settings, onSettingsChange, onClos
   const [logoUploading, setLogoUploading] = useState(false);
   const [logoError, setLogoError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"profile" | "prices">("profile");
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Same dialog hygiene as the other modals: focus moves in on open, Escape
+  // closes, and Tab is trapped inside the panel.
+  useEffect(() => {
+    if (!open) return;
+    requestAnimationFrame(() => panelRef.current?.focus());
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { onClose(); return; }
+      trapTab(e, panelRef.current);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
 
   if (!open) return null;
 
   const field = (label: string, key: keyof ContractorUserSettings, type = "text", step?: string) => (
     <div className="space-y-1">
-      <label className="uppercase font-bold text-starlight/60">{label}</label>
+      <label htmlFor={`settings-${key}`} className="uppercase font-bold text-starlight/60">{label}</label>
       <input
+        id={`settings-${key}`}
         type={type}
         step={step}
         value={settings[key] as string | number}
@@ -40,12 +56,23 @@ export default function SettingsModal({ open, settings, onSettingsChange, onClos
   );
 
   return (
-    <div className="fixed inset-0 z-50 bg-void-black/80 backdrop-blur-md flex items-center justify-center p-4">
-      <div className={`glass-panel border-white/10 w-full rounded-2xl p-6 sm:p-8 shadow-2xl relative select-none flex flex-col transition-all duration-200 ${activeTab === "prices" ? "max-w-5xl max-h-[85vh]" : "max-w-lg"}`}>
+    <div
+      className="fixed inset-0 z-50 bg-void-black/80 backdrop-blur-md flex items-center justify-center p-4"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Contractor profile settings"
+        tabIndex={-1}
+        className={`glass-panel border-white/10 w-full rounded-2xl p-6 sm:p-8 shadow-2xl relative select-none flex flex-col outline-none transition-all duration-200 ${activeTab === "prices" ? "max-w-5xl max-h-[85vh]" : "max-w-lg"}`}
+      >
 
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 text-starlight/50 hover:text-alert-rose transition-colors cursor-pointer focus:outline-none"
+          aria-label="Close settings"
+          className="absolute top-3 right-3 flex h-11 w-11 items-center justify-center text-starlight/60 hover:text-alert-rose transition-colors cursor-pointer focus:outline-none"
         >
           <X className="w-5 h-5" />
         </button>
@@ -65,14 +92,14 @@ export default function SettingsModal({ open, settings, onSettingsChange, onClos
         <div className="flex gap-1 mb-5 bg-white/5 rounded-xl p-1 w-fit">
           <button
             onClick={() => setActiveTab("profile")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-micro font-black uppercase tracking-widest transition-all cursor-pointer ${activeTab === "profile" ? "bg-cool-blue/20 text-cool-blue border border-cool-blue/30" : "text-starlight/50 hover:text-starlight"}`}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-micro font-black uppercase tracking-widest transition-all cursor-pointer ${activeTab === "profile" ? "bg-cool-blue/20 text-cool-blue border border-cool-blue/30" : "text-starlight/70 hover:text-starlight"}`}
           >
             <Building className="w-3 h-3" />
             Profile
           </button>
           <button
             onClick={() => setActiveTab("prices")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-micro font-black uppercase tracking-widest transition-all cursor-pointer ${activeTab === "prices" ? "bg-cool-blue/20 text-cool-blue border border-cool-blue/30" : "text-starlight/50 hover:text-starlight"}`}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-micro font-black uppercase tracking-widest transition-all cursor-pointer ${activeTab === "prices" ? "bg-cool-blue/20 text-cool-blue border border-cool-blue/30" : "text-starlight/70 hover:text-starlight"}`}
           >
             <BookOpen className="w-3 h-3" />
             Price Sheet
@@ -82,10 +109,10 @@ export default function SettingsModal({ open, settings, onSettingsChange, onClos
         {/* Profile tab */}
         {activeTab === "profile" && (
           <>
-            <div className="grid grid-cols-2 gap-4 font-mono text-micro">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 font-mono text-micro">
 
               {/* ── Logo upload ── */}
-              <div className="col-span-2 flex items-center gap-4 pb-2 border-b border-white/10">
+              <div className="sm:col-span-2 flex items-center gap-4 pb-2 border-b border-white/10">
                 <div className="shrink-0">
                   {settings.company_logo_url ? (
                     <img
@@ -138,7 +165,7 @@ export default function SettingsModal({ open, settings, onSettingsChange, onClos
                     {logoUploading ? <RefreshCw className="w-3 h-3 animate-spin" /> : <ImagePlus className="w-3 h-3" />}
                     {logoUploading ? 'Uploading…' : 'Upload Logo'}
                   </label>
-                  {logoError && <span className="text-micro text-alert-rose font-mono">{logoError}</span>}
+                  {logoError && <span role="alert" className="text-micro text-alert-rose font-mono">{logoError}</span>}
                   {settings.company_logo_url && !logoError && (
                     <span className="text-micro text-live-emerald font-mono">Logo saved</span>
                   )}
@@ -147,7 +174,7 @@ export default function SettingsModal({ open, settings, onSettingsChange, onClos
 
               {field("Company Name", "company_name")}
               {field("Bids Dispatch Email", "contact_email", "email")}
-              <div className="col-span-2">
+              <div className="sm:col-span-2">
                 {field("Registered Shop Location", "company_address")}
               </div>
               {field("Dwelling Vendor Reg #", "license_number")}

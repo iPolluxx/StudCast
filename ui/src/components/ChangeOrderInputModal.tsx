@@ -79,7 +79,7 @@ export default function ChangeOrderInputModal({ value, onChange, onSubmit, loadi
             }}
             className="w-full bg-void-black border border-white/10 focus:border-soft-violet/60 focus:ring-1 focus:ring-soft-violet/10 rounded-xl px-3 py-2.5 text-mini font-mono text-starlight outline-none transition-colors resize-none disabled:opacity-50"
           />
-          <p className="text-micro text-starlight/30 font-mono mt-1.5">
+          <p className="text-micro text-starlight/70 font-mono mt-1.5">
             ⌘↵ to generate
           </p>
         </div>

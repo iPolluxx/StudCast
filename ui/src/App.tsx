@@ -35,16 +35,17 @@ export function Starfield() {
   const bgRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    let curX = 50, curY = 50, tgtX = 50, tgtY = 50;
-    let raf: number;
+    // Parallax is mouse-driven decoration: skip it entirely for reduced-motion
+    // users and on touch devices (no cursor to follow), and stop the rAF loop
+    // once the drift settles so an idle screen isn't repainting a filtered
+    // full-viewport image every frame.
+    if (
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches ||
+      !window.matchMedia("(pointer: fine)").matches
+    ) return;
 
-    const onMove = (e: MouseEvent) => {
-      // Horizontal: ±2% (portrait src has little horizontal room under cover)
-      // Vertical: ±4% around 52% center — nebula drifts gently with cursor
-      tgtX = 49 + (e.clientX / window.innerWidth)  * 2;
-      tgtY = 50 + (e.clientY / window.innerHeight) * 4;
-    };
-    window.addEventListener("mousemove", onMove);
+    let curX = 50, curY = 52, tgtX = 50, tgtY = 52;
+    let raf = 0;
 
     const tick = () => {
       curX += (tgtX - curX) * 0.04;
@@ -52,12 +53,24 @@ export function Starfield() {
       if (bgRef.current) {
         bgRef.current.style.backgroundPosition = `${curX}% ${curY}%`;
       }
-      raf = requestAnimationFrame(tick);
+      if (Math.abs(tgtX - curX) > 0.01 || Math.abs(tgtY - curY) > 0.01) {
+        raf = requestAnimationFrame(tick);
+      } else {
+        raf = 0; // settled — sleep until the next mousemove
+      }
     };
-    raf = requestAnimationFrame(tick);
+
+    const onMove = (e: MouseEvent) => {
+      // Horizontal: ±2% (portrait src has little horizontal room under cover)
+      // Vertical: ±4% around 52% center — nebula drifts gently with cursor
+      tgtX = 49 + (e.clientX / window.innerWidth)  * 2;
+      tgtY = 50 + (e.clientY / window.innerHeight) * 4;
+      if (!raf) raf = requestAnimationFrame(tick);
+    };
+    window.addEventListener("mousemove", onMove);
 
     return () => {
-      cancelAnimationFrame(raf);
+      if (raf) cancelAnimationFrame(raf);
       window.removeEventListener("mousemove", onMove);
     };
   }, []);
@@ -126,6 +139,13 @@ export default function App() {
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [aiProcessing, setAiProcessing] = useState<boolean>(false);
   const [statusFlash, setStatusFlash] = useState<string | null>(null);
+  // Single timer so a new flash can't be cleared early by an older one's timeout
+  const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showStatus = (msg: string, ms = 4000) => {
+    setStatusFlash(msg);
+    if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
+    statusTimerRef.current = setTimeout(() => setStatusFlash(null), ms);
+  };
   const [previewOpen, setPreviewOpen] = useState(false);
   const setActiveStage = (_: number) => {};
   const [vizSize, setVizSize] = useState<'mini' | 'medium' | 'full'>('mini');
@@ -153,6 +173,7 @@ export default function App() {
   
   // Dropdown states
   const [projectDropdownOpen, setProjectDropdownOpen] = useState<boolean>(false);
+  const projectMenuRef = useRef<HTMLDivElement>(null);
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
   const [derivedChangeOrder, setDerivedChangeOrder] = useState<ChangeOrder | null>(null);
   const [changeOrderLoading, setChangeOrderLoading] = useState(false);
@@ -324,6 +345,23 @@ export default function App() {
     load();
   }, []);
 
+  // Project dropdown closes on outside click or Escape, like every other popover
+  useEffect(() => {
+    if (!projectDropdownOpen) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (!projectMenuRef.current?.contains(e.target as Node)) setProjectDropdownOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setProjectDropdownOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [projectDropdownOpen]);
+
   // Auto-advance stage when AI state changes
   useEffect(() => {
     if (isRecording) setActiveStage(1);
@@ -447,15 +485,10 @@ export default function App() {
     }
   };
 
-  // Add new blank estimate
-  const handleNewProject = () => {
-    // Ask for a name up front; blank falls back to a dated default, Cancel aborts.
-    const entered = window.prompt('Name this estimate:', '');
-    if (entered === null) {
-      setProjectDropdownOpen(false);
-      return;
-    }
-    const projectName = entered.trim() || `Estimate - ${new Date().toLocaleDateString('en-US')}`;
+  // Add new blank estimate — name comes from the inline input in EstimateList;
+  // blank falls back to a dated default.
+  const handleNewProject = (name: string) => {
+    const projectName = name.trim() || `Estimate - ${new Date().toLocaleDateString('en-US')}`;
     const nextId = "est-" + Date.now().toString(16);
     const newEst: Estimate = {
       id: nextId,
@@ -528,8 +561,7 @@ export default function App() {
           setEstimates(prev => prev.map(e => e.id === full.id ? full : e));
           if (data.estimateId !== activeEstimateId) setActiveEstimateId(data.estimateId);
         }
-        setStatusFlash(`${data.itemCount ?? '?'} items in estimate`);
-        setTimeout(() => setStatusFlash(null), 4000);
+        showStatus(`${data.itemCount ?? '?'} items in estimate`);
         setTextPrompt("");
       } else {
         throw new Error(data.error || 'Extraction failed');
@@ -620,8 +652,7 @@ export default function App() {
       ];
     });
 
-    setStatusFlash("3 materials extracted");
-    setTimeout(() => setStatusFlash(null), 4000);
+    showStatus("3 materials extracted");
     setTextPrompt("");
     setActiveStage(3);
   };
@@ -655,8 +686,7 @@ export default function App() {
         const blob = new Blob(audioChunksRef.current, { type: cleanMime });
 
         if (blob.size === 0) {
-          setStatusFlash("No audio captured — try again");
-          setTimeout(() => setStatusFlash(null), 4000);
+          showStatus("No audio captured. Try again.");
           return;
         }
 
@@ -686,14 +716,12 @@ export default function App() {
               setEstimates(prev => prev.map(e => e.id === full.id ? full : e));
               if (data.estimateId !== activeEstimateId) setActiveEstimateId(data.estimateId);
             }
-            setStatusFlash(`${data.itemCount ?? '?'} items extracted from audio`);
-            setTimeout(() => setStatusFlash(null), 4000);
+            showStatus(`${data.itemCount ?? '?'} items extracted from audio`);
           } else {
             throw new Error(data.error || 'Audio extraction failed');
           }
         } catch (e: any) {
-          setStatusFlash('Audio failed: ' + (e.message || 'Unknown error'));
-          setTimeout(() => setStatusFlash(null), 5000);
+          showStatus('Audio failed: ' + (e.message || 'Unknown error'), 5000);
         } finally {
           setAiProcessing(false);
         }
@@ -705,8 +733,7 @@ export default function App() {
       const msg = e.name === 'NotAllowedError'
         ? 'Microphone permission denied'
         : `Mic unavailable: ${e.message}`;
-      setStatusFlash(msg);
-      setTimeout(() => setStatusFlash(null), 5000);
+      showStatus(msg, 5000);
     }
   };
 
@@ -738,8 +765,7 @@ export default function App() {
       setChangeOrderInputModalOpen(false);
       setChangeOrderModalOpen(true);
     } catch (e: any) {
-      setStatusFlash('Change order failed: ' + e.message);
-      setTimeout(() => setStatusFlash(null), 5000);
+      showStatus('Change order failed: ' + e.message, 5000);
     } finally {
       setChangeOrderLoading(false);
     }
@@ -790,7 +816,7 @@ export default function App() {
             </a>
             <button
               onClick={() => setSubscriptionGate(false)}
-              className="text-mini text-starlight/40 hover:text-white font-mono uppercase tracking-wider"
+              className="text-mini text-starlight/70 hover:text-white font-mono uppercase tracking-wider"
             >
               Continue in demo mode
             </button>
@@ -801,8 +827,10 @@ export default function App() {
       {/* ── 1. TOP RAIL (exactly 48px / h-12) ── */}
       <header className="h-12 border-b border-white/8 bg-deep-navy/80 backdrop-blur-md flex items-center justify-between px-6 shrink-0 relative z-40 select-none">
         
+        <h1 className="sr-only">Lone Ranger Estimator</h1>
+
         {/* Project trigger dropdown indicator */}
-        <div className="relative">
+        <div ref={projectMenuRef} className="relative">
           <button
             onClick={() => setProjectDropdownOpen(!projectDropdownOpen)}
             aria-haspopup="true"
@@ -975,7 +1003,7 @@ export default function App() {
           <button
             onClick={arToggle}
             onPointerDown={(e) => e.stopPropagation()}
-            className="mt-1 mr-0.5 h-6 px-2.5 rounded-full bg-void-black/80 hover:bg-soft-violet/25 text-soft-violet border border-soft-violet/35 text-micro font-black backdrop-blur-md flex items-center gap-1.5 shadow-lg transition-colors cursor-pointer"
+            className="mt-1 mr-0.5 h-9 px-3 rounded-full bg-void-black/80 hover:bg-soft-violet/25 text-soft-violet border border-soft-violet/35 text-micro font-black backdrop-blur-md flex items-center gap-1.5 shadow-lg transition-colors cursor-pointer"
           >
             <span className="w-1.5 h-1.5 rounded-full bg-soft-violet animate-pulse" />
             {isARActive ? 'Exit AR' : 'View in AR'}
@@ -990,7 +1018,7 @@ export default function App() {
         {vizSize === 'medium' && (
           <div
             className="sticky top-0 left-0 right-0 z-20 pointer-events-none"
-            style={{ height: '5rem', background: 'linear-gradient(to bottom, #050810 0%, #050810 30%, transparent 100%)', pointerEvents: 'none' }}
+            style={{ height: '5rem', background: 'linear-gradient(to bottom, var(--color-void-black) 0%, var(--color-void-black) 30%, transparent 100%)', pointerEvents: 'none' }}
           />
         )}
 
@@ -1075,7 +1103,7 @@ export default function App() {
             <button
               onClick={() => setActiveInstrument(null)}
               aria-label="Close panel"
-              className="text-starlight/50 hover:text-alert-rose transition-colors p-2"
+              className="text-starlight/60 hover:text-alert-rose transition-colors p-2"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -1084,7 +1112,7 @@ export default function App() {
           {/* MOBILE INSTRUMENT PICKER — shown when FAB opens the panel on small screens */}
           {activeInstrument === "sliders" && (
             <div className="space-y-2 font-mono">
-              <p className="text-micro text-starlight/50 font-sans mb-3">Choose a tool:</p>
+              <p className="text-micro text-starlight/70 font-sans mb-3">Choose a tool:</p>
               {[
                 { id: "pricing" as const, icon: DollarSign, label: "Labor Rates", desc: "Set employee wages and positions" },
                 { id: "change" as const, icon: Receipt, label: "Change Orders", desc: "Add scope changes and send to the client" },
@@ -1100,7 +1128,7 @@ export default function App() {
                   </div>
                   <div>
                     <span className="block text-mini font-black text-starlight tracking-wide">{tool.label}</span>
-                    <span className="block text-micro text-starlight/50 font-sans mt-0.5">{tool.desc}</span>
+                    <span className="block text-micro text-starlight/70 font-sans mt-0.5">{tool.desc}</span>
                   </div>
                 </button>
               ))}
@@ -1115,7 +1143,7 @@ export default function App() {
                 <span className="block text-micro font-black uppercase text-soft-violet tracking-wider">
                   Employee Labor Rates
                 </span>
-                <p className="text-micro text-starlight/50 font-sans leading-relaxed">
+                <p className="text-micro text-starlight/70 font-sans leading-relaxed">
                   Track each crew member's position and hourly wage. Saved to your business profile.
                   (Supplier CSV upload now lives in <span className="text-starlight/80 font-bold">Settings → Price Sheet</span>.)
                 </p>
@@ -1134,7 +1162,7 @@ export default function App() {
                     }))}
                     className="flex-1 min-w-0 bg-void-black border border-white/10 text-starlight px-2 py-1 rounded focus:outline-none focus:border-cool-blue/50"
                   />
-                  <span className="text-starlight/45 font-sans">$</span>
+                  <span className="text-starlight/70 font-sans">$</span>
                   <input
                     type="number"
                     step="0.50"
@@ -1147,14 +1175,14 @@ export default function App() {
                     }))}
                     className="w-16 bg-void-black border border-white/10 text-right font-bold text-cool-blue px-1.5 py-1 rounded focus:outline-none focus:border-cool-blue/50"
                   />
-                  <span className="text-starlight/40 text-micro">/hr</span>
+                  <span className="text-starlight/70 text-micro">/hr</span>
                   <button
                     onClick={() => setSettings(s => ({
                       ...s,
                       employee_wages: (s.employee_wages ?? []).filter((_row, i) => i !== idx),
                     }))}
                     aria-label={`Remove ${w.name || 'employee'}`}
-                    className="h-8 w-8 shrink-0 flex items-center justify-center rounded hover:bg-alert-rose/10 text-alert-rose/60 hover:text-alert-rose transition-colors cursor-pointer"
+                    className="h-11 w-11 shrink-0 flex items-center justify-center rounded hover:bg-alert-rose/10 text-alert-rose/60 hover:text-alert-rose transition-colors cursor-pointer"
                   >
                     ×
                   </button>
@@ -1162,7 +1190,7 @@ export default function App() {
               ))}
 
               {(settings.employee_wages ?? []).length === 0 && (
-                <p className="text-micro text-starlight/40 font-sans italic">No employees yet — add your crew below.</p>
+                <p className="text-micro text-starlight/70 font-sans italic">No employees yet. Add your crew below.</p>
               )}
 
               <button
@@ -1183,8 +1211,7 @@ export default function App() {
                     headers: apiHeaders(authToken),
                     body: JSON.stringify({ employee_wages: settings.employee_wages ?? [] }),
                   }).catch(() => null);
-                  setStatusFlash(r?.ok ? 'Labor rates saved' : 'Save failed — try again');
-                  setTimeout(() => setStatusFlash(null), 3500);
+                  showStatus(r?.ok ? 'Labor rates saved' : 'Save failed. Try again.', 3500);
                 }}
                 className="w-full py-2 border border-cool-blue/30 hover:border-cool-blue bg-cool-blue/10 hover:bg-cool-blue/20 rounded-full text-cool-blue text-micro font-black uppercase tracking-widest transition-all cursor-pointer"
               >
@@ -1203,7 +1230,7 @@ export default function App() {
                   <div className="flex items-center gap-2">
                     <CheckCircle className="w-4 h-4 text-live-emerald shrink-0" />
                     <span className="text-micro font-black uppercase tracking-wider text-live-emerald">Sent</span>
-                    <span className="text-micro text-starlight/40 font-mono ml-auto">{coDispatchedInfo.id}</span>
+                    <span className="text-micro text-starlight/70 font-mono ml-auto">{coDispatchedInfo.id}</span>
                   </div>
                   <div className="text-mini text-starlight/70 leading-snug">
                     <span className="text-starlight font-black">${coDispatchedInfo.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
@@ -1268,10 +1295,10 @@ export default function App() {
           {/* 4. VISUALIZATION SETTINGS PANEL */}
           {activeInstrument === "layers" && (
             <div className="space-y-4 font-mono text-mini">
-              <p className="text-micro text-starlight/50 font-sans leading-relaxed">
-                Material Yard shows a live 3D digital twin of your lumber drop — lifts, dunnage, and fleet dispatch based on your estimate.
+              <p className="text-micro text-starlight/70 font-sans leading-relaxed">
+                Material Yard shows a live 3D digital twin of your lumber drop: lifts, dunnage, and fleet dispatch based on your estimate.
               </p>
-              <div className="text-micro text-starlight/40 leading-normal pl-1 space-y-1 font-sans">
+              <div className="text-micro text-starlight/70 leading-normal pl-1 space-y-1 font-sans">
                 <div>• Drag to orbit</div>
                 <div>• Scroll to zoom</div>
                 <div>• Hover materials for weight + quantity</div>
@@ -1297,14 +1324,14 @@ export default function App() {
               <div key={step.label} className="flex items-center gap-1.5 sm:gap-5">
                 <button
                   onClick={step.action}
-                  className="flex items-center gap-1.5 py-1 px-1.5 rounded-md hover:bg-white/5 transition-all cursor-pointer group"
+                  className="flex items-center gap-1.5 py-2 px-2 min-h-11 rounded-md hover:bg-white/5 transition-all cursor-pointer group"
                 >
-                  <span className="w-4 h-4 rounded-full font-mono text-micro font-black flex items-center justify-center border border-white/20 text-starlight/50 group-hover:border-cool-blue group-hover:text-cool-blue transition-colors">
+                  <span className="w-4 h-4 rounded-full font-mono text-micro font-black flex items-center justify-center border border-white/20 text-starlight/70 group-hover:border-cool-blue group-hover:text-cool-blue transition-colors">
                     {i + 1}
                   </span>
                   <span className="hidden sm:flex flex-col items-start leading-none">
-                    <span className="text-micro font-mono font-black tracking-widest uppercase text-starlight/70 group-hover:text-cool-blue transition-colors">{step.label}</span>
-                    <span className="text-micro text-starlight/30 font-sans mt-0.5">{step.sublabel}</span>
+                    <span className="text-micro font-mono font-black tracking-widest uppercase text-starlight group-hover:text-cool-blue transition-colors">{step.label}</span>
+                    <span className="text-micro text-starlight/70 font-sans mt-0.5">{step.sublabel}</span>
                   </span>
                 </button>
                 {!isLast && <span className="text-white/10 text-mini font-mono">→</span>}
@@ -1339,8 +1366,9 @@ export default function App() {
                 )}
                 <button
                   onClick={toggleRecording}
+                  aria-label={isRecording ? "Stop recording" : "Describe job by voice"}
                   className={`h-14 w-14 rounded-full flex items-center justify-center transition-all duration-300 border cursor-pointer ${
-                    isRecording ? "bg-gradient-to-tr from-rose-500 to-soft-violet border-rose-300 scale-105"
+                    isRecording ? "bg-gradient-to-tr from-orb-recording to-soft-violet border-orb-recording-rim scale-105"
                       : aiProcessing ? "bg-deep-navy border-orb-processing"
                       : "bg-gradient-to-tr from-orb-dark to-orb-violet border-orb-rim shadow-xl shadow-cool-blue/10"
                   }`}
@@ -1350,7 +1378,7 @@ export default function App() {
                     : <Mic className={`w-5 h-5 ${isRecording ? "text-starlight" : "text-cool-blue"}`} />}
                 </button>
               </div>
-              <span className="text-micro font-black tracking-widest text-starlight/40 uppercase font-mono text-center leading-tight">
+              <span className="text-micro font-black tracking-widest text-starlight/70 uppercase font-mono text-center leading-tight">
                 {isRecording ? "Listening..." : aiProcessing ? "Building..." : "Describe Job"}
               </span>
               <div className="relative w-36">
@@ -1359,7 +1387,7 @@ export default function App() {
                   onChange={(e) => setTextPrompt(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleProcessNLP(textPrompt)}
                   placeholder="Type & enter..."
-                  className="w-full bg-void-black/80 border border-white/10 rounded-full py-1.5 px-3 text-mini text-starlight placeholder-starlight/50 focus:ring-1 focus:ring-cool-blue focus:outline-none font-mono"
+                  className="w-full bg-void-black/80 border border-white/10 rounded-full py-1.5 px-3 text-mini text-starlight placeholder-starlight/70 focus:ring-1 focus:ring-cool-blue focus:outline-none font-mono"
                 />
               </div>
             </div>
@@ -1395,7 +1423,7 @@ export default function App() {
                   </span>
                 </div>
               </div>
-              <p className="text-micro text-starlight/25 font-sans italic leading-relaxed">
+              <p className="text-micro text-starlight/70 font-sans italic leading-relaxed">
                 Tell us what to put here.
               </p>
             </div>
@@ -1410,9 +1438,12 @@ export default function App() {
         
         {/* Status Flash notification popup above orb */}
         {statusFlash && (
-          <div className="bg-cool-blue/15 border border-cool-blue/30 text-cool-blue px-3.5 py-1.5 rounded-full text-mini font-mono tracking-wider font-extrabold shadow-lg shadow-cool-blue/10 flex items-center gap-1.5 animate-fade-in">
-            <Sparkles className="w-3.5 h-3.5 animate-spin" />
-            + {statusFlash.toUpperCase()}
+          <div
+            role="status"
+            className="bg-cool-blue/15 border border-cool-blue/30 text-cool-blue px-3.5 py-1.5 rounded-full text-mini font-mono font-extrabold shadow-lg shadow-cool-blue/10 flex items-center gap-1.5 animate-fade-in"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            {statusFlash}
           </div>
         )}
 
@@ -1447,9 +1478,10 @@ export default function App() {
           {/* Core voice orb button */}
           <button
             onClick={toggleRecording}
+            aria-label={isRecording ? "Stop recording" : "Describe job by voice"}
             className={`h-14 w-14 rounded-full flex items-center justify-center transition-all duration-300 pointer-events-auto border relative z-50 cursor-pointer ${
-              isRecording 
-                ? "bg-gradient-to-tr from-rose-500 to-soft-violet border-rose-300 scale-105" 
+              isRecording
+                ? "bg-gradient-to-tr from-orb-recording to-soft-violet border-orb-recording-rim scale-105"
                 : aiProcessing
                   ? "bg-deep-navy text-white border-orb-processing"
                   : "bg-gradient-to-tr from-orb-dark to-orb-violet hover:from-orb-dark-hover hover:to-orb-violet-hover border-orb-rim shadow-xl shadow-cool-blue/5"
@@ -1486,7 +1518,7 @@ export default function App() {
               }
             }}
             placeholder="Describe materials, dimensions, or scope..."
-            className="w-full bg-void-black/80 frosted-input border-white/10 rounded-full py-1.5 px-4 text-mini tracking-wide text-starlight placeholder-starlight/50 focus:ring-1 focus:ring-cool-blue focus:outline-none backdrop-blur-md font-mono"
+            className="w-full bg-void-black/80 frosted-input border-white/10 rounded-full py-1.5 px-4 text-mini tracking-wide text-starlight placeholder-starlight/70 focus:ring-1 focus:ring-cool-blue focus:outline-none backdrop-blur-md font-mono"
             style={{ paddingRight: "3rem" }}
           />
           {textPrompt.trim() !== "" && (
@@ -1540,7 +1572,7 @@ export default function App() {
               </>
             )}
             <div className="text-right">
-              <span className="text-micro text-starlight/40 font-bold tracking-widest uppercase block leading-none mb-0.5">
+              <span className="text-micro text-starlight/70 font-bold tracking-widest uppercase block leading-none mb-0.5">
                 total
               </span>
               <span className="text-base sm:text-lg font-black text-cool-blue font-mono leading-none">
@@ -1594,8 +1626,7 @@ export default function App() {
               });
               const data = await resp.json().catch(() => ({}));
               if (resp.ok) {
-                setStatusFlash(`PDF sent to ${settings.contact_email}`);
-                setTimeout(() => setStatusFlash(null), 5000);
+                showStatus(`PDF sent to ${settings.contact_email}`, 5000);
               } else {
                 // Reject so the ledger can surface a durable inline error + retry
                 throw new Error(data.error || `Server error ${resp.status}`);
@@ -1680,8 +1711,7 @@ export default function App() {
           });
           const data = await resp.json().catch(() => ({}));
           if (!resp.ok) throw new Error(data.error || `Server error ${resp.status}`);
-          setStatusFlash(`PDF sent to ${settings.contact_email}`);
-          setTimeout(() => setStatusFlash(null), 5000);
+          showStatus(`PDF sent to ${settings.contact_email}`, 5000);
         }}
       />
 
@@ -1730,8 +1760,7 @@ export default function App() {
               e.id === invoiceModal.estimateId ? { ...e, status: 'invoiced' } : e
             ));
             setInvoiceModal(null);
-            setStatusFlash(`Invoice ${result.invoice_number} sent · Balance $${result.balance_due.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
-            setTimeout(() => setStatusFlash(null), 6000);
+            showStatus(`Invoice ${result.invoice_number} sent · Balance $${result.balance_due.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 6000);
           }}
         />
       )}
