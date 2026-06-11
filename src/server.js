@@ -3238,7 +3238,13 @@ app.post('/api/change-orders/send', requireAuth, requireSubscription, async (req
             || 'Your Contractor';
         const totalFormatted = `$${Number(co.change_order_total || 0).toFixed(2)}`;
         const imageHtml = imageUrl
-            ? `<div style="margin: 16px 0;"><img src="${escapeHtml(String(imageUrl))}" alt="Job-site photo" style="max-width: 100%; border-radius: 8px; margin-top: 15px;" /></div>`
+            ? `<div style="margin-top: 24px; margin-bottom: 24px;">
+  <p style="font-size: 14px; color: #374151; margin-bottom: 8px;"><strong>Reference Photo:</strong></p>
+  <a href="${escapeHtml(String(imageUrl))}" target="_blank" style="display: block; text-decoration: none;">
+    <img src="${escapeHtml(String(imageUrl))}" alt="Change Order Damage/Reference" width="600" style="display: block; max-width: 100%; height: auto; border-radius: 8px; border: 1px solid #d1d5db;" />
+    <p style="text-align: center; color: #6b7280; font-size: 12px; margin-top: 8px; text-decoration: underline;">Click to view full size</p>
+  </a>
+</div>`
             : '';
         const imageText = imageUrl ? `\nJob-site photo: ${imageUrl}\n` : '';
         const transporter = nodemailer.createTransport({
@@ -3360,6 +3366,14 @@ app.get('/approve', async (req, res) => {
         .ref { font-size: 11px; color: #9b59d0; margin-top: 20px; text-align: center; }
         #statusMsg { margin-top: 12px; font-size: 13px; text-align: center; color: #521880; min-height: 20px; }
         .legal-text { font-size: 11px; color: #9b8fb0; line-height: 1.55; text-align: center; margin-bottom: 14px; padding: 0 4px; }
+        .consent-block { margin-bottom: 16px; }
+        .consent-label { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; font-size: 13px; color: #4b2d7a; line-height: 1.5; }
+        .consent-label input[type="checkbox"] { margin-top: 3px; width: 16px; height: 16px; flex-shrink: 0; accent-color: #521880; cursor: pointer; }
+        .sig-block { margin-bottom: 16px; }
+        .sig-label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; font-weight: 700; color: #9b59d0; margin-bottom: 6px; }
+        .sig-input { width: 100%; padding: 10px 12px; border: 1.5px solid #e9d5ff; border-radius: 8px; font-family: Georgia, serif; font-size: 15px; color: #210936; outline: none; transition: border-color 0.2s; }
+        .sig-input:focus { border-color: #7c3aed; }
+        .sig-input::placeholder { color: #c4b5fd; font-style: italic; }
     </style>
 </head>
 <body>
@@ -3382,8 +3396,17 @@ app.get('/approve', async (req, res) => {
 
     ${isApproved
         ? `<div class="approved-banner"><h2>✅ Approved</h2><p>This change order was approved on ${co.approvedAt ? new Date(co.approvedAt).toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'}) : 'record'}.</p></div>`
-        : `<p class="legal-text">By clicking &#8216;Approve&#8217;, you agree that this action constitutes a legally binding electronic signature under the ESIGN Act, and you authorize the contractor to proceed with the outlined scope changes and associated costs.</p>
-           <button class="approve-btn" id="approveBtn" onclick="approveChangeOrder()">✓ Approve Change Order</button>
+        : `<div class="consent-block">
+             <label class="consent-label">
+               <input type="checkbox" id="consentCheck" onchange="updateApproveBtn()" />
+               <span>I agree to the updated scope of work and the associated cost increase of <strong>${totalFormatted}</strong>. I understand this constitutes a legally binding electronic signature under the ESIGN Act, and I authorize the contractor to proceed with the outlined scope changes.</span>
+             </label>
+           </div>
+           <div class="sig-block">
+             <label for="sigInput" class="sig-label">Electronic Signature — Type Full Legal Name</label>
+             <input type="text" id="sigInput" placeholder="Your full legal name" oninput="updateApproveBtn()" class="sig-input" autocomplete="name" />
+           </div>
+           <button class="approve-btn" id="approveBtn" disabled onclick="approveChangeOrder()">✓ Sign &amp; Approve</button>
            <div id="statusMsg"></div>`
     }
 
@@ -3391,9 +3414,17 @@ app.get('/approve', async (req, res) => {
 </div>
 
 <script>
+function updateApproveBtn() {
+    const checked = document.getElementById('consentCheck').checked;
+    const name = document.getElementById('sigInput').value.trim();
+    document.getElementById('approveBtn').disabled = !(checked && name.length >= 2);
+}
+
 async function approveChangeOrder() {
     const btn = document.getElementById('approveBtn');
     const msg = document.getElementById('statusMsg');
+    const typedSignature = document.getElementById('sigInput').value.trim();
+    if (!typedSignature) return;
     btn.disabled = true;
     btn.textContent = 'Processing…';
     msg.textContent = '';
@@ -3401,17 +3432,17 @@ async function approveChangeOrder() {
         const resp = await fetch('/api/change-orders/approve', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ r: ${JSON.stringify(changeOrderId)}, t: ${JSON.stringify(token)} })
+            body: JSON.stringify({ r: ${JSON.stringify(changeOrderId)}, t: ${JSON.stringify(token)}, typed_signature: typedSignature })
         });
         const data = await resp.json();
         if (!resp.ok) throw new Error(data.error || 'Approval failed.');
-        btn.textContent = '✅ Approved!';
+        btn.textContent = '✅ Signed & Approved!';
         btn.style.background = 'linear-gradient(135deg,#065f46,#059669)';
-        msg.textContent = 'Your approval has been recorded. The contractor has been notified.';
+        msg.textContent = 'Your signature has been recorded. The contractor has been notified.';
         msg.style.color = '#059669';
     } catch (err) {
         btn.disabled = false;
-        btn.textContent = '✓ Approve Change Order';
+        btn.textContent = '✓ Sign & Approve';
         msg.textContent = 'Error: ' + err.message;
         msg.style.color = '#b91c1c';
     }
@@ -3464,7 +3495,31 @@ app.post('/api/change-orders/approve', async (req, res) => {
         // ── Capture audit trail ───────────────────────────────────────
         const clientIp = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'unknown';
         const approvedAt = new Date().toISOString();
-        const approvalRecord = { ip: clientIp, timestamp: approvedAt };
+
+        // Deterministic snapshot of the exact document state the client signed.
+        // Keys are in fixed order so the hash is reproducible.
+        const documentSnapshot = {
+            change_order_id: changeOrderId,
+            change_order_total: co.change_order_total || 0,
+            change_summary: co.change_summary || '',
+            added_materials: (co.added_materials || []).map(m => ({
+                name: m.name,
+                quantity: m.quantity,
+                unit_price: m.unit_price,
+                total: m.total,
+            })),
+            added_labor: (co.added_labor || []).map(l => ({
+                role: l.role,
+                hours: l.hours,
+                rate: l.rate,
+                total: l.total,
+            })),
+        };
+        const documentVersionHash = crypto.createHash('sha256')
+            .update(JSON.stringify(documentSnapshot))
+            .digest('hex');
+
+        const approvalRecord = { ip: clientIp, timestamp: approvedAt, document_version_hash: documentVersionHash };
 
         await coRef.set({
             status: 'approved',
@@ -3490,6 +3545,7 @@ app.post('/api/change-orders/approve', async (req, res) => {
                 text:
                     `Your client has digitally signed and approved the Change Order for ${totalFormatted}.\n\n` +
                     `The audit trail (Timestamp: ${approvedAt} and IP: ${clientIp}) has been secured in your ledger.\n\n` +
+                    `Document Hash (SHA-256): ${documentVersionHash}\n\n` +
                     `Change Order ID: ${changeOrderId}`,
                 html: `
                     <div style="font-family: Arial, sans-serif; max-width: 600px;">
@@ -3498,7 +3554,8 @@ app.post('/api/change-orders/approve', async (req, res) => {
                         <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 14px 16px; margin: 16px 0; font-size: 13px; color: #14532d; font-family: monospace;">
                             <strong>Audit Trail</strong><br/>
                             Timestamp: ${approvedAt}<br/>
-                            IP Address: ${escapeHtml(clientIp)}
+                            IP Address: ${escapeHtml(clientIp)}<br/>
+                            SHA-256: ${documentVersionHash}
                         </div>
                         <p style="font-size: 12px; color: #888;">Change Order ID: ${changeOrderId}</p>
                     </div>
