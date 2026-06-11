@@ -229,6 +229,27 @@ export default function App() {
     'Authorization': `Bearer ${token}`,
   });
 
+  const [subscribeLoading, setSubscribeLoading] = useState(false);
+
+  const handleSubscribeClick = async () => {
+    if (!authToken || subscribeLoading) return;
+    setSubscribeLoading(true);
+    try {
+      const resp = await fetch('/api/billing/create-checkout-session', {
+        method: 'POST',
+        headers: apiHeaders(authToken),
+        body: JSON.stringify({}),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.message || 'Checkout failed');
+      if (data.url) window.location.href = data.url;
+    } catch (err: unknown) {
+      alert('Subscription checkout failed: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setSubscribeLoading(false);
+    }
+  };
+
   // ── Durable ledger persistence ──
   // Every estimate mutation queues a debounced full-document save to
   // POST /api/estimates/:id/save; the queue is flushed BEFORE any AI extraction
@@ -808,12 +829,13 @@ export default function App() {
               <h2 className="text-lg font-black text-white uppercase tracking-wide">Unlock Lone Ranger</h2>
               <p className="text-mini text-starlight/60 mt-1">Subscribe to access AI estimating, PDF generation, and the 3D material yard.</p>
             </div>
-            <a
-              href="/dashboard#subscribe"
-              className="block w-full py-3 bg-gradient-to-r from-cool-blue to-soft-violet text-void-black font-black rounded-full text-mini uppercase tracking-widest"
+            <button
+              onClick={handleSubscribeClick}
+              disabled={subscribeLoading}
+              className="block w-full py-3 bg-gradient-to-r from-cool-blue to-soft-violet text-void-black font-black rounded-full text-mini uppercase tracking-widest disabled:opacity-60"
             >
-              Subscribe — $50/mo
-            </a>
+              {subscribeLoading ? 'Redirecting…' : 'Subscribe — $49/mo'}
+            </button>
             <button
               onClick={() => setSubscriptionGate(false)}
               className="text-mini text-starlight/70 hover:text-white font-mono uppercase tracking-wider"
