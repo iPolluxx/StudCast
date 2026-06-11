@@ -1,7 +1,7 @@
 # Lone Ranger Estimator — Live Project Context
 > **Purpose:** This document is the handoff bridge between Gemini brainstorming sessions and Claude Code
 > implementation sessions. Update it after every meaningful work session.
-> **Last updated:** 2026-06-08 — CO/Invoice flow hardening: durable CO dispatch confirmation card (replaces ephemeral toast), `invoiced` status badge in estimate switcher, backend CO tax now reads from contractor settings (`tax_rate`) instead of hardcoded WI 5.5%, broken ChangeOrderModal ternary fixed (TypeScript TS1005). Final Invoice generation (backend + InvoiceModal) shipped in prior session. Earlier: Phase 1 housekeeping (legacy monolith removed, V2 sole path), type-scale migration, live mic, real change orders, client capture, full design pass, master price sheet UI.
+> **Last updated:** 2026-06-11 — Change Order upgrades: job-site photo upload (GCS bucket `lone-ranger-change-orders`), full white-labeling (company_name from Firestore), ESIGN Act consent UI (checkbox + typed signature), SHA-256 document-state hash in audit trail, contractor approval notification email, clickable reference photo in outbound email. Full impeccable audit pass across all dashboard components. Earlier: CO/Invoice flow hardening, invoice PDF fix, Phase 1 housekeeping, type-scale migration, live mic, real change orders, master price sheet.
 
 ---
 
@@ -140,6 +140,10 @@ users/{phone}/estimates/{id}/change_orders/{coId}  ← change order subdocs
   .approval_token (crypto random hex)
   .status ('pending' | 'approved')
   .pdf_base64
+  .image_url (optional — GCS public URL of job-site photo)
+  .sent_at, .sent_to (client email), .email_message_id
+  .approvedAt (ISO timestamp)
+  .approval_record { ip, timestamp, document_version_hash (SHA-256) }
 
 users/{phone}/price_book/{itemId}     ← per-user custom pricing catalog
   .name, .price
@@ -228,9 +232,10 @@ const { assignUnitPrice, assignLaborRate } = createPricingEngine({ db, ai });
 | POST | `/api/auth/verify-otp` | Google token | OTP verification (step 2) |
 | GET | `/api/me` | requireAuth | Returns authenticated user's phone |
 | POST | `/api/change-orders/generate` | requireAuth + sub | AI extract change items + Puppeteer PDF |
-| POST | `/api/change-orders/send` | requireAuth + sub | Send Twilio SMS with approval link |
-| GET | `/approve` | Token-gated (public) | Client-facing approval page |
-| POST | `/api/change-orders/approve` | Token-gated (public) | Record client approval |
+| POST | `/api/change-orders/upload-image` | requireAuth + sub | Upload job-site photo to GCS `lone-ranger-change-orders`; returns `{ imageUrl }` |
+| POST | `/api/change-orders/send` | requireAuth + sub | Email approval link to client (white-labeled, optional photo attachment) |
+| GET | `/approve` | Token-gated (public) | Client-facing approval page (consent checkbox + typed signature, company white-labeled) |
+| POST | `/api/change-orders/approve` | Token-gated (public) | Record client approval — writes IP, timestamp, SHA-256 hash to Firestore; notifies contractor |
 
 ### Admin Routes
 
@@ -330,6 +335,64 @@ From `ui/dist/` (built by Dockerfile):
 ---
 
 ## Work Session Log
+
+### Session: 2026-06-11 — Change Order Upgrades: Photo Upload, White-Labeling, ESIGN Audit Trail
+
+**Deployed:** revision `lone-ranger-app-00071-8g9`
+
+#### What was built (4 commits)
+
+**1. `fb9afe3` — Impeccable audit passes (a11y, contrast, perf, adapt, clarify).**
+Full audit pass across all 9 dashboard components (`App.tsx`, `LedgerTable.tsx`, `EstimateList.tsx`, `SettingsModal.tsx`, `PriceSheetPanel.tsx`, `ChangeOrderModal.tsx`, `ChangeOrderInputModal.tsx`, `InvoiceModal.tsx`, `ui/index.html`, `ui/src/index.css`).
+- **a11y:** `role="dialog"` + `aria-modal` + `trapTab` + focus-on-open for `SettingsModal`; `role="alert"` on all durable error banners; `role="status"` on flash toasts; SR-only `<h1>` in App; ARIA labels on icon-only buttons; removed invalid `role="menu"` from EstimateList.
+- **Contrast:** all `/25`–`/50` text raised to `/70` floor (≈6.9:1 WCAG AA); `placeholder-starlight/50` → `/70` globally; dollar-prefix `/40` → `/70`.
+- **Perf:** starfield parallax rAF loop now sleeps when settled (`|tgt−cur| < 0.01`); skips entirely for `prefers-reduced-motion` and coarse-pointer (touch) devices.
+- **Polish:** single-timer `showStatus()` replaces 11 ad-hoc `setTimeout` pairs; `numDisplay` suppresses zero in ledger inputs; skeleton rows replace RefreshCw spinner in PriceSheetPanel; orb recording colors tokenized.
+- **Adapt:** workflow bar `min-h-11`; AR pill `h-9`; employee remove `h-11`; SettingsModal grid responsive; EstimateList delete/confirm `h-11`.
+- **Clarify:** `window.prompt` → inline stateful name-entry row in EstimateList; "Invoiced" badge → `text-micro`; em-dashes → periods throughout; status flash sentence-case.
+
+**2. `150e7ae` — Change Order job-site photo upload.**
+- **Backend `POST /api/change-orders/upload-image`:** multer memory storage (10 MB limit), `@google-cloud/storage` bucket `lone-ranger-change-orders`, per-tenant path `userPhone/timestamp_filename`, `makePublic()`, returns `{ imageUrl }`. `@google-cloud/storage` added to `package.json`.
+- **GCS bucket created:** `gs://lone-ranger-change-orders` (us-central1), `lonerangerrunner@mightdoit.iam.gserviceaccount.com` → `roles/storage.objectAdmin`.
+- **Frontend `ChangeOrderModal.tsx`:** dashed-border `Camera` tap target; spinner + "Uploading…" inline + `role="status"` footer message while in-flight; Send button disabled during upload (`|| imageUploading`); thumbnail preview + Remove button (clears state + `fileInputRef.value`); all image state reset on modal open.
+- **Email injection:** `image_url` forwarded in `change-orders/send` payload; clickable `<a>` wrapper with `width=600`, `max-width:100%`, "Click to view full size" caption; `image_url` conditionally persisted to Firestore.
+
+**3. `14ccca3` — White-labeling, ESIGN legal text, audit trail, contractor notification.**
+- **White-label email (`POST /api/change-orders/send`):** `company_name` fetched from `users/{phone}/settings/config`; fallback chain: Firestore → OAuth `companyName` → email prefix → "Your Contractor". `from` field and HTML body both use resolved name.
+- **Approval page (`GET /approve`):** contractor `company_name` in subtitle and footer ref; ESIGN Act legal consent text above Approve button (`font-size:11px`, muted).
+- **Audit trail + notification (`POST /api/change-orders/approve`):** `x-forwarded-for` → `req.ip` → `'unknown'` captured; `{ ip, timestamp }` written to `approval_record` in Firestore. Contractor notification email fires with amount, timestamp, IP in green monospaced card. Notification failure non-fatal.
+
+**4. `d293abd` — SHA-256 document hash, ESIGN consent UI, clickable email image.**
+- **SHA-256 hash:** deterministic snapshot of `{ change_order_id, change_order_total, change_summary, added_materials, added_labor }` (fixed key order) hashed with `crypto.createHash('sha256')` (built-in, no new dep). `document_version_hash` stored in `approval_record`. Hash appears in contractor notification email (text + HTML).
+- **Consent UI:** replaced static legal-text paragraph with checkbox ("I agree... ESIGN Act") + Georgia-font typed-name input. Approve button starts `disabled`; `updateApproveBtn()` gates on `checkbox.checked && name.length ≥ 2`. `typed_signature` forwarded to `POST /api/change-orders/approve` payload.
+- **Email image fix:** bare `<img>` replaced with `<a target="_blank">` wrapper, `width=600`, `max-width:100%`, "Click to view full size" caption — renders large and tappable across all major email clients.
+
+#### Files modified
+```
+src/server.js                                — upload-image route; white-label send; approval page consent UI + white-label; approve endpoint: IP capture, SHA-256 hash, audit_record, contractor notification; email image block
+package.json / package-lock.json            — @google-cloud/storage added
+ui/index.html                               — font preconnect/preload optimization
+ui/src/App.tsx                              — parallax rAF idle, showStatus(), project dropdown hygiene, SR-only h1, orb tokens, contrast fixes
+ui/src/components/ChangeOrderModal.tsx      — photo upload (Camera input, thumbnail, Remove, imageUploading gate, image_url in dispatch)
+ui/src/components/ChangeOrderInputModal.tsx — contrast fix
+ui/src/components/EstimateList.tsx          — inline name-entry, role hygiene, touch targets, contrast
+ui/src/components/InvoiceModal.tsx          — role=status/alert, contrast
+ui/src/components/LedgerTable.tsx           — numDisplay, contrast, role=alert
+ui/src/components/PriceSheetPanel.tsx       — skeleton loading, flash timer, contrast, role fixes
+ui/src/components/SettingsModal.tsx         — modal hygiene, grid responsive, contrast, touch targets
+ui/src/index.css                            — orb recording tokens, font @import removed
+```
+
+#### New route
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| POST | `/api/change-orders/upload-image` | requireAuth + sub | Upload job-site photo to GCS `lone-ranger-change-orders`; returns `{ imageUrl }` |
+
+#### Infrastructure
+- GCS bucket `gs://lone-ranger-change-orders` created in `us-central1`
+- `lonerangerrunner@mightdoit.iam.gserviceaccount.com` granted `roles/storage.objectAdmin`
+
+---
 
 ### Session: 2026-06-10 — Production-Ready Fixes (persistence, naming, price sheet, labor rates, CO email, invoice PDF)
 
@@ -1399,11 +1462,14 @@ All Unity development happens on a dedicated GCP cloud workstation.
 - [ ] **Remove OTP log line** — `console.warn('[register] OTP...')` in server.js once Twilio 10DLC campaign approved
 - [ ] **Flip SMS_LIVE flag** — `gcloud run services update … --update-env-vars SMS_LIVE=true` once A2P 10DLC campaign is approved
 - [ ] **Rotate Twilio auth token** — Token was shared in plaintext during a session; rotate in Twilio Console, update local `.env` + add new Secret Manager version
-- [ ] **Wire React demo simulations to real routes** — Voice orb (real mic → `/api/process`), Change Order panel (`/api/change-orders/generate` + `/send`), client approval portal (`/approve`). All three are client-side sims; endpoints already exist.
-- [ ] **Finish type-scale migration** — `SettingsModal.tsx`, `EstimateList.tsx`, `ThreeVisualizer.tsx` still use raw `text-[Npx]`; migrate to `text-micro`/`text-mini` + semantic color tokens.
+- [x] ~~**Wire React demo simulations to real routes**~~ — Done: voice orb (real mic), change order modal (real generate/send), approval portal all wired.
+- [x] ~~**Finish type-scale migration**~~ — All components migrated (SettingsModal, EstimateList, ThreeVisualizer done in Phase 1 housekeeping; full audit pass completed 2026-06-11).
 - [x] ~~**PIPELINE_V2 wired into SMS webhook**~~ — `/api/webhook` now forks on `PIPELINE_V2=true` (same pattern as `process-text`); legacy monolith path kept as fallback.
 - [x] ~~**Menards market pricing tier**~~ — `market` tier (priority 2.5) live; 70 verified SKUs, Oxylabs weekly scrape, Cloud Scheduler job `menards-price-sync` (Monday 6AM CT), Firestore global cache `market_prices/menards/items/`. Green "Menards · Xh" badge in LedgerTable.
 - [ ] **Remove legacy monolith** — Delete the `// LEGACY` branch in both `POST /api/process-text` and `/api/webhook` + `mergeIntoLedger` once `PIPELINE_V2` is validated clean in prod.
+- [ ] **Change Order Step 2 (Puppeteer PDF archiving)** — On approval, generate a "Certificate of Electronic Signature" PDF with typed name, IP, timestamp, SHA-256 hash; upload to `gs://lone-ranger-change-orders`; save `pdf_archive_url` to Firestore change order doc.
+- [ ] **Change Order Step 3 (View Signed Contract button)** — In contractor dashboard, show "View Signed Contract" button on approved change orders that have a `pdf_archive_url`.
+- [ ] **`typed_signature` persistence** — `POST /api/change-orders/approve` receives `typed_signature` from the consent UI but does not yet save it to Firestore or include it in the audit trail. Wire it in when implementing Step 2 PDF archiving.
 - [ ] **Mode 2: blueprint upload** — Gemini vision reads blueprint image → extracts all walls → multi-wall JSON → full floor plan render in Three.js
 - [ ] **Multi-wall schema** — Extend Phase 1 JSON to support `walls[]` array with position + rotation per wall
 - [ ] **Phase 2 schema** — Define `floor_frame`, `roof_truss` project types
@@ -1417,7 +1483,7 @@ If you're reading this to catch up on what's been built:
 
 - The **estimating core** (voice → items → price → PDF) is complete and in production
 - The **billing/onboarding** (Stripe + Google OAuth + Twilio OTP) is complete
-- The **change order system** (generate → SMS approval → sign off) is complete
+- The **change order system** is fully production-grade: generate → email approval link (white-labeled, optional job-site photo) → client consent UI (ESIGN Act checkbox + typed signature) → approval writes IP + timestamp + SHA-256 document hash to `approval_record` in Firestore → contractor notification email with audit trail. GCS bucket `lone-ranger-change-orders` holds uploaded job-site photos (`roles/storage.objectAdmin` granted to the Cloud Run SA). PDF archiving on approval (Step 2) and "View Signed Contract" dashboard button (Step 3) are tracked as open items.
 - The **3D visualizer** (Stack Layer — material yard) is live in the React dashboard; WebXR AR mode available when device supports it
 - The **PIPELINE_V2** 3-stage estimation pipeline (Estimator → Pricer → Reviewer) is implemented, flag-gated, and verified end-to-end; ready to flip in prod
 - The **design system** is codified — `PRODUCT.md` / `DESIGN.md` at repo root, tokens in `ui/src/index.css @theme`, machine-readable sidecar at `.impeccable/design.json`
