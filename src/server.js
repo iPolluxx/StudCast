@@ -64,6 +64,7 @@ app.use('/dashboard', express.static(uiDistPath));
 app.get('/dashboard',       (req, res) => res.sendFile(path.join(uiDistPath, 'index.html')));
 app.get('/dashboard/*splat', (req, res) => res.sendFile(path.join(uiDistPath, 'index.html')));
 app.get('/dashboard-legacy', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'dashboard.html')));
+app.get('/watch',            (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'watch.html')));
 
 // ── Stripe webhook — must be mounted BEFORE express.json() ───────────
 app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), stripeWebhookHandler);

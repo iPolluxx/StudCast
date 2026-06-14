@@ -203,7 +203,7 @@ body {
 }
 
 .animate-orb-land {
-  animation: orb-land 0.65s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation: orb-land 0.65s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .animate-panel-right {

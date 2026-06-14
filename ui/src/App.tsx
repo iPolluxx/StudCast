@@ -188,21 +188,9 @@ export default function App() {
     clientName: string;
   } | null>(null);
 
-  // Price Override matrix configuration
-  // Internal defaults still used by the quick-add row and the offline fallback
-  // parser; the editing UI was replaced by the Labor Rates (employee wages) grid.
-  const [priceSheet] = useState({
-    stud: 6.25,
-    treated: 16.50,
-    plate: 12.00,
-    drywall: 15.50,
-    nails: 85.00,
-    laborFrame: 55,
-    laborDrywall: 50
-  });
-
-  // Current framing model parameters
-  const [framingIntent, setFramingIntent] = useState<FramingIntent>({
+  // Current framing model parameters — static default the 3D material yard reads
+  // for its wall geometry; no longer mutated now that the local parser is gone.
+  const [framingIntent] = useState<FramingIntent>({
     schemaVersion: "1.0",
     projectType: "wall_frame",
     dimensions: { lengthFt: 16, heightFt: 8 },
@@ -502,7 +490,7 @@ export default function App() {
     updateEstimateItems(items => [
       ...items,
       type === "material"
-        ? { name: "2x4 SPF Stud", quantity: 10, unit: "pcs", trade: "framing", unit_price: priceSheet.stud, total: priceSheet.stud * 10, price_source: "override", type: "material" }
+        ? { name: "2x4 SPF Stud", quantity: 10, unit: "pcs", trade: "framing", unit_price: 6.25, total: 62.50, price_source: "override", type: "material" }
         : { role: "Professional carpentry installers", hours: 4, rate: settings.default_labor_rate || 55, total: (settings.default_labor_rate || 55) * 4, type: "labor" }
     ]);
   };
@@ -587,6 +575,11 @@ export default function App() {
         }),
       });
 
+      if (response.status === 402) {
+        setSubscriptionGate(true);
+        return;
+      }
+
       const data = await response.json();
 
       if (response.ok && data.estimateId) {
@@ -603,94 +596,10 @@ export default function App() {
         throw new Error(data.error || 'Extraction failed');
       }
     } catch (e) {
-      // Fallback: local parse (no Firestore persistence)
-      runLocalBackupParser(textToParse);
+      showStatus('Extraction failed — please try again.', 4000);
     } finally {
       setAiProcessing(false);
     }
-  };
-
-  // Standard high-reliability fallback parser so it is always 100% active and works
-  const runLocalBackupParser = (textToParse: string) => {
-    const lower = textToParse.toLowerCase();
-    let matchedLength = framingIntent.dimensions.lengthFt;
-    let matchedHeight = framingIntent.dimensions.heightFt;
-    let matchedDoors = framingIntent.features.doorOpenings;
-    let matchedWindows = framingIntent.features.windowOpenings;
-    let spacing: 16 | 24 = framingIntent.structural.studSpacingInches;
-    let pt = framingIntent.structural.treatedSolePlate;
-    let wallType: 'interior' | 'exterior' = framingIntent.structural.wallType;
-
-    const lenMatch = lower.match(/(\d+)\s*(foot|ft|feet|f)/);
-    if (lenMatch) matchedLength = parseInt(lenMatch[1]);
-    
-    const highMatch = lower.match(/(\d+)\s*(high|tall|height|h|ft)/);
-    if (highMatch && (lower.includes("high") || lower.includes("tall"))) {
-      matchedHeight = parseInt(highMatch[1]);
-    }
-
-    if (lower.includes("door") || lower.includes("opening")) {
-      matchedDoors = 1;
-      if (lower.includes("no door") || lower.includes("0") || lower.includes("zero")) matchedDoors = 0;
-      else if (lower.includes("two") || lower.includes("2")) matchedDoors = 2;
-    }
-    if (lower.includes("window")) {
-      matchedWindows = 1;
-      if (lower.includes("no window") || lower.includes("0") || lower.includes("zero")) matchedWindows = 0;
-      else if (lower.includes("two") || lower.includes("2")) matchedWindows = 2;
-    }
-    if (lower.includes("24 on center") || lower.includes("24 o") || lower.includes("24-inch")) {
-      spacing = 24;
-    } else if (lower.includes("16 on center") || lower.includes("16 o") || lower.includes("16-inch")) {
-      spacing = 16;
-    }
-    if (lower.includes("treated") || lower.includes("pt")) pt = true;
-    if (lower.includes("interior")) wallType = 'interior';
-    if (lower.includes("exterior")) wallType = 'exterior';
-
-    if (matchedLength < 4) matchedLength = 4;
-    if (matchedLength > 30) matchedLength = 30;
-    if (matchedHeight < 8) matchedHeight = 8;
-    if (matchedHeight > 12) matchedHeight = 12;
-
-    setFramingIntent({
-      schemaVersion: "1.0",
-      projectType: "wall_frame",
-      dimensions: { lengthFt: matchedLength, heightFt: matchedHeight },
-      structural: { studSpacingInches: spacing, treatedSolePlate: pt, wallType },
-      features: { doorOpenings: matchedDoors, windowOpenings: matchedWindows, cornerCount: 4 }
-    });
-
-    // Takeoff calculators
-    const baseStuds = Math.ceil((matchedLength * 12) / spacing) + 3 + (matchedDoors * 2) + (matchedWindows * 3);
-    const addedMats: MaterialItem[] = [
-      { name: `2x4x${matchedHeight}ft SPF Stud Stock (AI)`, quantity: baseStuds, unit: "pcs", trade: "framing", unit_price: priceSheet.stud, total: baseStuds * priceSheet.stud, price_source: "ai" },
-      { name: `2x4x16ft Sole/Top Plates (AI)`, quantity: Math.ceil((matchedLength * 3) / 16), unit: "pcs", trade: "framing", unit_price: pt ? priceSheet.treated : priceSheet.plate, total: Math.ceil((matchedLength * 3) / 16) * (pt ? priceSheet.treated : priceSheet.plate), price_source: "ai" }
-    ];
-
-    if (lower.includes("drywall")) {
-      const sqFt = matchedLength * matchedHeight * 2;
-      const sheetsCount = Math.ceil((sqFt * 1.05) / 32);
-      addedMats.push({ name: `1/2\" Plaster Drywall 4x8 Panels (AI)`, quantity: sheetsCount, unit: "pcs", trade: "drywall", unit_price: priceSheet.drywall, total: sheetsCount * priceSheet.drywall, price_source: "ai" });
-    }
-
-    const carpentersCount = Math.ceil(matchedLength * 0.45 + (matchedDoors * 1.5) + (matchedWindows * 1.5));
-    const addedLab: LaborItem[] = [
-      { role: "Professional carpentry installation hours (AI)", hours: carpentersCount, rate: priceSheet.laborFrame, total: carpentersCount * priceSheet.laborFrame }
-    ];
-
-    updateEstimateItems(prev => {
-      const cleanUserModified = prev.filter(i => i.price_source !== "ai" && !i.name?.includes("(AI)"));
-      return [
-        ...cleanUserModified,
-        ...addedMats.map(m => ({ ...m, type: "material" as const })),
-        ...addedLab.map(l => ({ ...l, type: "labor" as const }))
-      ];
-    });
-
-    showStatus("3 materials extracted");
-    setTextPrompt("");
-    setActiveStage(3);
   };
 
   const toggleRecording = async () => {
@@ -741,6 +650,11 @@ export default function App() {
             headers: { Authorization: `Bearer ${authToken}` },
             body: fd,
           });
+
+          if (resp.status === 402) {
+            setSubscriptionGate(true);
+            return;
+          }
 
           const data = await resp.json();
           if (resp.ok && data.estimateId) {
@@ -851,12 +765,12 @@ export default function App() {
             >
               {subscribeLoading ? 'Redirecting…' : 'Subscribe — $49/mo'}
             </button>
-            <button
-              onClick={() => setSubscriptionGate(false)}
+            <a
+              href="/watch"
               className="text-mini text-starlight/70 hover:text-white font-mono uppercase tracking-wider"
             >
-              Continue in demo mode
-            </button>
+              Watch it in action →
+            </a>
           </div>
         </div>
       )}
