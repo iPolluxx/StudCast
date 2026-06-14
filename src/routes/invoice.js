@@ -16,6 +16,8 @@ async function renderInvoicePdf(invoiceData, estimateData, contractorSettings) {
         invoice_number, invoice_date, due_date, payment_terms, payment_method_note,
         balance_due, estimate_total, approved_co_total, deposit_amount,
         client_name, client_address, scope_of_work,
+        mat_subtotal = 0, markup_pct = 0, markup_amount = 0, marked_up_mat = 0,
+        lab_subtotal = 0, sales_tax = 0, tax_rate_pct = 0,
     } = invoiceData;
     const { project_name, items = [] } = estimateData;
     const companyName    = contractorSettings.company_name    || 'Lone Ranger Contracting';
@@ -33,9 +35,6 @@ async function renderInvoicePdf(invoiceData, estimateData, contractorSettings) {
 
     const materialItems = items.filter(i => i && (i.type === 'material' || (!i.type && !i.role)));
     const laborItems    = items.filter(i => i && (i.type === 'labor'    || (!i.type && i.role)));
-
-    const materialsSubtotal = materialItems.reduce((s, i) => s + (Number(i.total) || 0), 0);
-    const laborSubtotal     = laborItems.reduce((s, i)    => s + (Number(i.total) || 0), 0);
 
     const fmtDate     = (d) => new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
     const fmtCurrency = (n) => `$${Number(n || 0).toFixed(2)}`;
@@ -143,8 +142,9 @@ async function renderInvoicePdf(invoiceData, estimateData, contractorSettings) {
 
   <table class="summary-table">
     <tbody>
-      <tr><td>Materials Subtotal</td><td class="amount">${fmtCurrency(materialsSubtotal)}</td></tr>
-      <tr><td>Labor Subtotal</td><td class="amount">${fmtCurrency(laborSubtotal)}</td></tr>
+      <tr><td>Materials Subtotal${markup_pct > 0 ? ` (incl. ${markup_pct}% markup)` : ''}</td><td class="amount">${fmtCurrency(marked_up_mat > 0 ? marked_up_mat : mat_subtotal)}</td></tr>
+      <tr><td>Labor Subtotal</td><td class="amount">${fmtCurrency(lab_subtotal)}</td></tr>
+      ${sales_tax > 0 ? `<tr><td>Sales Tax (${Number(tax_rate_pct).toFixed(1)}%)</td><td class="amount">${fmtCurrency(sales_tax)}</td></tr>` : ''}
       ${approved_co_total > 0 ? `<tr><td>Approved Change Orders</td><td class="amount">${fmtCurrency(approved_co_total)}</td></tr>` : ''}
       <tr class="estimate-total"><td>Estimate Total</td><td class="amount">${fmtCurrency(estimate_total)}</td></tr>
       <tr><td>Deposit Paid</td><td class="amount">(${fmtCurrency(deposit_amount)})</td></tr>
@@ -189,19 +189,31 @@ async function renderInvoicePdf(invoiceData, estimateData, contractorSettings) {
 router.post('/estimates/:id/generate-invoice', requireAuth, requireSubscription, async (req, res) => {
     const userPhone  = req.userPhone;
     const estimateId = req.params.id;
-    const { payment_terms, payment_method_note } = req.body;
+    const { payment_terms, payment_method_note, deposit_amount: bodyDeposit } = req.body;
 
     try {
         const estimateRef  = db.collection('users').doc(userPhone).collection('estimates').doc(estimateId);
         const estimateSnap = await estimateRef.get();
         if (!estimateSnap.exists) return res.status(404).json({ error: 'Estimate not found.' });
         const estimateData = estimateSnap.data();
-        const { total_amount, client_name, client_phone: clientPhone, client_address, scope_of_work, items = [] } = estimateData;
-        const deposit_amount = estimateData.deposit_amount || 0;
+        const { client_name, client_phone: clientPhone, client_address, scope_of_work } = estimateData;
+        const deposit_amount = bodyDeposit != null ? (Number(bodyDeposit) || 0) : (estimateData.deposit_amount || 0);
 
         const configRef  = db.collection('users').doc(userPhone).collection('settings').doc('config');
         const configSnap = await configRef.get();
         const contractorSettings = configSnap.exists ? configSnap.data() : {};
+
+        // Compute financials with markup + tax — mirrors the estimate PDF's computeFinancials()
+        const rawItems    = estimateData.items || [];
+        const markupPct   = Number(contractorSettings.global_markup_percent) || 0;
+        const taxRatePct  = contractorSettings.tax_rate != null ? Number(contractorSettings.tax_rate) : 5.5;
+        const matRawItems = rawItems.filter(i => i && (i.type === 'material' || (!i.type && !i.role)));
+        const labRawItems = rawItems.filter(i => i && (i.type === 'labor'    || (!i.type && i.role)));
+        const matSubtotal = matRawItems.reduce((s, i) => s + (Number(i.total) || 0), 0);
+        const labSubtotal = labRawItems.reduce((s, i) => s + (Number(i.total) || 0), 0);
+        const markedUpMat = matSubtotal * (1 + markupPct / 100);
+        const salesTax    = Math.round(markedUpMat * (taxRatePct / 100) * 100) / 100;
+        const grandTotal  = Math.round((markedUpMat + labSubtotal + salesTax) * 100) / 100;
 
         // Increment invoiceCount
         let invoice_number;
@@ -225,7 +237,7 @@ router.post('/estimates/:id/generate-invoice', requireAuth, requireSubscription,
             .collection('change_orders').where('status', '==', 'approved').get();
         const approved_co_total = coSnap.docs.reduce((sum, d) => sum + (d.data().change_order_total || 0), 0);
 
-        const { balance_due } = calculateInvoice({ total_amount, approved_co_total, deposit_amount });
+        const { balance_due } = calculateInvoice({ total_amount: grandTotal, approved_co_total, deposit_amount });
 
         const now = new Date();
         let due_date;
@@ -236,9 +248,17 @@ router.post('/estimates/:id/generate-invoice', requireAuth, requireSubscription,
         const invoiceData = {
             invoice_number, invoice_date: now, due_date,
             payment_terms, payment_method_note,
-            balance_due, estimate_total: total_amount,
+            balance_due, estimate_total: grandTotal,
             approved_co_total, deposit_amount,
             client_name, client_address, scope_of_work,
+            // Financial breakdown for the PDF summary table
+            mat_subtotal:  Math.round(matSubtotal * 100) / 100,
+            markup_pct:    markupPct,
+            markup_amount: Math.round((markedUpMat - matSubtotal) * 100) / 100,
+            marked_up_mat: Math.round(markedUpMat * 100) / 100,
+            lab_subtotal:  Math.round(labSubtotal * 100) / 100,
+            sales_tax:     salesTax,
+            tax_rate_pct:  taxRatePct,
         };
         const pdfBase64 = await renderInvoicePdf(invoiceData, estimateData, contractorSettings);
 
@@ -248,7 +268,7 @@ router.post('/estimates/:id/generate-invoice', requireAuth, requireSubscription,
         await invoiceRef.set({
             invoice_number, invoice_date: FieldValue.serverTimestamp(), due_date,
             payment_terms, payment_method_note, balance_due,
-            estimate_total: total_amount, approved_co_total, deposit_amount,
+            estimate_total: grandTotal, approved_co_total, deposit_amount,
             status: 'sent', sent_at: FieldValue.serverTimestamp(), pdf_base64: pdfBase64,
         }, { merge: true });
 
