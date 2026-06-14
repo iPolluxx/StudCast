@@ -61,7 +61,7 @@ async function stripeWebhookHandler(req, res) {
 
         switch (event.type) {
             case 'customer.subscription.created':
-                updateData = { active_subscription: true, subscription_status: 'active', stripe_customer_id: customerId };
+                updateData = { active_subscription: true, subscription_status: 'active', stripe_customer_id: customerId, stripe_subscription_id: obj.id };
                 break;
             case 'invoice.payment_succeeded':
                 updateData = { active_subscription: true, subscription_status: 'active' };
@@ -150,6 +150,34 @@ router.post('/verify-session', requireAuth, async (req, res) => {
     } catch (err) {
         console.error('[verify-session]', err.message);
         return res.status(500).json({ error: 'Verification failed.' });
+    }
+});
+
+// ── POST /api/billing/cancel-subscription ─────────────────────────────
+router.post('/cancel-subscription', requireAuth, async (req, res) => {
+    try {
+        const userPhone = req.userPhone;
+        const configRef = db.collection('users').doc(userPhone).collection('settings').doc('config');
+        const configSnap = await configRef.get();
+
+        if (!configSnap.exists) {
+            return res.status(404).json({ error: 'No subscription record found.' });
+        }
+
+        const { stripe_subscription_id } = configSnap.data();
+        if (!stripe_subscription_id) {
+            return res.status(400).json({ error: 'No active subscription ID on file.' });
+        }
+
+        await stripe.subscriptions.update(stripe_subscription_id, { cancel_at_period_end: true });
+        await configRef.set({
+            subscription_status: 'canceling',
+        }, { merge: true });
+
+        return res.json({ success: true });
+    } catch (err) {
+        console.error('[cancel-subscription]', err.message);
+        return res.status(500).json({ error: 'Cancellation failed.', message: err.message });
     }
 });
 

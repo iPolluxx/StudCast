@@ -1734,6 +1734,7 @@ export default function App() {
         }}
         authToken={authToken}
         onLogoUploaded={(url) => setSettings(s => ({ ...s, company_logo_url: url }))}
+        onSubscriptionCanceled={() => setSubscriptionGate(true)}
       />
 
       <PDFPreviewModal

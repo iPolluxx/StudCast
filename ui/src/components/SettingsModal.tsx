@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { X, Building, ImagePlus, RefreshCw, BookOpen } from "lucide-react";
+import { X, Building, ImagePlus, RefreshCw, BookOpen, AlertTriangle } from "lucide-react";
 import type { ContractorUserSettings } from "../types";
 import PriceSheetPanel from "./PriceSheetPanel";
 import { trapTab } from "../focusTrap";
@@ -12,12 +12,16 @@ interface Props {
   onSave: () => void;
   authToken: string | null;
   onLogoUploaded: (url: string) => void;
+  onSubscriptionCanceled?: () => void;
 }
 
-export default function SettingsModal({ open, settings, onSettingsChange, onClose, onSave, authToken, onLogoUploaded }: Props) {
+export default function SettingsModal({ open, settings, onSettingsChange, onClose, onSave, authToken, onLogoUploaded, onSubscriptionCanceled }: Props) {
   const [logoUploading, setLogoUploading] = useState(false);
   const [logoError, setLogoError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"profile" | "prices">("profile");
+  const [cancelConfirm, setCancelConfirm] = useState(false);
+  const [canceling, setCanceling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
   // Same dialog hygiene as the other modals: focus moves in on open, Escape
@@ -182,6 +186,68 @@ export default function SettingsModal({ open, settings, onSettingsChange, onClos
               {field("Global Mark-up Fee (%)", "global_markup_percent", "number")}
               {field("Regional Sales Tax (%)", "tax_rate", "number", "0.1")}
             </div>
+
+            {/* Subscription management */}
+            {settings.active_subscription && (
+              <div className="pt-4 mt-4 border-t border-white/10">
+                <p className="text-micro text-starlight/50 uppercase font-bold mb-2 tracking-widest">Subscription</p>
+                {!cancelConfirm ? (
+                  <button
+                    onClick={() => { setCancelConfirm(true); setCancelError(null); }}
+                    className="flex items-center gap-1.5 px-4 py-2 border border-alert-rose/30 text-alert-rose/80 hover:bg-alert-rose/10 hover:border-alert-rose/60 rounded-xl font-black uppercase font-mono text-micro tracking-wider transition-all cursor-pointer"
+                  >
+                    <AlertTriangle className="w-3 h-3" />
+                    Cancel Subscription
+                  </button>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    <p className="text-micro text-alert-rose font-mono">
+                      Your access continues until the end of the current billing period, then cancels. Are you sure?
+                    </p>
+                    {cancelError && <p className="text-micro text-alert-rose font-mono">{cancelError}</p>}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => { setCancelConfirm(false); setCancelError(null); }}
+                        disabled={canceling}
+                        className="px-4 py-1.5 border border-white/10 text-starlight/60 hover:bg-white/5 rounded-xl font-bold font-mono text-micro uppercase tracking-wider transition-all cursor-pointer disabled:opacity-50"
+                      >
+                        Keep Plan
+                      </button>
+                      <button
+                        disabled={canceling}
+                        onClick={async () => {
+                          if (!authToken) return;
+                          setCanceling(true);
+                          setCancelError(null);
+                          try {
+                            const r = await fetch('/api/billing/cancel-subscription', {
+                              method: 'POST',
+                              headers: { 'Authorization': `Bearer ${authToken}` },
+                            });
+                            const d = await r.json();
+                            if (r.ok && d.success) {
+                              onSettingsChange({ ...settings, subscription_status: 'canceling' });
+                              setCancelConfirm(false);
+                              onSubscriptionCanceled?.();
+                            } else {
+                              setCancelError(d.error || 'Cancellation failed. Try again.');
+                            }
+                          } catch {
+                            setCancelError('Network error. Try again.');
+                          } finally {
+                            setCanceling(false);
+                          }
+                        }}
+                        className="flex items-center gap-1.5 px-4 py-1.5 bg-alert-rose/20 border border-alert-rose/40 text-alert-rose hover:bg-alert-rose/30 rounded-xl font-black font-mono text-micro uppercase tracking-wider transition-all cursor-pointer disabled:opacity-50"
+                      >
+                        {canceling ? <RefreshCw className="w-3 h-3 animate-spin" /> : <AlertTriangle className="w-3 h-3" />}
+                        {canceling ? 'Canceling…' : 'Confirm Cancel'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="flex justify-end gap-3 pt-4 mt-4 border-t border-white/10">
               <button
