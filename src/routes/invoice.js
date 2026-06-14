@@ -18,9 +18,18 @@ async function renderInvoicePdf(invoiceData, estimateData, contractorSettings) {
         client_name, client_address, scope_of_work,
     } = invoiceData;
     const { project_name, items = [] } = estimateData;
-    const companyName   = contractorSettings.company_name    || 'Lone Ranger Contracting';
-    const licenseNumber = contractorSettings.license_number  || '';
+    const companyName    = contractorSettings.company_name    || 'Lone Ranger Contracting';
+    const licenseNumber  = contractorSettings.license_number  || '';
     const companyAddress = contractorSettings.company_address || '';
+    const companyEmail   = contractorSettings.contact_email   || '';
+
+    let logoHtml = '';
+    if (contractorSettings.company_logo_url && (contractorSettings.company_logo_url.startsWith('https://') || contractorSettings.company_logo_url.startsWith('data:image/'))) {
+        logoHtml = `<img src="${escapeHtml(contractorSettings.company_logo_url)}" style="max-height:50px;max-width:150px;object-fit:contain;" />`;
+    } else {
+        const initials = companyName.substring(0, 2).toUpperCase();
+        logoHtml = `<div style="width:50px;height:50px;border-radius:50%;background:#521880;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14pt;border:2px solid #210936;">${initials}</div>`;
+    }
 
     const materialItems = items.filter(i => i && (i.type === 'material' || (!i.type && !i.role)));
     const laborItems    = items.filter(i => i && (i.type === 'labor'    || (!i.type && i.role)));
@@ -52,80 +61,108 @@ async function renderInvoicePdf(invoiceData, estimateData, contractorSettings) {
 <html>
 <head>
 <meta charset="utf-8">
+<title>Invoice ${escapeHtml(invoice_number)}</title>
 <style>
-  body { font-family: Arial, sans-serif; font-size: 10pt; color: #1e2533; margin: 0; padding: 20px; }
-  h1 { font-size: 18pt; color: #521880; margin: 0 0 4px 0; }
-  .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; border-bottom: 2px solid #521880; padding-bottom: 12px; }
-  .section { margin-bottom: 14px; }
-  .label { font-size: 8pt; color: #888; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 2px; }
+  body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: #ffffff; color: #210936; margin: 0; padding: 30px; font-size: 10.5pt; line-height: 1.4; }
+  .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #521880; padding-bottom: 15px; margin-bottom: 25px; }
+  .company-name { font-size: 16pt; font-weight: 800; color: #210936; }
+  .invoice-title { font-size: 18pt; font-weight: 800; color: #521880; margin: 0 0 5px 0; }
+  .meta-item { font-size: 9pt; color: #9b59d0; margin: 2px 0; text-align: right; }
+  .info-grid { display: flex; gap: 20px; margin-bottom: 25px; }
+  .info-card { flex: 1; border: 1px solid #e9d5ff; border-radius: 8px; padding: 12px 15px; background: #faf7fd; }
+  .info-title { font-size: 8.5pt; font-weight: 700; text-transform: uppercase; color: #521880; margin: 0 0 8px 0; border-bottom: 1px solid #e9d5ff; padding-bottom: 4px; }
+  .info-text { font-size: 9.5pt; margin: 3px 0; color: #210936; }
+  .section-title { font-size: 10.5pt; font-weight: 700; text-transform: uppercase; color: #210936; margin: 20px 0 10px 0; padding-bottom: 4px; border-bottom: 2px solid #521880; }
   table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
-  th { background: #f3e8ff; padding: 8px 10px; text-align: left; font-size: 9pt; }
-  td { padding: 7px 10px; border-bottom: 1px solid #e9d5ff; font-size: 9.5pt; }
+  th { background: #210936; color: #ffffff; font-size: 8.5pt; font-weight: 600; text-transform: uppercase; padding: 6px 10px; text-align: left; }
+  td { padding: 8px 10px; border-bottom: 1px solid #e9d5ff; font-size: 9.5pt; }
   .amount { text-align: right; }
-  .total-row td { font-weight: bold; background: #f3e8ff; }
-  .balance-due { font-size: 20pt; font-weight: bold; color: #521880; margin: 14px 0 8px 0; }
-  .footer { font-size: 8pt; color: #888; text-align: center; margin-top: 24px; border-top: 1px solid #e9d5ff; padding-top: 8px; }
+  .subtotal-row td { font-weight: 700; background: #faf7fd; }
+  .summary-table { width: 55%; margin-left: auto; margin-top: 10px; }
+  .summary-table td { padding: 6px 10px; font-size: 9.5pt; border-bottom: 1px solid #e9d5ff; }
+  .summary-table tr.estimate-total td { font-weight: 700; }
+  .balance-box { margin-top: 18px; margin-left: auto; width: 55%; background: #210936; border-radius: 10px; padding: 16px 20px; display: flex; justify-content: space-between; align-items: center; }
+  .balance-box .label { font-size: 9pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #e9d5ff; }
+  .balance-box .value { font-size: 20pt; font-weight: 900; color: #ffffff; }
+  .terms-box { font-size: 8.5pt; color: #6b7280; border-top: 1px solid #e9d5ff; padding-top: 15px; margin-top: 35px; line-height: 1.5; }
+  .pay-box { background: #faf7fd; border: 1px solid #e9d5ff; border-radius: 8px; padding: 12px 15px; margin-top: 18px; }
+  .footer { font-size: 8pt; color: #9b59d0; text-align: center; margin-top: 35px; border-top: 1px solid #e9d5ff; padding-top: 10px; }
 </style>
 </head>
 <body>
-<div class="header">
-  <div>
-    <h1>INVOICE</h1>
-    <div style="font-weight:bold;">${escapeHtml(companyName)}</div>
-    ${companyAddress ? `<div style="font-size:9pt;">${escapeHtml(companyAddress)}</div>` : ''}
-    ${licenseNumber ? `<div style="color:#521880;font-size:8.5pt;">License: ${escapeHtml(licenseNumber)}</div>` : ''}
+  <div class="header">
+    <div style="display:flex; align-items:center; gap:15px;">
+      ${logoHtml}
+      <div class="company-name">${escapeHtml(companyName)}</div>
+    </div>
+    <div>
+      <h1 class="invoice-title">Invoice</h1>
+      <div class="meta-item"><strong>Number:</strong> ${escapeHtml(invoice_number)}</div>
+      <div class="meta-item"><strong>Date:</strong> ${fmtDate(invoice_date)}</div>
+      <div class="meta-item"><strong>Due:</strong> ${fmtDate(due_date)}</div>
+      <div class="meta-item"><strong>Terms:</strong> ${escapeHtml(paymentTermsLabel)}</div>
+    </div>
   </div>
-  <div style="text-align:right;font-size:9.5pt;">
-    <div><strong>Invoice #:</strong> ${escapeHtml(invoice_number)}</div>
-    <div><strong>Invoice Date:</strong> ${fmtDate(invoice_date)}</div>
-    <div><strong>Due Date:</strong> ${fmtDate(due_date)}</div>
-    <div><strong>Terms:</strong> ${escapeHtml(paymentTermsLabel)}</div>
+
+  <div class="info-grid">
+    <div class="info-card">
+      <h2 class="info-title">Bill To</h2>
+      <p class="info-text"><strong>${escapeHtml(client_name || 'Client')}</strong></p>
+      ${client_address ? `<p class="info-text">${escapeHtml(client_address)}</p>` : ''}
+    </div>
+    <div class="info-card">
+      <h2 class="info-title">From</h2>
+      <p class="info-text"><strong>${escapeHtml(companyName)}</strong></p>
+      ${companyAddress ? `<p class="info-text">${escapeHtml(companyAddress)}</p>` : ''}
+      ${companyEmail ? `<p class="info-text">Email: ${escapeHtml(companyEmail)}</p>` : ''}
+      ${licenseNumber ? `<p class="info-text" style="font-size:8.3pt;color:#521880;margin-top:5px;">License: ${escapeHtml(licenseNumber)}</p>` : ''}
+    </div>
   </div>
-</div>
-<div style="display:flex;justify-content:space-between;margin-bottom:16px;">
-  <div class="section">
-    <div class="label">Bill To</div>
-    <div style="font-weight:bold;">${escapeHtml(client_name || 'Client')}</div>
-    ${client_address ? `<div style="font-size:9pt;">${escapeHtml(client_address)}</div>` : ''}
+
+  ${project_name ? `<div class="info-card" style="margin-bottom:20px;"><h2 class="info-title">Project</h2><p class="info-text">${escapeHtml(project_name)}</p>${scope_of_work ? `<p class="info-text" style="font-style:italic;color:#4b2d7a;">${escapeHtml(scope_of_work)}</p>` : ''}</div>` : ''}
+
+  ${materialItems.length > 0 ? `
+  <div class="section-title">Materials</div>
+  <table>
+    <thead><tr><th>Description</th><th class="amount">Qty</th><th class="amount">Unit Price</th><th class="amount">Line Total</th></tr></thead>
+    <tbody>
+      ${materialRowsHtml}
+      <tr class="subtotal-row"><td colspan="3">Materials Subtotal</td><td class="amount">${fmtCurrency(materialsSubtotal)}</td></tr>
+    </tbody>
+  </table>` : ''}
+
+  ${laborItems.length > 0 ? `
+  <div class="section-title">Labor</div>
+  <table>
+    <thead><tr><th>Role</th><th class="amount">Hours</th><th class="amount">Rate</th><th class="amount">Line Total</th></tr></thead>
+    <tbody>
+      ${laborRowsHtml}
+      <tr class="subtotal-row"><td colspan="3">Labor Subtotal</td><td class="amount">${fmtCurrency(laborSubtotal)}</td></tr>
+    </tbody>
+  </table>` : ''}
+
+  <table class="summary-table">
+    <tbody>
+      <tr><td>Materials Subtotal</td><td class="amount">${fmtCurrency(materialsSubtotal)}</td></tr>
+      <tr><td>Labor Subtotal</td><td class="amount">${fmtCurrency(laborSubtotal)}</td></tr>
+      ${approved_co_total > 0 ? `<tr><td>Approved Change Orders</td><td class="amount">${fmtCurrency(approved_co_total)}</td></tr>` : ''}
+      <tr class="estimate-total"><td>Estimate Total</td><td class="amount">${fmtCurrency(estimate_total)}</td></tr>
+      <tr><td>Deposit Paid</td><td class="amount">(${fmtCurrency(deposit_amount)})</td></tr>
+    </tbody>
+  </table>
+
+  <div class="balance-box">
+    <span class="label">Balance Due</span>
+    <span class="value">${fmtCurrency(balance_due)}</span>
   </div>
-  <div class="section" style="text-align:right;">
-    <div class="label">Project</div>
-    <div style="font-size:9.5pt;">${escapeHtml(project_name || '')}</div>
+
+  ${payment_method_note ? `<div class="pay-box"><div class="info-title" style="border:none;padding:0;margin-bottom:4px;">Payment Instructions</div><p class="info-text" style="margin:0;">${escapeHtml(payment_method_note)}</p></div>` : ''}
+
+  <div class="terms-box">
+    <strong>Payment Terms:</strong> ${escapeHtml(paymentTermsLabel)}. Please reference invoice number ${escapeHtml(invoice_number)} with your payment. Thank you for your business.
   </div>
-</div>
-${scope_of_work ? `<div class="section"><div class="label">Scope of Work</div><p style="font-size:9.5pt;font-style:italic;margin:2px 0;">${escapeHtml(scope_of_work)}</p></div>` : ''}
-${materialItems.length > 0 ? `
-<div class="label">Materials</div>
-<table>
-  <thead><tr><th>Description</th><th class="amount">Qty</th><th class="amount">Unit Price</th><th class="amount">Line Total</th></tr></thead>
-  <tbody>
-    ${materialRowsHtml}
-    <tr class="total-row"><td colspan="3">Materials Subtotal</td><td class="amount">${fmtCurrency(materialsSubtotal)}</td></tr>
-  </tbody>
-</table>` : ''}
-${laborItems.length > 0 ? `
-<div class="label">Labor</div>
-<table>
-  <thead><tr><th>Role</th><th class="amount">Hours</th><th class="amount">Rate</th><th class="amount">Line Total</th></tr></thead>
-  <tbody>
-    ${laborRowsHtml}
-    <tr class="total-row"><td colspan="3">Labor Subtotal</td><td class="amount">${fmtCurrency(laborSubtotal)}</td></tr>
-  </tbody>
-</table>` : ''}
-<div class="label">Summary</div>
-<table>
-  <thead><tr><th>Description</th><th class="amount">Amount</th></tr></thead>
-  <tbody>
-    <tr><td>Materials Subtotal</td><td class="amount">${fmtCurrency(materialsSubtotal)}</td></tr>
-    <tr><td>Labor Subtotal</td><td class="amount">${fmtCurrency(laborSubtotal)}</td></tr>
-    ${approved_co_total > 0 ? `<tr><td>Approved Change Orders</td><td class="amount">${fmtCurrency(approved_co_total)}</td></tr>` : ''}
-    <tr class="total-row"><td>Estimate Total</td><td class="amount">${fmtCurrency(estimate_total)}</td></tr>
-    <tr><td>Deposit Paid</td><td class="amount">(${fmtCurrency(deposit_amount)})</td></tr>
-  </tbody>
-</table>
-<div class="balance-due">Balance Due: ${fmtCurrency(balance_due)}</div>
-${payment_method_note ? `<div class="section"><div class="label">Payment Instructions</div><p style="font-size:9.5pt;margin:2px 0;">${escapeHtml(payment_method_note)}</p></div>` : ''}
-<div class="footer">&copy; ${new Date().getFullYear()} ${escapeHtml(companyName)}${licenseNumber ? ` &bull; License: ${escapeHtml(licenseNumber)}` : ''}</div>
+
+  <div class="footer">&copy; ${new Date().getFullYear()} ${escapeHtml(companyName)}${licenseNumber ? ` &bull; License: ${escapeHtml(licenseNumber)}` : ''}</div>
 </body>
 </html>`;
 
@@ -219,6 +256,7 @@ router.post('/estimates/:id/generate-invoice', requireAuth, requireSubscription,
 
         // Email PDF to contractor
         const user = req.authedUser;
+        const companyName = contractorSettings.company_name || user.companyName || 'Lone Ranger Contracting';
         const contractorEmail = (contractorSettings.contact_email || user.email || '').trim();
         if (contractorEmail) {
             const transporter = nodemailer.createTransport({
@@ -226,16 +264,16 @@ router.post('/estimates/:id/generate-invoice', requireAuth, requireSubscription,
                 auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
             });
             await transporter.sendMail({
-                from:    `"${user.companyName}" <${process.env.EMAIL_USER}>`,
+                from:    `"${companyName}" <${process.env.EMAIL_USER}>`,
                 to:      contractorEmail,
                 subject: `Invoice ${invoice_number}: ${estimateData.project_name || 'Project'}`,
-                text:    `Hello,\n\nPlease find attached Invoice ${invoice_number}.\n\nBalance Due: $${balance_due.toFixed(2)}\n\nThank you,\n${user.companyName}`,
+                text:    `Hello,\n\nPlease find attached Invoice ${invoice_number}.\n\nBalance Due: $${balance_due.toFixed(2)}\n\nThank you,\n${companyName}`,
                 html: `
                     <div style="font-family: Arial, sans-serif; max-width: 600px;">
-                        <h2 style="color: #1e2533;">${user.companyName}</h2>
-                        <p>Please find attached <strong>Invoice ${invoice_number}</strong> for project <strong>${estimateData.project_name || ''}</strong>.</p>
+                        <h2 style="color: #1e2533;">${escapeHtml(companyName)}</h2>
+                        <p>Please find attached <strong>Invoice ${escapeHtml(invoice_number)}</strong> for project <strong>${escapeHtml(estimateData.project_name || '')}</strong>.</p>
                         <p style="font-size: 20px; font-weight: bold; color: #521880;">Balance Due: $${balance_due.toFixed(2)}</p>
-                        <p>Thank you,<br/>${user.companyName}</p>
+                        <p>Thank you,<br/>${escapeHtml(companyName)}</p>
                     </div>
                 `,
                 attachments: [{ filename: `Invoice_${invoice_number}.pdf`, content: Buffer.from(pdfBase64, 'base64') }],

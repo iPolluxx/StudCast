@@ -25,7 +25,7 @@ export default function InvoiceModal({
   onClose,
   onSuccess,
 }: Props) {
-  const [depositAmount, setDepositAmount] = useState(0);
+  const [depositInput, setDepositInput] = useState('');
   const [paymentTerms, setPaymentTerms] = useState<PaymentTerms>('due_on_receipt');
   const [paymentMethodNote, setPaymentMethodNote] = useState('');
   const [loading, setLoading] = useState(false);
@@ -34,6 +34,7 @@ export default function InvoiceModal({
 
   const panelRef = useRef<HTMLDivElement>(null);
 
+  const depositAmount = parseFloat(depositInput) || 0;
   const previewBalance = Math.max(0, estimateTotal + approvedCoTotal - depositAmount);
 
   useEffect(() => {
@@ -181,8 +182,10 @@ export default function InvoiceModal({
                       type="number"
                       min={0}
                       step={0.01}
-                      value={depositAmount}
-                      onChange={e => setDepositAmount(parseFloat(e.target.value) || 0)}
+                      inputMode="decimal"
+                      value={depositInput}
+                      onChange={e => setDepositInput(e.target.value)}
+                      placeholder="0.00"
                       className={`${inputCls} pl-6`}
                     />
                   </div>

@@ -115,6 +115,7 @@ const defaultSettings: ContractorUserSettings = {
   default_labor_rate: 55,
   global_markup_percent: 15,
   tax_rate: 5.5,
+  visualizer_enabled: true,
   isOnboarded: true,
   active_subscription: true,
   subscription_status: "active"
@@ -247,6 +248,20 @@ export default function App() {
       alert('Subscription checkout failed: ' + (err instanceof Error ? err.message : String(err)));
     } finally {
       setSubscribeLoading(false);
+    }
+  };
+
+  // Material-yard on/off — persisted per-tenant so the choice survives reloads.
+  const toggleVisualizer = () => {
+    const next = !(settings.visualizer_enabled ?? true);
+    setSettings(s => ({ ...s, visualizer_enabled: next }));
+    if (!next) setVizSize('mini'); // collapse theater/full before it disappears
+    if (authToken && authToken !== 'demo') {
+      fetch('/api/settings', {
+        method: 'POST',
+        headers: apiHeaders(authToken),
+        body: JSON.stringify({ visualizer_enabled: next }),
+      }).catch(() => { /* offline — local state stays authoritative until next save */ });
     }
   };
 
@@ -911,6 +926,7 @@ export default function App() {
       </header>
 
       {/* ── 2. VISUALIZER FRAME — three-state: mini PIP (draggable), medium banner, full ── */}
+      {(settings.visualizer_enabled ?? true) && (
       <div
         ref={pipRef}
         className={
@@ -1032,6 +1048,7 @@ export default function App() {
           </button>
         )}
       </div>
+      )}
 
       {/* ── MAIN SCROLLABLE CONTENT ── */}
       <main className={`flex-1 overflow-y-auto relative ${vizSize === 'full' ? 'opacity-0 pointer-events-none' : ''}`}>
@@ -1317,6 +1334,31 @@ export default function App() {
           {/* 4. VISUALIZATION SETTINGS PANEL */}
           {activeInstrument === "layers" && (
             <div className="space-y-4 font-mono text-mini">
+              {/* Material Yard on/off — persisted per-tenant */}
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-void-black/40 px-3 py-2.5">
+                <div className="flex flex-col">
+                  <span className="text-micro font-black uppercase tracking-widest text-starlight">Material Yard</span>
+                  <span className="text-micro text-starlight/60 font-sans mt-0.5">
+                    {(settings.visualizer_enabled ?? true) ? "3D viewer is on" : "3D viewer is off"}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={settings.visualizer_enabled ?? true}
+                  aria-label="Toggle 3D material yard"
+                  onClick={toggleVisualizer}
+                  className={`relative h-6 w-11 shrink-0 rounded-full transition-colors cursor-pointer ${
+                    (settings.visualizer_enabled ?? true) ? "bg-cool-blue" : "bg-white/15"
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                      (settings.visualizer_enabled ?? true) ? "translate-x-5" : "translate-x-0"
+                    }`}
+                  />
+                </button>
+              </div>
               <p className="text-micro text-starlight/70 font-sans leading-relaxed">
                 Material Yard shows a live 3D digital twin of your lumber drop: lifts, dunnage, and fleet dispatch based on your estimate.
               </p>
@@ -1539,8 +1581,8 @@ export default function App() {
                 handleProcessNLP(textPrompt);
               }
             }}
-            placeholder="Describe materials, dimensions, or scope..."
-            className="w-full bg-void-black/80 frosted-input border-white/10 rounded-full py-1.5 px-4 text-mini tracking-wide text-starlight placeholder-starlight/70 focus:ring-1 focus:ring-cool-blue focus:outline-none backdrop-blur-md font-mono"
+            placeholder="Describe materials or scope…"
+            className="w-full bg-void-black/80 frosted-input border-white/10 rounded-full py-1.5 px-4 text-mini tracking-wide text-starlight placeholder-starlight/70 placeholder:truncate focus:ring-1 focus:ring-cool-blue focus:outline-none backdrop-blur-md font-mono"
             style={{ paddingRight: "3rem" }}
           />
           {textPrompt.trim() !== "" && (
@@ -1715,13 +1757,14 @@ export default function App() {
               : e
           ));
         }}
-        onConfirmSend={async (client) => {
+        onConfirmSend={async (client, paymentTerms) => {
           if (!authToken || !activeEstimate) return;
           const resp = await fetch('/api/generate-pdf', {
             method: 'POST',
             headers: apiHeaders(authToken),
             body: JSON.stringify({
               projectName: activeEstimate.id,
+              payment_terms: paymentTerms,
               project: {
                 materials,
                 labor,

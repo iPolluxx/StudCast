@@ -17,9 +17,15 @@ interface Props {
     scope_of_work?: string;
   };
   onClose: () => void;
-  onConfirmSend: (client: { name: string; phone: string; address: string }) => Promise<void>;
+  onConfirmSend: (client: { name: string; phone: string; address: string }, paymentTerms: string) => Promise<void>;
   onClientDetailsSaved: (name: string, phone: string, address: string) => void;
 }
+
+const PAYMENT_TERMS_PRESETS = [
+  '50% deposit required to schedule work, remaining 50% due immediately upon completion.',
+  'Payment due in full upon completion of work.',
+  '50% deposit required to schedule work, remaining balance due within 30 days of completion (Net 30).',
+];
 
 export default function PDFPreviewModal({ open, authToken, estimateId, projectName, project, onClose, onConfirmSend, onClientDetailsSaved }: Props) {
   const [loading, setLoading] = useState(false);
@@ -32,6 +38,8 @@ export default function PDFPreviewModal({ open, authToken, estimateId, projectNa
   const [localName, setLocalName] = useState('');
   const [localPhone, setLocalPhone] = useState('');
   const [localAddress, setLocalAddress] = useState('');
+  const [paymentTerms, setPaymentTerms] = useState(PAYMENT_TERMS_PRESETS[0]);
+  const [customTerms, setCustomTerms] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -39,6 +47,8 @@ export default function PDFPreviewModal({ open, authToken, estimateId, projectNa
       setLocalName(project.client_name ?? '');
       setLocalPhone(project.client_phone ?? '');
       setLocalAddress(project.client_address ?? '');
+      setPaymentTerms(PAYMENT_TERMS_PRESETS[0]);
+      setCustomTerms(false);
       requestAnimationFrame(() => panelRef.current?.focus());
     }
   }, [open]);
@@ -54,7 +64,7 @@ export default function PDFPreviewModal({ open, authToken, estimateId, projectNa
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${authToken}`,
       },
-      body: JSON.stringify({ projectName, project }),
+      body: JSON.stringify({ projectName, project, payment_terms: paymentTerms }),
     })
       .then(async (r) => {
         if (!r.ok) {
@@ -73,6 +83,16 @@ export default function PDFPreviewModal({ open, authToken, estimateId, projectNa
       .finally(() => setLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, retryKey]);
+
+  // Live-refresh the preview when payment terms change (debounced; the initial
+  // reset-on-open value is skipped since the fetch effect above already covers it).
+  const didMountTerms = useRef(false);
+  useEffect(() => {
+    if (!open) { didMountTerms.current = false; return; }
+    if (!didMountTerms.current) { didMountTerms.current = true; return; }
+    const t = setTimeout(() => setRetryKey(k => k + 1), 700);
+    return () => clearTimeout(t);
+  }, [paymentTerms, open]);
 
   const handleClose = () => {
     if (blobUrlRef.current) {
@@ -107,7 +127,7 @@ export default function PDFPreviewModal({ open, authToken, estimateId, projectNa
         body: JSON.stringify({ client_name: localName, client_address: localAddress, client_phone: localPhone }),
       });
       onClientDetailsSaved(localName, localPhone, localAddress);
-      await onConfirmSend({ name: localName, phone: localPhone, address: localAddress });
+      await onConfirmSend({ name: localName, phone: localPhone, address: localAddress }, paymentTerms);
       handleClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Send failed — please try again.');
@@ -217,6 +237,39 @@ export default function PDFPreviewModal({ open, authToken, estimateId, projectNa
             </div>
           </div>
           <p className="text-micro text-starlight/60 font-mono">These are applied to the PDF when you send.</p>
+
+          {/* Payment terms */}
+          <div>
+            <label htmlFor="pdf-payment-terms" className={labelCls}>Payment Terms</label>
+            <select
+              id="pdf-payment-terms"
+              value={customTerms ? 'custom' : paymentTerms}
+              onChange={e => {
+                if (e.target.value === 'custom') {
+                  setCustomTerms(true);
+                } else {
+                  setCustomTerms(false);
+                  setPaymentTerms(e.target.value);
+                }
+              }}
+              style={{ colorScheme: 'dark' }}
+              className={`${inputCls} cursor-pointer`}
+            >
+              {PAYMENT_TERMS_PRESETS.map((t, i) => (
+                <option key={i} value={t}>{t}</option>
+              ))}
+              <option value="custom">Custom…</option>
+            </select>
+            {customTerms && (
+              <textarea
+                value={paymentTerms}
+                onChange={e => setPaymentTerms(e.target.value)}
+                rows={2}
+                placeholder="e.g. 30% deposit on signing, 40% at rough-in, balance on completion."
+                className={`${inputCls} mt-2 resize-none`}
+              />
+            )}
+          </div>
 
           {/* Button row */}
           <div className="flex items-center justify-between gap-4">

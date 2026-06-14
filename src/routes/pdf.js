@@ -18,11 +18,13 @@ function buildEstimateHtml({
     materialsArray, laborArray,
     markedUpMaterials, laborSubtotal, wiSalesTax, grandTotal, taxRate,
     clientName, clientAddress, scopeOfWork,
-    projectName, estimateNo,
+    projectName, estimateNo, paymentTerms,
 }) {
     const formattedDate = new Date().toLocaleDateString('en-US', {
         year: 'numeric', month: 'long', day: 'numeric',
     });
+    const DEFAULT_PAYMENT_TERMS = '50% deposit required to schedule work, remaining 50% due immediately upon completion.';
+    const displayPaymentTerms = (paymentTerms || '').trim() || DEFAULT_PAYMENT_TERMS;
     const displayClientName = (clientName || '').trim() || projectName;
     const displayClientAddressHtml = (clientAddress || '').trim()
         ? escapeHtml(clientAddress.trim())
@@ -147,7 +149,7 @@ function buildEstimateHtml({
         </tbody>
     </table>
     <div class="terms-box">
-        <strong>Standard Payment Terms:</strong> 50% deposit required to schedule work, remaining 50% due immediately upon completion.
+        <strong>Payment Terms:</strong> ${escapeHtml(displayPaymentTerms)}
         <br><strong>Validity:</strong> This estimate is valid for 30 days from the date of issuance.
     </div>
     <div class="signature-section">
@@ -196,6 +198,7 @@ router.post('/generate-pdf', requireAuth, requireSubscription, async (req, res) 
     const phone       = req.userPhone;
     const projectName = req.body.projectName;
     const clientProject = req.body.project;
+    const paymentTerms  = req.body.payment_terms;
 
     if (!projectName) return res.status(400).json({ error: 'Missing projectName' });
 
@@ -273,7 +276,7 @@ router.post('/generate-pdf', requireAuth, requireSubscription, async (req, res) 
         materialsArray, laborArray,
         markedUpMaterials, laborSubtotal, wiSalesTax, grandTotal, taxRate,
         clientName, clientAddress, scopeOfWork,
-        projectName, estimateNo,
+        projectName, estimateNo, paymentTerms,
     });
 
     const estimateIdClean = projectName.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -294,22 +297,23 @@ router.post('/generate-pdf', requireAuth, requireSubscription, async (req, res) 
         await browser.close();
         browser = null;
 
+        const companyName = profile.company_name || user.companyName || 'Lone Ranger Contracting';
         const transporter = nodemailer.createTransport({
             service: 'gmail',
             auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
         });
         await transporter.sendMail({
-            from:    `"${user.companyName}" <${process.env.EMAIL_USER}>`,
+            from:    `"${companyName}" <${process.env.EMAIL_USER}>`,
             to:      contractorEmail,
             subject: `Estimate ${estimateNo}: ${projectName}`,
-            text:    `Hello,\n\nPlease find attached the final estimate for "${projectName}" (Estimate ${estimateNo}).\n\nGrand Total: $${grandTotal.toFixed(2)}\n\nThank you,\n${user.companyName}`,
+            text:    `Hello,\n\nPlease find attached the final estimate for "${projectName}" (Estimate ${estimateNo}).\n\nGrand Total: $${grandTotal.toFixed(2)}\n\nThank you,\n${companyName}`,
             html: `
                 <div style="font-family: Arial, sans-serif; max-width: 600px;">
-                    <h2 style="color: #1e2533;">${user.companyName}</h2>
-                    <p>Please find attached the final estimate for <strong>"${projectName}"</strong>.</p>
+                    <h2 style="color: #1e2533;">${escapeHtml(companyName)}</h2>
+                    <p>Please find attached the final estimate for <strong>"${escapeHtml(projectName)}"</strong>.</p>
                     <p>Estimate Number: <strong>${estimateNo}</strong></p>
                     <p style="font-size: 20px; font-weight: bold; color: #521880;">Grand Total: $${grandTotal.toFixed(2)}</p>
-                    <p>Thank you,<br/>${user.companyName}</p>
+                    <p>Thank you,<br/>${escapeHtml(companyName)}</p>
                 </div>
             `,
             attachments: [{ filename: `Estimate_${estimateNo}.pdf`, path: pdfPath }],
@@ -340,7 +344,7 @@ router.post('/generate-pdf', requireAuth, requireSubscription, async (req, res) 
 // ── POST /api/preview-pdf ─────────────────────────────────────────────
 router.post('/preview-pdf', requireAuth, requireSubscription, async (req, res) => {
     const phone = req.userPhone;
-    const { projectName, project: clientProject } = req.body;
+    const { projectName, project: clientProject, payment_terms: paymentTerms } = req.body;
     if (!projectName) return res.status(400).json({ error: 'Missing projectName' });
 
     const user    = req.authedUser;
@@ -364,7 +368,7 @@ router.post('/preview-pdf', requireAuth, requireSubscription, async (req, res) =
             materialsArray, laborArray,
             markedUpMaterials, laborSubtotal, wiSalesTax, grandTotal, taxRate,
             clientName, clientAddress, scopeOfWork,
-            projectName, estimateNo: 'PREVIEW',
+            projectName, estimateNo: 'PREVIEW', paymentTerms,
         });
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
         res.send(html);

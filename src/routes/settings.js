@@ -21,6 +21,7 @@ router.get('/settings', requireAuth, async (req, res) => {
             employee_wages:      [],
             global_markup_percent: 0,
             tax_rate:            5.5,
+            visualizer_enabled:  true,
             estimateCount:       0,
             isOnboarded:         false,
             active_subscription: false,
@@ -41,6 +42,7 @@ router.get('/settings', requireAuth, async (req, res) => {
             employee_wages:        Array.isArray(data.employee_wages) ? data.employee_wages : [],
             global_markup_percent: data.global_markup_percent !== undefined ? Number(data.global_markup_percent) : defaults.global_markup_percent,
             tax_rate:              data.tax_rate              !== undefined ? Number(data.tax_rate)              : defaults.tax_rate,
+            visualizer_enabled:    data.visualizer_enabled    !== undefined ? Boolean(data.visualizer_enabled)   : defaults.visualizer_enabled,
             isOnboarded:           data.isOnboarded           !== undefined ? Boolean(data.isOnboarded)          : defaults.isOnboarded,
             active_subscription:   data.active_subscription   !== undefined ? Boolean(data.active_subscription)  : defaults.active_subscription,
             subscription_status:   data.subscription_status   !== undefined ? String(data.subscription_status)   : defaults.subscription_status,
@@ -57,7 +59,7 @@ router.post('/settings', requireAuth, async (req, res) => {
     const {
         company_name, company_address, company_logo_url, license_number,
         contact_email, default_labor_rate, employee_wages,
-        global_markup_percent, tax_rate, isOnboarded,
+        global_markup_percent, tax_rate, visualizer_enabled, isOnboarded,
     } = req.body;
 
     try {
@@ -68,6 +70,7 @@ router.post('/settings', requireAuth, async (req, res) => {
         if (license_number    !== undefined) updateObj.license_number    = String(license_number);
         if (contact_email     !== undefined) updateObj.contact_email     = String(contact_email);
         if (isOnboarded       !== undefined) updateObj.isOnboarded       = Boolean(isOnboarded);
+        if (visualizer_enabled !== undefined) updateObj.visualizer_enabled = Boolean(visualizer_enabled);
 
         if (default_labor_rate !== undefined) {
             const val = parseFloat(default_labor_rate);

@@ -77,6 +77,7 @@ export interface ContractorUserSettings {
   employee_wages?: EmployeeWage[];
   global_markup_percent: number;
   tax_rate: number;
+  visualizer_enabled: boolean;
   isOnboarded: boolean;
   active_subscription: boolean;
   subscription_status: string;

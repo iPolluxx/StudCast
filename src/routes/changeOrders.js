@@ -473,6 +473,35 @@ router.get('/approve', async (req, res) => {
         const totalFormatted  = `$${Number(co.change_order_total || 0).toFixed(2)}`;
         const pdfDataUrl      = co.pdf_base64 ? `data:application/pdf;base64,${co.pdf_base64}` : null;
 
+        // Itemized line items — mirror the contractor's ledger instead of echoing raw dictation.
+        const coMaterials = co.added_materials || [];
+        const coLabor     = co.added_labor     || [];
+        const materialLineRows = coMaterials.map(m => `
+            <tr>
+                <td style="padding:8px 6px;border-bottom:1px solid #ede9fe;">${escapeHtml(m.name || 'Material')}</td>
+                <td style="padding:8px 6px;border-bottom:1px solid #ede9fe;text-align:right;white-space:nowrap;">${Number(m.quantity) || 0} ${escapeHtml(m.unit || 'ea')}</td>
+                <td style="padding:8px 6px;border-bottom:1px solid #ede9fe;text-align:right;white-space:nowrap;">$${Number(m.total || 0).toFixed(2)}</td>
+            </tr>`).join('');
+        const laborLineRows = coLabor.map(l => `
+            <tr>
+                <td style="padding:8px 6px;border-bottom:1px solid #ede9fe;">${escapeHtml(l.role || 'Labor')}</td>
+                <td style="padding:8px 6px;border-bottom:1px solid #ede9fe;text-align:right;white-space:nowrap;">${Number(l.hours) || 0} hr</td>
+                <td style="padding:8px 6px;border-bottom:1px solid #ede9fe;text-align:right;white-space:nowrap;">$${Number(l.total || 0).toFixed(2)}</td>
+            </tr>`).join('');
+        const lineItemsHtml = (coMaterials.length > 0 || coLabor.length > 0)
+            ? `<div class="items-box">
+                 ${co.change_summary ? `<p class="items-intro">${escapeHtml(co.change_summary)}</p>` : ''}
+                 <table class="items-table">
+                   ${coMaterials.length > 0 ? `
+                     <thead><tr><th colspan="3">Added Materials</th></tr></thead>
+                     <tbody>${materialLineRows}</tbody>` : ''}
+                   ${coLabor.length > 0 ? `
+                     <thead><tr><th colspan="3">Added Labor</th></tr></thead>
+                     <tbody>${laborLineRows}</tbody>` : ''}
+                 </table>
+               </div>`
+            : (co.change_summary ? `<div class="summary-box">📋 ${escapeHtml(co.change_summary)}</div>` : '');
+
         const approvalPageHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -490,6 +519,11 @@ router.get('/approve', async (req, res) => {
         .amount-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; opacity: 0.8; margin-bottom: 4px; }
         .amount-value { font-size: 36px; font-weight: 900; }
         .summary-box { background: #faf7fd; border: 1px solid #e9d5ff; border-radius: 12px; padding: 14px 16px; margin-bottom: 20px; font-size: 13px; line-height: 1.6; color: #4b2d7a; }
+        .items-box { background: #faf7fd; border: 1px solid #e9d5ff; border-radius: 12px; padding: 14px 16px; margin-bottom: 20px; }
+        .items-intro { font-size: 13px; line-height: 1.5; color: #4b2d7a; margin-bottom: 12px; }
+        .items-table { width: 100%; border-collapse: collapse; font-size: 13px; color: #210936; }
+        .items-table th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; color: #7c3aed; font-weight: 800; padding: 10px 6px 4px; border-bottom: 2px solid #ede9fe; }
+        .items-table td:first-child { color: #4b2d7a; }
         .pdf-btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 13px; background: #f5f3ff; border: 1.5px solid #7c3aed; color: #521880; border-radius: 12px; font-weight: 700; font-size: 14px; text-decoration: none; margin-bottom: 16px; transition: background 0.2s; }
         .pdf-btn:hover { background: #ede9fe; }
         .approve-btn { width: 100%; padding: 16px; background: linear-gradient(135deg,#065f46,#059669); color: #fff; border: none; border-radius: 14px; font-size: 17px; font-weight: 900; cursor: pointer; transition: opacity 0.2s, transform 0.1s; letter-spacing: -0.3px; }
@@ -519,7 +553,7 @@ router.get('/approve', async (req, res) => {
         <div class="amount-label">Additional Amount Due</div>
         <div class="amount-value">${totalFormatted}</div>
     </div>
-    ${co.change_summary ? `<div class="summary-box">📋 ${escapeHtml(co.change_summary)}</div>` : ''}
+    ${lineItemsHtml}
     ${pdfDataUrl ? `<a href="${pdfDataUrl}" download="ChangeOrder_${escapeHtml(changeOrderId)}.pdf" class="pdf-btn">
         <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
         Download Full PDF
@@ -631,13 +665,14 @@ router.post('/change-orders/approve', async (req, res) => {
             const notifSnap      = await db.collection('users').doc(userPhone).collection('settings').doc('config').get();
             const notifSettings  = notifSnap.exists ? notifSnap.data() : {};
             const contractorEmail = notifSettings.contact_email || notifSettings.email || process.env.EMAIL_USER;
+            const companyName     = notifSettings.company_name || 'Lone Ranger Estimator';
             const totalFormatted  = `$${Number(co.change_order_total || 0).toFixed(2)}`;
             const transporter     = nodemailer.createTransport({
                 service: 'gmail',
                 auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
             });
             await transporter.sendMail({
-                from:    `"Lone Ranger Estimator" <${process.env.EMAIL_USER}>`,
+                from:    `"${companyName}" <${process.env.EMAIL_USER}>`,
                 to:      contractorEmail,
                 subject: `✅ Change Order Approved: ${changeOrderId}`,
                 text:

@@ -180,7 +180,7 @@ export default function SettingsModal({ open, settings, onSettingsChange, onClos
               {field("Dwelling Vendor Reg #", "license_number")}
               {field("Default Craft Labor ($/hr)", "default_labor_rate", "number")}
               {field("Global Mark-up Fee (%)", "global_markup_percent", "number")}
-              {field("WI Regional Sales Tax (%)", "tax_rate", "number", "0.1")}
+              {field("Regional Sales Tax (%)", "tax_rate", "number", "0.1")}
             </div>
 
             <div className="flex justify-end gap-3 pt-4 mt-4 border-t border-white/10">
