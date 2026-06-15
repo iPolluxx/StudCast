@@ -1,6 +1,6 @@
 'use strict';
 
-const { mergeLedgerItems } = require('../src/db');
+const { mergeLedgerItems } = require('../src/lib/ledgerMerge');
 
 const MAT = { type: 'material', keyField: 'name', qtyField: 'quantity', rateField: 'unit_price' };
 
