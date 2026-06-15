@@ -29,6 +29,18 @@ describe('takeoffEngine — wall_frame formulas (exact counts)', () => {
         expect(findMat(out, /Stud/).quantity).toBe(10);     // 9 + 1 + 0
     });
 
+    test('stud_size labels studs and plates 2x6 (count unchanged)', () => {
+        const out = expandScope({ assemblies: [wall({ length_ft: 12, height_ft: 10, stud_spacing_in: 16, stud_size: '2x6', wall_type: 'exterior', openings: [] })], materials: [], labor: [] });
+        expect(findMat(out, /Stud/).name).toMatch(/^2x6x10ft SPF Stud$/);
+        expect(findMat(out, /Plate/).name).toMatch(/^2x6x16ft SPF Plate$/);
+        expect(findMat(out, /Stud/).quantity).toBe(16); // identical to 2x4 — spacing-based
+    });
+
+    test('invalid stud_size falls back to the 2x4 default', () => {
+        const out = expandScope({ assemblies: [wall({ length_ft: 12, height_ft: 10, stud_size: 'plywood', openings: [] })], materials: [], labor: [] });
+        expect(findMat(out, /Stud/).name).toMatch(/^2x4x/);
+    });
+
     test('24" OC spacing yields fewer studs than 16"', () => {
         const out = expandScope({ assemblies: [wall({ length_ft: 12, height_ft: 10, stud_spacing_in: 24, wall_type: 'exterior', openings: [] })], materials: [], labor: [] });
         // ceil(144/24)=6, +1, +2*3 = 13

@@ -56,6 +56,7 @@ const EXTRACTION_PROMPT =
     `from the parameters — that is more accurate than guessing counts. Emit an assembly ONLY when its ` +
     `"type" is exactly one of: ${ASSEMBLY_TYPES.join(', ')}.\n` +
     `  • wall_frame — params: { length_ft, height_ft, stud_spacing_in (16 or 24, or null), ` +
+    `stud_size ("2x4"|"2x6"|"2x8" — the framing lumber the job specifies, or null for 2x4), ` +
     `wall_type ("interior"|"exterior"), corners (count of corners/T-intersections this wall has, ` +
     `or null for the typical 2), openings: [{ kind ("door"|"window"), width_ft, height_ft, count }] }.\n` +
     `  • drywall — params: { length_ft, height_ft, sides (1 or 2), openings_area_sqft (total door/window ` +

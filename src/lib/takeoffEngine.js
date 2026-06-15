@@ -72,13 +72,16 @@ function createTakeoffEngine({ tables = null, constants = defaults } = {}) {
         // RSMeans/NAHB productivity: wall area ÷ 56.25 sqft per framer-hour.
         const hours  = Math.round((length * height) / c.productivitySqftPerHr * 100) / 100;
 
-        const studName  = `2x4x${Math.ceil(height)}ft SPF Stud`;
-        const plateName = `2x4x${c.plateStockFt}ft SPF Plate`;
+        // Lumber size label (count is spacing-based, identical for 2x4/2x6); a
+        // 2x6 garage wall must read "2x6", not the default "2x4".
+        const studSize = /^2x(4|6|8)$/.test(String(p.stud_size)) ? String(p.stud_size) : c.defaultStudSize;
+        const studName  = `${studSize}x${Math.ceil(height)}ft SPF Stud`;
+        const plateName = `${studSize}x${c.plateStockFt}ft SPF Plate`;
 
         const materials = [
             matLine(a, assemblyId, {
                 name: studName, quantity: studs, unit: 'pcs', trade: 'framing', costKey: 'stud',
-                provenance: { formulaId: 'wall_frame.studs', inputs: { length, height, spacing, corners, openings },
+                provenance: { formulaId: 'wall_frame.studs', inputs: { length, height, spacing, corners, studSize, openings },
                     constants: { studsPerCorner: c.studsPerCorner, studsPerOpening: c.studsPerOpening } },
             }),
             matLine(a, assemblyId, {

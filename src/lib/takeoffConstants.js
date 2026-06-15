@@ -12,6 +12,7 @@
 // Tables.txt (IRC 2021 / Wisconsin UDC SPS 321, RSMeans/NAHB productivity).
 const conventions = {
     studSpacingIn:        16,     // default on-center when the job doesn't say
+    defaultStudSize:      '2x4',  // lumber size label when the job doesn't say (2x6 garages etc. override)
     studsPerCorner:        3,     // 3-stud backing per corner / T-intersection
     studsPerOpening:       4,     // 2 king + 2 jack per door OR window opening
     defaultCorners:        2,     // a described wall typically runs between 2 corners
