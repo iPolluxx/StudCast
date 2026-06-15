@@ -98,6 +98,45 @@ const SAMPLE_EXTRACTION = JSON.stringify({
     ],
 });
 
+const SAMPLE_EXTRACTION_WITH_ASSEMBLY = JSON.stringify({
+    projectName: 'Garage Wall',
+    scope_of_work: 'Frame one exterior wall and sheath it.',
+    assemblies: [{
+        type: 'wall_frame', confidence: 0.95,
+        params: { length_ft: 12, height_ft: 10, stud_spacing_in: 16, wall_type: 'exterior', openings: [] },
+        estimated_unit_costs: { '2x4x10ft SPF Stud': 5.0, '2x4x16ft SPF Plate': 6.0 },
+        fallback_quantities: {},
+    }],
+    materials: [{ name: 'Exterior Caulk', quantity: 2, unit: 'ea', trade: 'siding', estimated_unit_cost: 6, explicit_user_price: null }],
+    labor: [],
+});
+
+// ─── Takeoff integration ──────────────────────────────────────────────────────
+
+describe('pipeline — takeoff stage', () => {
+    test('an assembly is expanded to formula-counted, priced line items end to end', async () => {
+        const db = makeDb({ settings: 65 });
+        const ai = makeAi({ extraction: SAMPLE_EXTRACTION_WITH_ASSEMBLY });
+        const { runPipeline } = createPipeline({ db, ai });
+
+        const result = await runPipeline({ type: 'text', payload: 'frame a 12x10 exterior wall, caulk' }, { userPhone: PHONE, zipCode: ZIP });
+
+        const stud = result.materials.find((m) => /Stud/.test(m.name));
+        expect(stud.quantity).toBe(16);                  // formula (9+1+2*3), not LLM
+        expect(stud.quantity_source).toBe('formula');
+        expect(stud.unit_price).toBe(5.0);               // estimated_unit_cost hint priced
+        expect(stud.total).toBe(80);                     // 16 × 5
+
+        // loose material survived and is tagged ai
+        const caulk = result.materials.find((m) => m.name === 'Exterior Caulk');
+        expect(caulk.quantity_source).toBe('ai');
+
+        // framing labor priced at the default rate
+        const labor = result.labor.find((l) => /framing/i.test(l.role));
+        expect(labor.rate).toBe(65);
+    });
+});
+
 // ─── End-to-end happy path ────────────────────────────────────────────────────
 
 describe('pipeline — happy path', () => {

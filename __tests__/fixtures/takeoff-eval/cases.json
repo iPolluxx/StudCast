@@ -1,0 +1,55 @@
+[
+  {
+    "id": "wall-12x10-1door-16oc",
+    "input": "frame a 12 foot by 10 foot exterior wall, 16 on center, one 3ft door",
+    "expected": { "2x4x10ft SPF Stud": 20, "2x4x16ft SPF Plate": 3 },
+    "assemblyExtraction": {
+      "projectName": "Wall",
+      "scope_of_work": "Frame one exterior wall.",
+      "assemblies": [{
+        "type": "wall_frame",
+        "confidence": 0.95,
+        "params": { "length_ft": 12, "height_ft": 10, "stud_spacing_in": 16, "wall_type": "exterior", "openings": [{ "kind": "door", "width_ft": 3, "height_ft": 6.67, "count": 1 }] },
+        "estimated_unit_costs": { "2x4x10ft SPF Stud": 5.0, "2x4x16ft SPF Plate": 6.0 },
+        "fallback_quantities": {}
+      }],
+      "materials": [],
+      "labor": []
+    },
+    "baselineExtraction": {
+      "projectName": "Wall",
+      "scope_of_work": "Frame one exterior wall.",
+      "materials": [
+        { "name": "2x4x10ft SPF Stud", "quantity": 12, "unit": "pcs", "trade": "framing", "estimated_unit_cost": 5.0, "explicit_user_price": null },
+        { "name": "2x4x16ft SPF Plate", "quantity": 4, "unit": "pcs", "trade": "framing", "estimated_unit_cost": 6.0, "explicit_user_price": null }
+      ],
+      "labor": []
+    }
+  },
+  {
+    "id": "drywall-12x10-2side",
+    "input": "drywall a 12 by 10 wall, both sides",
+    "expected": { "1/2\" Drywall 4x8 Sheet": 9 },
+    "assemblyExtraction": {
+      "projectName": "Drywall",
+      "scope_of_work": "Hang drywall both faces.",
+      "assemblies": [{
+        "type": "drywall",
+        "confidence": 0.9,
+        "params": { "length_ft": 12, "height_ft": 10, "sides": 2 },
+        "estimated_unit_costs": { "1/2\" Drywall 4x8 Sheet": 14.0 },
+        "fallback_quantities": {}
+      }],
+      "materials": [],
+      "labor": []
+    },
+    "baselineExtraction": {
+      "projectName": "Drywall",
+      "scope_of_work": "Hang drywall both faces.",
+      "materials": [
+        { "name": "1/2\" Drywall 4x8 Sheet", "quantity": 6, "unit": "pcs", "trade": "drywall", "estimated_unit_cost": 14.0, "explicit_user_price": null }
+      ],
+      "labor": []
+    }
+  }
+]

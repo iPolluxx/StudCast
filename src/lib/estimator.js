@@ -18,6 +18,15 @@ const VALID_TRADES = [
 ];
 
 // ══════════════════════════════════════════════════════════════════════
+//  ASSEMBLY TYPE ENUM — closed set the deterministic Takeoff engine can
+//  expand into line items via engineering formulas. The LLM may ONLY emit
+//  these types; anything it is unsure of falls back to loose `materials[]`
+//  with an LLM-guessed quantity (the "formula where possible, LLM elsewhere"
+//  contract). v1 scope: wall framing, drywall, exterior sheathing.
+// ══════════════════════════════════════════════════════════════════════
+const ASSEMBLY_TYPES = ['wall_frame', 'drywall', 'exterior_sheathing'];
+
+// ══════════════════════════════════════════════════════════════════════
 //  EXTRACTION SYSTEM PROMPT — pure extraction only, NO pricing logic.
 //  Pricing is handled deterministically downstream by Stage 2 (the Pricer).
 // ══════════════════════════════════════════════════════════════════════
@@ -41,9 +50,30 @@ const EXTRACTION_PROMPT =
     `(e.g. "framing lumber at $1.25 a board foot", "OSB costing $15 each", "shingles for $120 a square"), ` +
     `extract that EXACT number into the "explicit_user_price" field — e.g. 1.25, 15.00, or 120.00. ` +
     `If NO price is dictated by the user, this field MUST be strictly null (not zero, not omitted — null).\n\n` +
+    `ASSEMBLIES (deterministic takeoff): When the job describes a standard buildable assembly with ` +
+    `dimensions, emit it in the "assemblies" array INSTEAD of listing its parts in "materials". A ` +
+    `downstream engineering engine computes the exact part quantities (studs, plates, sheets, etc.) ` +
+    `from the parameters — that is more accurate than guessing counts. Emit an assembly ONLY when its ` +
+    `"type" is exactly one of: ${ASSEMBLY_TYPES.join(', ')}.\n` +
+    `  • wall_frame — params: { length_ft, height_ft, stud_spacing_in (16 or 24, or null), ` +
+    `wall_type ("interior"|"exterior"), corners (count of corners/T-intersections this wall has, ` +
+    `or null for the typical 2), openings: [{ kind ("door"|"window"), width_ft, height_ft, count }] }.\n` +
+    `  • drywall — params: { length_ft, height_ft, sides (1 or 2), openings_area_sqft (total door/window ` +
+    `area to deduct, or 0) }.\n` +
+    `  • exterior_sheathing — params: { length_ft, height_ft, openings_area_sqft (or 0) }.\n` +
+    `For each assembly also provide: "confidence" (0..1, your certainty the params are right), ` +
+    `"estimated_unit_costs" (a map of each part's descriptive material name → your conservative ` +
+    `central-Wisconsin unit price, used as a pricing fallback), and "fallback_quantities" (a map of ` +
+    `each part's name → your best guess count, used ONLY if the engine cannot compute it).\n` +
+    `HARD RULE — NO DOUBLE COUNTING: If you emit an assembly you MUST NOT also list its constituent ` +
+    `materials (studs, plates, sheathing, drywall sheets, mud, tape, screws) in "materials". Put items ` +
+    `in "materials" ONLY when they are NOT part of any assembly you emitted, or when you are unsure ` +
+    `which assembly type applies (in that case do not invent a type — list the loose materials with a ` +
+    `quantity). If no assembly applies, omit "assemblies" or return it as an empty array.\n\n` +
     `Output ONLY valid JSON, no markdown:\n` +
     `{ "projectName": "String", ` +
     `"scope_of_work": "String", ` +
+    `"assemblies": [{ "type": "enum", "confidence": 0.0, "params": { }, "estimated_unit_costs": { }, "fallback_quantities": { } }], ` +
     `"materials": [{ "name": "descriptive name", "quantity": 0, "unit": "", "trade": "enum", "estimated_unit_cost": 0.00, "explicit_user_price": null }], ` +
     `"labor": [{ "role": "", "hours": 0, "explicit_user_price": null }] }`;
 
@@ -60,7 +90,7 @@ const EXTRACTION_PROMPT =
  * @returns {{ extractScope: (input: EstimatorInput) => Promise<ExtractedScope> }}
  *
  * @typedef {{ type?: 'text'|'voice'|'image', payload: string|object }} EstimatorInput
- * @typedef {{ projectName: string, scope_of_work: string, materials: object[], labor: object[], source: string, usage: object }} ExtractedScope
+ * @typedef {{ projectName: string, scope_of_work: string, assemblies: object[], materials: object[], labor: object[], source: string, usage: object }} ExtractedScope
  */
 function createEstimator({ ai }) {
 
@@ -84,9 +114,16 @@ function createEstimator({ ai }) {
         const response = await ai.models.generateContent({ model: MODEL, contents });
         const scope = parseGeminiJSON(response.text);
 
+        // Defensive: the LLM may hallucinate an assembly type outside the closed
+        // enum. Drop those here so the Takeoff engine never has to guess at an
+        // unknown type — their parts simply fall through to the loose-material path.
+        const assemblies = (Array.isArray(scope.assemblies) ? scope.assemblies : [])
+            .filter((a) => a && ASSEMBLY_TYPES.includes(a.type));
+
         return {
             projectName:   scope.projectName || 'General',
             scope_of_work: scope.scope_of_work || '',
+            assemblies,
             materials:     Array.isArray(scope.materials) ? scope.materials : [],
             labor:         Array.isArray(scope.labor) ? scope.labor : [],
             source:        type,
@@ -97,4 +134,4 @@ function createEstimator({ ai }) {
     return { extractScope };
 }
 
-module.exports = { createEstimator, EXTRACTION_PROMPT, VALID_TRADES };
+module.exports = { createEstimator, EXTRACTION_PROMPT, VALID_TRADES, ASSEMBLY_TYPES };

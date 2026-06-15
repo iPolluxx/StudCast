@@ -1,3 +1,25 @@
+// Where a quantity came from. 'formula' = computed deterministically by the
+// Takeoff engine (idempotent, replaced on re-extraction); 'override' = the user
+// manually corrected it (protected from re-extraction); 'ai'/'ai_fallback' = LLM
+// judgment; 'unresolved' = a known assembly the engine could not compute.
+export type QuantitySource = "formula" | "ai" | "ai_fallback" | "override" | "unresolved";
+
+export interface LineProvenance {
+  formulaId?: string;
+  inputs?: Record<string, unknown>;
+  constants?: Record<string, unknown>;
+  assumptions?: string[];
+}
+
+// Structural span-table provenance (headers/LVLs/trusses) — never a computed
+// size; always a cited table lookup the contractor must verify against AHJ/load.
+export interface StructuralSource {
+  name?: string;
+  table?: string;
+  edition?: string;
+  url?: string;
+}
+
 export interface MaterialItem {
   name: string;
   quantity: number;
@@ -7,6 +29,14 @@ export interface MaterialItem {
   total: number;
   price_source: string;
   type?: "material";
+  // Provenance (Takeoff engine)
+  quantity_source?: QuantitySource;
+  assemblyId?: string;
+  provenance?: LineProvenance;
+  // Structural lookup (headers/LVLs)
+  verify?: boolean;
+  disclaimer?: string;
+  source?: StructuralSource;
 }
 
 export interface LaborItem {
@@ -15,6 +45,10 @@ export interface LaborItem {
   rate: number;
   total: number;
   type?: "labor";
+  // Provenance (Takeoff engine)
+  quantity_source?: QuantitySource;
+  assemblyId?: string;
+  provenance?: LineProvenance;
 }
 
 export interface Estimate {

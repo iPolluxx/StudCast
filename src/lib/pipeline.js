@@ -1,8 +1,9 @@
 'use strict';
 
-const { createEstimator } = require('./estimator');
-const { createPricer }    = require('./pricer');
-const { createReviewer }  = require('./reviewer');
+const { createEstimator }     = require('./estimator');
+const { createTakeoffEngine } = require('./takeoffEngine');
+const { createPricer }        = require('./pricer');
+const { createReviewer }      = require('./reviewer');
 
 /**
  * The deterministic 3-stage estimation pipeline — the V2 replacement for the
@@ -41,8 +42,9 @@ function sumUsage(...usages) {
     return acc;
 }
 
-function createPipeline({ db, ai }) {
+function createPipeline({ db, ai, takeoffTables = null }) {
     const estimator = createEstimator({ ai });
+    const takeoff   = createTakeoffEngine({ tables: takeoffTables });
     const pricer    = createPricer({ db, ai });
     const reviewer  = createReviewer({ ai });
 
@@ -55,8 +57,12 @@ function createPipeline({ db, ai }) {
         // ── Stage 1: extract ─────────────────────────────────────────────
         const scope = await estimator.extractScope(input);
 
+        // ── Stage 1.5: takeoff (deterministic) — expand assemblies into
+        //    formula-counted line items; loose items pass through. ──────────
+        const expanded = takeoff.expandScope(scope);
+
         // ── Stage 2: price (deterministic) ───────────────────────────────
-        const priced = await pricer.priceScope(scope, {
+        const priced = await pricer.priceScope(expanded, {
             userPhone: ctx.userPhone,
             zipCode:   ctx.zipCode,
         });
@@ -70,14 +76,20 @@ function createPipeline({ db, ai }) {
         // without a default labor rate).
         const usage = sumUsage(scope.usage, reviewed.usage);
 
+        // Takeoff warnings (fallbacks, unresolved assemblies) join the Reviewer's
+        // QA warnings in a single rollup; any non-info warning flags the ledger.
+        const takeoffWarnings = expanded.takeoffWarnings || [];
+        const warnings = [...takeoffWarnings, ...reviewed.warnings];
+        const status = warnings.some((w) => w.severity && w.severity !== 'info') ? 'flagged' : reviewed.status;
+
         return {
             projectName:   scope.projectName,
             scope_of_work: scope.scope_of_work,
             materials:     priced.materials,
             labor:         priced.labor,
             totals:        priced.totals,
-            warnings:      reviewed.warnings,
-            status:        reviewed.status,
+            warnings,
+            status,
             source:        scope.source,
             usage,
         };

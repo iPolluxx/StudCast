@@ -12,6 +12,7 @@ const twilio          = require('twilio');
 
 const { createPricingEngine } = require('./lib/pricingEngine');
 const { createPipeline }      = require('./lib/pipeline');
+const { loadSpanTables }      = require('./lib/takeoffTables');
 
 const db         = new Firestore();
 const ai         = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
@@ -84,7 +85,7 @@ const coBucket  = coStorage.bucket('lone-ranger-change-orders');
 
 // ── Pricing engine + pipeline ─────────────────────────────────────────
 const { assignUnitPrice, assignLaborRate } = createPricingEngine({ db, ai });
-const pipeline = createPipeline({ db, ai });
+const pipeline = createPipeline({ db, ai, takeoffTables: loadSpanTables() });
 
 module.exports = {
     db, ai, stripe, authClient, twilioClient,

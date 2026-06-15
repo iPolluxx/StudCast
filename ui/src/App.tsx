@@ -462,7 +462,12 @@ export default function App() {
     updateEstimateItems(items => {
       const copy = [...items];
       const target = { ...copy[index] };
-      
+
+      // A manual edit to a formula-derived line puts that part under the user's
+      // control: demote it to "override" so the deterministic re-extraction
+      // (which REPLACES formula lines by assemblyId) never wipes the correction.
+      if (target.quantity_source === "formula") target.quantity_source = "override";
+
       if (target.type === "material") {
         if (field === "name" || field === "unit") {
           target[field] = value;

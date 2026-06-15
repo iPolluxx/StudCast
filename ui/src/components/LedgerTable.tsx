@@ -60,6 +60,59 @@ function sourceClass(priceSource: string) {
   return "bg-live-emerald/20 text-live-emerald"; // database
 }
 
+// Where a QUANTITY came from (distinct from price source). 'formula' is the
+// trust signal: a deterministically computed, defensible count. Plain 'ai' and
+// 'override' show no badge here — quantities have always been those, so a badge
+// on every row would be noise; we only mark the new takeoff provenance.
+const QTY_META: Record<string, { label: string; title: string; cls: string }> = {
+  formula:     { label: "Calc'd",   title: "Computed from your dimensions",         cls: "bg-cool-blue/20 text-cool-blue" },
+  ai_fallback: { label: "Est. qty", title: "AI-estimated (formula unavailable)",    cls: "bg-soft-violet/20 text-soft-violet" },
+  unresolved:  { label: "Review",   title: "Quantity needs your review",            cls: "bg-alert-rose/20 text-alert-rose" },
+};
+
+// Human-readable summary of the formula's assumptions, e.g. "16\" OC, +1 door".
+function formatAssumptions(p?: MaterialItem["provenance"]): string {
+  if (!p || !p.inputs) return "";
+  const i = p.inputs as Record<string, unknown>;
+  const bits: string[] = [];
+  if (typeof i.spacing === "number") bits.push(`${i.spacing}" OC`);
+  if (typeof i.corners === "number" && i.corners > 0) bits.push(`${i.corners} corner${i.corners > 1 ? "s" : ""}`);
+  if (typeof i.sides === "number")   bits.push(`${i.sides} side${i.sides > 1 ? "s" : ""}`);
+  const openings = Array.isArray(i.openings) ? (i.openings as Array<{ kind?: string; count?: number }>) : [];
+  const doors = openings.filter(o => o.kind === "door").reduce((s, o) => s + (o.count || 0), 0);
+  const wins  = openings.filter(o => o.kind === "window").reduce((s, o) => s + (o.count || 0), 0);
+  if (doors) bits.push(`+${doors} door${doors > 1 ? "s" : ""}`);
+  if (wins)  bits.push(`+${wins} window${wins > 1 ? "s" : ""}`);
+  return bits.join(", ");
+}
+
+// Quantity-provenance badge + assumptions/structural disclaimer for a material
+// row. Renders nothing for plain AI/override/manual lines so existing rows are
+// visually unchanged.
+function ProvCell({ item }: { item: MaterialItem }) {
+  const meta = item.quantity_source ? QTY_META[item.quantity_source] : undefined;
+  const assumptions = formatAssumptions(item.provenance);
+  if (!meta && !item.verify) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1">
+      {meta && (
+        <span title={assumptions ? `${meta.title} — ${assumptions}` : meta.title}
+          className={`text-micro font-extrabold px-1.5 py-0.5 rounded uppercase font-mono ${meta.cls}`}>
+          {meta.label}
+        </span>
+      )}
+      {meta && assumptions && (
+        <span className="text-micro text-starlight/55 font-mono">{assumptions}</span>
+      )}
+      {item.verify && (
+        <span className="text-micro text-soft-violet/80 font-mono italic">
+          Verify size with supplier{item.source?.name ? ` · ${item.source.name}${item.source.table ? ` ${item.source.table}` : ""}` : ""}
+        </span>
+      )}
+    </div>
+  );
+}
+
 export default function LedgerTable({
   materials, labor, allItems,
   onCellEdit, onDeleteItem, onAddItem,
@@ -210,6 +263,7 @@ export default function LedgerTable({
                     onChange={(e) => onCellEdit(origIdx, "name", e.target.value)}
                     className="w-full bg-transparent text-base font-bold text-starlight border-b border-white/10 focus:border-cool-blue/50 pb-1 outline-none"
                   />
+                  <ProvCell item={item} />
                   <div className="grid grid-cols-3 gap-2 text-mini font-mono">
                     <label className="space-y-0.5">
                       <span className="block text-micro text-starlight/70 uppercase tracking-wider">Qty</span>
@@ -274,6 +328,7 @@ export default function LedgerTable({
                           onKeyDown={(e) => handleCellKey(e, "mat", idx, "name", materials.length)}
                           onChange={(e) => onCellEdit(origIdx, "name", e.target.value)}
                           className="bg-transparent border-b border-white/10 focus:border-cool-blue/40 w-full outline-none py-0.5" />
+                        <ProvCell item={item} />
                       </td>
                       <td className="py-1.5 px-3 text-center">
                         <input type="number" min={0} step="any" inputMode="decimal" value={numDisplay(item.quantity)} aria-label="Quantity"

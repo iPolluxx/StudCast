@@ -7,4 +7,6 @@ temp/
 .DS_Store
 .agents/
 data/
+!src/data/
+!src/data/**
 Reports/

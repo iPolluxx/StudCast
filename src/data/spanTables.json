@@ -1,0 +1,20 @@
+{
+  "version": "2026-06-IRC-R602.7-WI-UDC-321.25B",
+  "_note": "Dimensional header spans for an EXTERIOR BEARING WALL supporting roof+ceiling under 30 psf ground snow (Appleton/Outagamie Co. WI, Zone 2), 24 ft building width, SPF #2. Source: IRC 2021 R602.7(1) / Wisconsin UDC Table 321.25-B. NEVER interpolate, extrapolate, or hand-add rows — every row cites a published table. LVL garage-door headers (16-18 ft) are intentionally OMITTED: they cannot be prescriptively sized and must be engineered per project, so any span beyond the largest row below correctly returns a 'confirm size with supplier' note.",
+  "members": [
+    {
+      "member_type": "dimensional_header",
+      "application": "exterior_bearing_wall",
+      "rows": [
+        { "max_span_ft": 4.0,    "load_condition": "roof+ceiling", "size": "2-2x6",  "plies": 2, "species_grade": "SPF #2", "notes": "Standard window opening. 1 jack stud per side." },
+        { "max_span_ft": 5.083,  "load_condition": "roof+ceiling", "size": "2-2x8",  "plies": 2, "species_grade": "SPF #2", "notes": "2 jack studs per side per IRC." },
+        { "max_span_ft": 6.0,    "load_condition": "roof+ceiling", "size": "2-2x10", "plies": 2, "species_grade": "SPF #2", "notes": "Wide window or patio door. 2 jack studs per side." },
+        { "max_span_ft": 7.083,  "load_condition": "roof+ceiling", "size": "2-2x12", "plies": 2, "species_grade": "SPF #2", "notes": "2 jack studs per side per IRC." },
+        { "max_span_ft": 8.583,  "load_condition": "roof+ceiling", "size": "3-2x10", "plies": 3, "species_grade": "SPF #2", "notes": "Heavy load application. 1 jack stud per side." },
+        { "max_span_ft": 10.083, "load_condition": "roof+ceiling", "size": "3-2x12", "plies": 3, "species_grade": "SPF #2", "notes": "2 jack studs per side." }
+      ],
+      "source": { "name": "IRC 2021 / Wisconsin UDC", "table": "R602.7(1) / 321.25-B", "edition": "2021", "url": "https://codes.iccsafe.org/s/NCRC2024V1.0/chapter-6-wall-construction/NCRC2024V1.0-Pt03-Ch06-SecR602.7" },
+      "disclaimer": "Verify load case, actual roof span (tributary area), and local AHJ amendments. Spans apply only to single-story roof/ceiling bearing at 30 psf snow, 24 ft building width. A header supporting a second floor has drastically reduced spans. Spans beyond ~10 ft (e.g. 16-18 ft garage headers) require an engineered LVL — confirm size with supplier."
+    }
+  ]
+}
