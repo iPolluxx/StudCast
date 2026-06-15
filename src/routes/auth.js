@@ -1,10 +1,43 @@
 const express    = require('express');
 const crypto     = require('crypto');
 const nodemailer = require('nodemailer');
+const bcrypt     = require('bcryptjs');
+const jwt        = require('jsonwebtoken');
 
 const { db, twilioClient }   = require('../config');
 const { resolvePhoneByEmail } = require('../db');
 const { requireAuth, requireGoogleAuth, checkOtpRateLimit } = require('../middleware/auth');
+
+function issueJwt(email, opts = {}) {
+    return jwt.sign({ email }, process.env.JWT_SECRET, { expiresIn: opts.expiresIn || '30d' });
+}
+
+async function sendOtp(formattedPhone, email, otp) {
+    try {
+        if (process.env.SMS_LIVE !== 'true') throw new Error('SMS_LIVE not enabled');
+        await twilioClient.messages.create({
+            body: `Your Lone Ranger Estimator verification code is: ${otp}. Reply STOP to opt out. Msg&Data rates may apply.`,
+            [process.env.TWILIO_MESSAGING_SERVICE_SID ? 'messagingServiceSid' : 'from']: process.env.TWILIO_MESSAGING_SERVICE_SID || process.env.TWILIO_PHONE_NUMBER,
+            to: formattedPhone,
+        });
+        return 'sms';
+    } catch {
+        try {
+            const t = nodemailer.createTransport({ service: 'gmail', auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS } });
+            await t.sendMail({
+                from: `"Lone Ranger Estimator" <${process.env.EMAIL_USER}>`,
+                to:   email,
+                subject: 'Your verification code',
+                text: `Your Lone Ranger Estimator verification code is: ${otp}\n\nThis code expires in 10 minutes.`,
+                html: `<div style="font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:480px;margin:0 auto;padding:24px;"><h2 style="color:#521880;margin:0 0 8px;">Lone Ranger Estimator</h2><p style="color:#444;margin:0 0 24px;">Your verification code:</p><div style="font-size:40px;font-weight:700;letter-spacing:0.35em;color:#1a0729;background:#f3f0ff;padding:24px 16px;border-radius:12px;text-align:center;margin:0 0 24px;">${otp}</div><p style="color:#888;font-size:12px;margin:0;">Expires in 10 minutes. Didn't request this? Ignore this email.</p></div>`,
+            });
+            return 'email';
+        } catch {
+            console.warn('[DEV] OTP for ' + formattedPhone + ': ' + otp);
+            return 'log';
+        }
+    }
+}
 
 const router = express.Router();
 
@@ -75,7 +108,7 @@ router.post('/auth/register', requireGoogleAuth, async (req, res) => {
                     subject: 'Your verification code',
                     text:    `Your Lone Ranger Estimator verification code is: ${otp}\n\nThis code expires in 10 minutes.`,
                     html: `
-                        <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px;">
+                        <div style="font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:480px;margin:0 auto;padding:24px;">
                             <h2 style="color:#521880;margin:0 0 8px;">Lone Ranger Estimator</h2>
                             <p style="color:#444;margin:0 0 24px;">Your verification code:</p>
                             <div style="font-size:40px;font-weight:700;letter-spacing:0.35em;color:#1a0729;background:#f3f0ff;padding:24px 16px;border-radius:12px;text-align:center;margin:0 0 24px;">${otp}</div>
@@ -139,6 +172,82 @@ router.post('/auth/verify-otp', requireGoogleAuth, async (req, res) => {
 // ── GET /api/me ───────────────────────────────────────────────────────
 router.get('/me', requireAuth, (req, res) => {
     res.json({ phone: req.userPhone });
+});
+
+// ── POST /api/auth/email-signup ───────────────────────────────────────
+router.post('/auth/email-signup', async (req, res) => {
+    const { email, password, phone, company_name } = req.body;
+    if (!email || !password || !phone || !company_name) {
+        return res.status(400).json({ error: 'email, password, phone, and company_name are required.' });
+    }
+    if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters.' });
+
+    const digits         = phone.replace(/\D/g, '');
+    const formattedPhone = '+' + (digits.length === 10 ? '1' + digits : digits);
+
+    const rateLimitResult = checkOtpRateLimit(formattedPhone, req.ip);
+    if (!rateLimitResult.allowed) return res.status(429).json({ error: rateLimitResult.reason });
+
+    try {
+        const existingPhone = await resolvePhoneByEmail(email);
+        if (existingPhone) {
+            const snap = await db.collection('users').doc(existingPhone).get();
+            if (snap.exists && snap.data().status === 'active') {
+                return res.status(409).json({ error: 'An account already exists for this email.' });
+            }
+        }
+        const userRef = db.collection('users').doc(formattedPhone);
+        const doc     = await userRef.get();
+        if (doc.exists && doc.data().email?.toLowerCase() !== email.toLowerCase()) {
+            return res.status(409).json({ error: 'Phone number already registered to a different account.' });
+        }
+
+        const hash = await bcrypt.hash(password, 10);
+        await userRef.set({ email, password_hash: hash, createdAt: new Date().toISOString(), status: 'pending' }, { merge: true });
+        await userRef.collection('settings').doc('config').set({ company_name, contact_email: email }, { merge: true });
+
+        const otp       = crypto.randomInt(100000, 1000000).toString();
+        const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+        await db.collection('registrations').doc(formattedPhone).set({ otp, expiresAt });
+
+        const channel = await sendOtp(formattedPhone, email, otp);
+        // Short-lived token authorizes the /auth/verify-otp step
+        const token = issueJwt(email, { expiresIn: '15m' });
+        return res.status(202).json({ success: true, channel, token });
+    } catch (err) {
+        console.error('Email Signup Error:', err);
+        return res.status(500).json({ error: 'Internal server error during signup.' });
+    }
+});
+
+// ── POST /api/auth/email-login ────────────────────────────────────────
+router.post('/auth/email-login', async (req, res) => {
+    const { email, password } = req.body;
+    if (!email || !password) return res.status(400).json({ error: 'email and password are required.' });
+
+    try {
+        const phone = await resolvePhoneByEmail(email);
+        if (!phone) return res.status(401).json({ error: 'Invalid email or password.' });
+
+        const userDoc = await db.collection('users').doc(phone).get();
+        if (!userDoc.exists) return res.status(401).json({ error: 'Invalid email or password.' });
+
+        const userData = userDoc.data();
+        if (!userData.password_hash) {
+            return res.status(401).json({ error: 'This account uses Google Sign-In. Please use the Google button instead.' });
+        }
+        if (userData.status !== 'active') {
+            return res.status(403).json({ error: 'Account not yet verified. Please complete phone verification.' });
+        }
+
+        const valid = await bcrypt.compare(password, userData.password_hash);
+        if (!valid) return res.status(401).json({ error: 'Invalid email or password.' });
+
+        return res.json({ success: true, token: issueJwt(email) });
+    } catch (err) {
+        console.error('Email Login Error:', err);
+        return res.status(500).json({ error: 'Internal server error during login.' });
+    }
 });
 
 module.exports = router;

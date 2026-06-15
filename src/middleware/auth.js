@@ -1,5 +1,11 @@
 const { db, authClient } = require('../config');
 const { resolvePhoneByEmail, authorizePhone } = require('../db');
+const jwt = require('jsonwebtoken');
+
+function verifyLocalJwt(token) {
+    try { return jwt.verify(token, process.env.JWT_SECRET); }
+    catch { return null; }
+}
 
 // ── requireAuth ───────────────────────────────────────────────────────
 async function requireAuth(req, res, next) {
@@ -9,19 +15,20 @@ async function requireAuth(req, res, next) {
     }
 
     const token = authHeader.split('Bearer ')[1];
-    let payload;
+    let email;
     try {
         const ticket = await authClient.verifyIdToken({
             idToken:  token,
             audience: process.env.GOOGLE_OAUTH_CLIENT_ID,
         });
-        payload = ticket.getPayload();
-    } catch (err) {
-        return res.status(401).json({ error: 'Invalid Google ID Token.' });
+        email = ticket.getPayload().email;
+    } catch {
+        const payload = verifyLocalJwt(token);
+        if (!payload?.email) return res.status(401).json({ error: 'Invalid token.' });
+        email = payload.email;
     }
 
-    const email = payload.email;
-    if (!email) return res.status(400).json({ error: 'No email found in Google token.' });
+    if (!email) return res.status(400).json({ error: 'No email found in token.' });
 
     const phone = await resolvePhoneByEmail(email);
     if (!phone) return res.status(403).json({ error: 'Email not registered in the system.' });
@@ -54,24 +61,30 @@ async function requireSubscription(req, res, next) {
 }
 
 // ── requireGoogleAuth ─────────────────────────────────────────────────
+// Accepts Google ID tokens OR our own JWTs (email/password users).
 async function requireGoogleAuth(req, res, next) {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
         return res.status(401).json({ error: 'Missing or invalid Authorization header.' });
     }
     const token = authHeader.split('Bearer ')[1];
+    let email;
     try {
         const ticket = await authClient.verifyIdToken({
             idToken:  token,
             audience: process.env.GOOGLE_OAUTH_CLIENT_ID,
         });
-        req.googlePayload = ticket.getPayload();
-        req.googleEmail   = req.googlePayload.email;
-        if (!req.googleEmail) return res.status(400).json({ error: 'No email found in Google token.' });
-        next();
-    } catch (err) {
-        return res.status(401).json({ error: 'Invalid Google ID Token.' });
+        const payload = ticket.getPayload();
+        req.googlePayload = payload;
+        email = payload.email;
+    } catch {
+        const payload = verifyLocalJwt(token);
+        if (!payload?.email) return res.status(401).json({ error: 'Invalid token.' });
+        email = payload.email;
     }
+    if (!email) return res.status(400).json({ error: 'No email found in token.' });
+    req.googleEmail = email;
+    next();
 }
 
 // ── OTP rate limiting ─────────────────────────────────────────────────
