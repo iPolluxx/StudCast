@@ -39,8 +39,11 @@ router.post('/process-text', requireAuth, requireSubscription, async (req, res) 
 
         ({ llmTokens, cost } = computeLlmCost(reviewed.usage));
         status     = 'Completed';
-        transcript = `User: ${text}\nAI: "${result.projectName}" — review ${reviewed.status}, ${reviewed.warnings.length} warning(s).`;
-        res.json({ success: true, ...result, warnings: reviewed.warnings, review_status: reviewed.status });
+        // LLM QA warnings + deterministic duplicate flags (from persistLedger).
+        const warnings = [...reviewed.warnings, ...(result.warnings || [])];
+        const reviewStatus = warnings.some((w) => w.severity === 'warn' || w.severity === 'critical') ? 'flagged' : reviewed.status;
+        transcript = `User: ${text}\nAI: "${result.projectName}" — review ${reviewStatus}, ${warnings.length} warning(s).`;
+        res.json({ success: true, ...result, warnings, review_status: reviewStatus });
     } catch (err) {
         console.error('process-text error:', err);
         errorMsg   = err.message || 'Failed to process text';
@@ -96,9 +99,11 @@ router.post('/process', upload.single('audio'), requireAuth, requireSubscription
 
         ({ llmTokens, cost } = computeLlmCost(reviewed.usage));
         status = 'Completed';
+        const warnings = [...reviewed.warnings, ...(result.warnings || [])];
+        const reviewStatus = warnings.some((w) => w.severity === 'warn' || w.severity === 'critical') ? 'flagged' : reviewed.status;
         const responseMsg = `Successfully parsed estimate for "${result.projectName}" with ${result.itemCount} items.`;
-        transcript = `User: (Audio Input - ${reviewed.scope_of_work || 'Estimating materials/labor'})\nAI: ${responseMsg} — review ${reviewed.status}, ${reviewed.warnings.length} warning(s).`;
-        res.json({ success: true, ...result, warnings: reviewed.warnings, review_status: reviewed.status });
+        transcript = `User: (Audio Input - ${reviewed.scope_of_work || 'Estimating materials/labor'})\nAI: ${responseMsg} — review ${reviewStatus}, ${warnings.length} warning(s).`;
+        res.json({ success: true, ...result, warnings, review_status: reviewStatus });
 
     } catch (err) {
         console.error('process (audio) error:', err);

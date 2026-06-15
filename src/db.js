@@ -119,7 +119,7 @@ async function authorizePhone(phone) {
 // Provenance-aware ledger merge lives in src/lib/ledgerMerge.js as a pure
 // function so it stays unit-testable offline (requiring this file pulls in
 // Firestore/Stripe init, which crashes in CI without credentials).
-const { mergeLedgerItems } = require('./lib/ledgerMerge');
+const { mergeLedgerItems, detectDuplicateWarnings } = require('./lib/ledgerMerge');
 
 // ── Shared persistence layer ──────────────────────────────────────────
 async function persistLedger({ projectName = 'General', scope_of_work = '', pricedMaterials = [], pricedLabor = [] }, phone, estimateId = null) {
@@ -169,6 +169,10 @@ async function persistLedger({ projectName = 'General', scope_of_work = '', pric
     const itemCount         = mergedItems.length;
     const finalProjectName  = existingData ? (existingData.project_name || projectName) : projectName;
 
+    // Deterministic duplicate flagging over the FINAL merged ledger (look-alikes
+    // that survived normalized auto-combine). Joins the response warnings channel.
+    const duplicateWarnings = detectDuplicateWarnings(mergedItems);
+
     await docRef.set({
         project_name:  finalProjectName,
         scope_of_work: scope_of_work || null,
@@ -183,6 +187,7 @@ async function persistLedger({ projectName = 'General', scope_of_work = '', pric
         estimateId,
         itemCount:   pricedMaterials.length + pricedLabor.length,
         scope_of_work: scope_of_work || null,
+        warnings:    duplicateWarnings,
     };
 }
 

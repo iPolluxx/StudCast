@@ -1,6 +1,6 @@
 'use strict';
 
-const { mergeLedgerItems } = require('../src/lib/ledgerMerge');
+const { mergeLedgerItems, detectDuplicateWarnings } = require('../src/lib/ledgerMerge');
 
 const MAT = { type: 'material', keyField: 'name', qtyField: 'quantity', rateField: 'unit_price' };
 
@@ -18,6 +18,54 @@ describe('mergeLedgerItems — AI lines (back-compat)', () => {
     test('a brand-new AI item is appended', () => {
         const out = mergeLedgerItems([aiMat('Nails', 2)], [aiMat('Caulk', 4)], MAT);
         expect(out.map((i) => i.name).sort()).toEqual(['Caulk', 'Nails']);
+    });
+
+    test('normalized names auto-combine (case / spacing / punctuation)', () => {
+        const out = mergeLedgerItems([aiMat('2x4 Stud', 10)], [aiMat('2x4  STUD,', 5)], MAT);
+        expect(out).toHaveLength(1);
+        expect(out[0].quantity).toBe(15); // merged despite different casing/spacing/comma
+    });
+
+    test('different sizes are NOT merged (distinguishing tokens preserved)', () => {
+        const out = mergeLedgerItems([aiMat('2x4x8 Stud', 10)], [aiMat('2x4x10 Stud', 5)], MAT);
+        expect(out).toHaveLength(2);
+    });
+});
+
+describe('detectDuplicateWarnings — flags judgment-call dups', () => {
+    const m = (name, qs = 'ai', assemblyId) => ({ name, type: 'material', quantity: 1, quantity_source: qs, assemblyId });
+
+    test('flags a token-subset near-duplicate ("2x4 Stud" ⊆ "2x4 SPF Stud")', () => {
+        const w = detectDuplicateWarnings([m('2x4 Stud'), m('2x4 SPF Stud')]);
+        expect(w).toHaveLength(1);
+        expect(w[0].severity).toBe('warn');
+        expect(w[0].message).toMatch(/duplicate/i);
+    });
+
+    test('flags a formula line colliding with a manual line of the same item', () => {
+        const w = detectDuplicateWarnings([
+            m('2x6x10ft SPF Stud', 'formula', 'wall:0'),
+            m('SPF Stud', 'override'),
+        ]);
+        expect(w).toHaveLength(1);
+    });
+
+    test('does NOT flag two per-section formula studs (same name, different assembly)', () => {
+        const w = detectDuplicateWarnings([
+            m('2x6x10ft SPF Stud', 'formula', 'wall:0'),
+            m('2x6x10ft SPF Stud', 'formula', 'wall:1'),
+        ]);
+        expect(w).toEqual([]);
+    });
+
+    test('does NOT flag genuinely different items (no subset, single shared token)', () => {
+        const w = detectDuplicateWarnings([m('2x4 SPF Stud'), m('2x6 SPF Stud'), m('Roofing Nails')]);
+        expect(w).toEqual([]);
+    });
+
+    test('ignores labor lines', () => {
+        const w = detectDuplicateWarnings([{ role: 'Framing labor', type: 'labor', quantity_source: 'formula' }, { role: 'Framing labor (hrs)', type: 'labor' }]);
+        expect(w).toEqual([]);
     });
 });
 

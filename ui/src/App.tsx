@@ -18,7 +18,7 @@ import {
   FileText,
   CheckCircle,
 } from "lucide-react";
-import type { Estimate, FramingIntent, MaterialItem, LaborItem, ChangeOrder, ContractorUserSettings } from "./types";
+import type { Estimate, FramingIntent, MaterialItem, LaborItem, ChangeOrder, ContractorUserSettings, ReviewWarning } from "./types";
 // Three.js material yard is heavy (~Three core + addons); load it on demand so
 // it doesn't sit in the initial bundle.
 const ThreeVisualizer = lazy(() => import("./components/ThreeVisualizer"));
@@ -126,6 +126,10 @@ export default function App() {
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [appLoading, setAppLoading] = useState<boolean>(true);
   const [subscriptionGate, setSubscriptionGate] = useState<boolean>(false);
+  // QA + duplicate warnings from the most recent extraction. Ephemeral (not
+  // persisted) and scoped to its estimate so a stale review never shows on
+  // another project; refreshed on each extraction.
+  const [review, setReview] = useState<{ estimateId: string; warnings: ReviewWarning[]; status: string } | null>(null);
 
   // State variables
   const [estimates, setEstimates] = useState<Estimate[]>([]);
@@ -595,6 +599,7 @@ export default function App() {
           setEstimates(prev => prev.map(e => e.id === full.id ? full : e));
           if (data.estimateId !== activeEstimateId) setActiveEstimateId(data.estimateId);
         }
+        setReview({ estimateId: data.estimateId, warnings: data.warnings ?? [], status: data.review_status ?? 'ok' });
         showStatus(`${data.itemCount ?? '?'} items in estimate`);
         setTextPrompt("");
       } else {
@@ -671,6 +676,7 @@ export default function App() {
               setEstimates(prev => prev.map(e => e.id === full.id ? full : e));
               if (data.estimateId !== activeEstimateId) setActiveEstimateId(data.estimateId);
             }
+            setReview({ estimateId: data.estimateId, warnings: data.warnings ?? [], status: data.review_status ?? 'ok' });
             showStatus(`${data.itemCount ?? '?'} items extracted from audio`);
           } else {
             throw new Error(data.error || 'Audio extraction failed');
@@ -1571,6 +1577,7 @@ export default function App() {
             materials={materials}
             labor={labor}
             allItems={activeEstimate?.items ?? []}
+            warnings={review?.estimateId === activeEstimateId ? review.warnings : []}
             onCellEdit={handleCellEdit}
             onDeleteItem={handleDeleteItem}
             onAddItem={handleAddFieldItem}

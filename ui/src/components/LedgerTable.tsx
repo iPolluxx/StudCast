@@ -1,11 +1,12 @@
-import { useState, useRef, useEffect } from "react";
-import { Plus, Trash2, Check, X, CheckCircle, RefreshCw, Send } from "lucide-react";
-import type { MaterialItem, LaborItem } from "../types";
+import { useState, useRef, useEffect, useMemo } from "react";
+import { Plus, Trash2, Check, X, CheckCircle, RefreshCw, Send, AlertTriangle } from "lucide-react";
+import type { MaterialItem, LaborItem, ReviewWarning } from "../types";
 
 interface Props {
   materials: MaterialItem[];
   labor: LaborItem[];
   allItems: (MaterialItem | LaborItem)[];
+  warnings?: ReviewWarning[];
   onCellEdit: (index: number, field: string, value: string | number) => void;
   onDeleteItem: (index: number) => void;
   onAddItem: (type: "material" | "labor") => void;
@@ -113,12 +114,45 @@ function ProvCell({ item }: { item: MaterialItem }) {
   );
 }
 
+// Inline QA / duplicate flag shown under a row whose itemId matched a warning.
+function WarnFlag({ warnings }: { warnings: ReviewWarning[] }) {
+  if (!warnings.length) return null;
+  return (
+    <div className="mt-1 space-y-0.5">
+      {warnings.map((w, i) => (
+        <div key={i} className={`flex items-start gap-1 text-micro font-mono ${w.severity === "info" ? "text-starlight/55" : "text-alert-rose"}`}>
+          <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
+          <span>{w.message}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function LedgerTable({
-  materials, labor, allItems,
+  materials, labor, allItems, warnings = [],
   onCellEdit, onDeleteItem, onAddItem,
   materialsSubtotal, laborSubtotal, markupAmount, taxAmount, grandTotal,
   markupPercent, taxRate, scopeOfWork, onScopeChange, onPublish, onPreview,
 }: Props) {
+  // Group warnings by their lowercased itemId for O(1) row lookup. Anything that
+  // doesn't match a line (or itemId 'TOTAL') is a ledger-wide note for the banner.
+  const warnKey = (s: string) => (s || "").trim().toLowerCase();
+  const warnByItem = useMemo(() => {
+    const m = new Map<string, ReviewWarning[]>();
+    for (const w of warnings) {
+      const k = warnKey(w.itemId);
+      (m.get(k) ?? m.set(k, []).get(k)!).push(w);
+    }
+    return m;
+  }, [warnings]);
+  const lineIds = useMemo(
+    () => new Set([...materials.map(i => warnKey(i.name)), ...labor.map(i => warnKey(i.role))]),
+    [materials, labor]
+  );
+  const generalWarnings = warnings.filter(w => warnKey(w.itemId) === "total" || !lineIds.has(warnKey(w.itemId)));
+  const warningsFor = (id: string) => warnByItem.get(warnKey(id)) ?? [];
+
   const [publishing, setPublishing] = useState(false);
   const [confirmingPublish, setConfirmingPublish] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
@@ -218,6 +252,24 @@ export default function LedgerTable({
   return (
     <div ref={rootRef} className="flex flex-col p-3 sm:p-5 bg-void-black/35 gap-4">
 
+      {/* ── Review banner — QA + duplicate flags from the last extraction ── */}
+      {warnings.length > 0 && (
+        <div className="glass-panel border border-alert-rose/30 bg-alert-rose/5 rounded-xl px-4 py-3 space-y-1">
+          <div className="flex items-center gap-2 text-alert-rose">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            <span className="text-micro font-black uppercase tracking-wider font-mono">
+              Review flagged {warnings.length} item{warnings.length === 1 ? "" : "s"}
+            </span>
+          </div>
+          {generalWarnings.length > 0 && (
+            <ul className="text-mini text-starlight/70 font-mono space-y-0.5 pl-6">
+              {generalWarnings.map((w, i) => <li key={i}>· {w.message}</li>)}
+            </ul>
+          )}
+          <p className="text-micro text-starlight/45 font-mono pl-6">Flagged lines are marked below. Nothing is changed automatically.</p>
+        </div>
+      )}
+
       {/* ── Scope of Work ── */}
       <div className="space-y-1.5">
         <h3 className="text-micro font-black tracking-wider text-cool-blue uppercase font-mono">
@@ -264,6 +316,7 @@ export default function LedgerTable({
                     className="w-full bg-transparent text-base font-bold text-starlight border-b border-white/10 focus:border-cool-blue/50 pb-1 outline-none"
                   />
                   <ProvCell item={item} />
+                  <WarnFlag warnings={warningsFor(item.name)} />
                   <div className="grid grid-cols-3 gap-2 text-mini font-mono">
                     <label className="space-y-0.5">
                       <span className="block text-micro text-starlight/70 uppercase tracking-wider">Qty</span>
@@ -329,6 +382,7 @@ export default function LedgerTable({
                           onChange={(e) => onCellEdit(origIdx, "name", e.target.value)}
                           className="bg-transparent border-b border-white/10 focus:border-cool-blue/40 w-full outline-none py-0.5" />
                         <ProvCell item={item} />
+                        <WarnFlag warnings={warningsFor(item.name)} />
                       </td>
                       <td className="py-1.5 px-3 text-center">
                         <input type="number" min={0} step="any" inputMode="decimal" value={numDisplay(item.quantity)} aria-label="Quantity"
@@ -404,6 +458,7 @@ export default function LedgerTable({
                     onChange={(e) => onCellEdit(origIdx, "role", e.target.value)}
                     className="w-full bg-transparent text-base font-bold text-starlight border-b border-white/10 focus:border-cool-blue/50 pb-1 outline-none"
                   />
+                  <WarnFlag warnings={warningsFor(item.role)} />
                   <div className="grid grid-cols-2 gap-2 text-mini font-mono">
                     <label className="space-y-0.5">
                       <span className="block text-micro text-starlight/70 uppercase tracking-wider">Hours</span>
@@ -452,6 +507,7 @@ export default function LedgerTable({
                           onKeyDown={(e) => handleCellKey(e, "lab", idx, "role", labor.length)}
                           onChange={(e) => onCellEdit(origIdx, "role", e.target.value)}
                           className="bg-transparent border-b border-white/10 focus:border-cool-blue/40 w-full outline-none py-0.5" />
+                        <WarnFlag warnings={warningsFor(item.role)} />
                       </td>
                       <td className="py-1.5 px-3 text-center">
                         <input type="number" min={0} step="any" inputMode="decimal" value={numDisplay(item.hours)} aria-label="Hours"

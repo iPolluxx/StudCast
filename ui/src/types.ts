@@ -20,6 +20,14 @@ export interface StructuralSource {
   url?: string;
 }
 
+// A QA / duplicate warning surfaced after extraction. itemId matches a material
+// `name` or labor `role`; 'TOTAL' (or an unmatched id) is a ledger-wide note.
+export interface ReviewWarning {
+  itemId: string;
+  severity: "info" | "warn" | "critical";
+  message: string;
+}
+
 export interface MaterialItem {
   name: string;
   quantity: number;
