@@ -1,7 +1,7 @@
 # Lone Ranger Estimator — Live Project Context
 > **Purpose:** This document is the handoff bridge between Gemini brainstorming sessions and Claude Code
 > implementation sessions. Update it after every meaningful work session.
-> **Last updated:** 2026-06-11 — Change Order upgrades: job-site photo upload (GCS bucket `lone-ranger-change-orders`), full white-labeling (company_name from Firestore), ESIGN Act consent UI (checkbox + typed signature), SHA-256 document-state hash in audit trail, contractor approval notification email, clickable reference photo in outbound email. Full impeccable audit pass across all dashboard components. Earlier: CO/Invoice flow hardening, invoice PDF fix, Phase 1 housekeeping, type-scale migration, live mic, real change orders, master price sheet.
+> **Last updated:** 2026-06-14 — **Deterministic Takeoff Engine** (quantity-accuracy hardening): new Stage 1.5 between Estimator and Pricer. The LLM now extracts *dimensions*; engineering formulas (IRC 2021 R602.7 / Wisconsin UDC SPS 321.25, RSMeans/NAHB) compute the quantities for wall framing, drywall, and exterior sheathing. Structural headers are sized via a cited span-table lookup (`src/data/spanTables.json`) that never interpolates — out-of-range spans (16 ft garage / engineered LVL) return "confirm with supplier". Formula lines are idempotent (REPLACE-by-`assemblyId` in `persistLedger`, manual edits demote to `override`). UI shows a "Calc'd" provenance badge with visible assumptions. Accuracy eval 0.638 → 1.000. Shipped commit `8f5142b`; rollback tag `pre-takeoff-engine` (`295d1c0`). Also: removed the demo-mode paywall leak (silent local parser → subscription gate + `/watch` video page). Earlier: Change Order upgrades (job-site photo upload, white-labeling, ESIGN consent, SHA-256 audit hash), CO/Invoice flow hardening, invoice PDF fix, type-scale migration, live mic, real change orders, master price sheet.
 
 ---
 
@@ -10,8 +10,9 @@
 **Lone Ranger Estimator** — a multi-tenant SaaS platform for independent contractors. The core loop:
 
 1. Contractor speaks or types a job scope (voice, text, or SMS)
-2. Gemini AI extracts structured materials + labor from the transcript
-3. Items are priced via a 3-tier waterfall: **explicit user price (`override`) → per-user `price_book` (`database`) → AI estimate (`ai`)**, plus a 2.5 labor-default tier (see Pricing Engine below)
+2. Gemini AI extracts structured scope from the transcript — *dimensions and typed assemblies*, plus loose materials + labor
+2.5 A deterministic **Takeoff** stage computes material *quantities* from engineering formulas for known assemblies (wall framing, drywall, sheathing); where no formula applies, the LLM quantity is the fallback
+3. Items are priced via a 4-tier waterfall: **explicit user price (`override`) → per-user `price_book` (`database`) → Menards market (`market`) → AI estimate (`ai`)**, plus a labor-default tier (see Pricing Engine below)
 4. Contractor reviews/edits an interactive ledger
 5. Clicks "Generate PDF" → Puppeteer renders a professional estimate, emails it to the contractor
 6. Stripe handles subscriptions; Firestore is the database
@@ -61,12 +62,16 @@ The monolithic "one big Gemini extract-and-price call" has been **fully replaced
 pipeline that quarantines non-determinism to exactly **two auditable LLM boundaries**, with pure math in
 the middle. (The legacy monolith and the `PIPELINE_V2` flag were retired 2026-06-07.)
 
+> **Updated 2026-06-14:** a deterministic **Takeoff** stage (1.5) was inserted between the Estimator and
+> the Pricer — the pipeline is now **4-stage**. See **§ Deterministic Takeoff Engine** below for full detail.
+
 | Stage | Module | Type | Responsibility |
 |-------|--------|------|----------------|
-| 1. Estimator | `src/lib/estimator.js` | LLM (`gemini-3.5-flash`) | Raw input → price-free scope JSON. **Input-source-agnostic** (`{ type: 'text'\|'voice'\|'image', payload }`) so the Sprint 3 blueprint-vision pivot is a ~20-line swap. |
+| 1. Estimator | `src/lib/estimator.js` | LLM (`gemini-3.5-flash`) | Raw input → price-free scope JSON + typed `assemblies[]` (dimensions, closed enum). **Input-source-agnostic** (`{ type: 'text'\|'voice'\|'image', payload }`) so the Sprint 3 blueprint-vision pivot is a ~20-line swap. |
+| 1.5 Takeoff | `src/lib/takeoffEngine.js` | Deterministic | Expands assemblies into formula-counted line items; headers sized via `takeoffTables.js` span lookup. **Zero LLM/DB calls.** Loose materials pass through. |
 | 2. Pricer | `src/lib/pricer.js` | Deterministic | Runs scope through existing `createPricingEngine`. Issues **zero LLM calls of its own**. |
 | 3. Reviewer | `src/lib/reviewer.js` | LLM (`gemini-3.5-flash`, temp 0) | Non-destructive QA pass. Returns `{ ledger, warnings[], status }` — never mutates priced numbers. |
-| — | `src/lib/pipeline.js` | Orchestrator | `createPipeline({db, ai}).runPipeline(input, ctx)` chains 1→2→3 in memory (no persistence). |
+| — | `src/lib/pipeline.js` | Orchestrator | `createPipeline({db, ai, takeoffTables}).runPipeline(input, ctx)` chains 1→1.5→2→3 in memory (no persistence). |
 
 **Cost-protection caveat (be precise):** Stage 2 issues no AI call itself, but the underlying engine's
 `assignLaborRate` Priority 3 has a *latent* AI fallback that fires only when a labor item has neither an
@@ -91,6 +96,50 @@ LLM boundaries — strictly better than the old monolith, which only counted its
 
 **Tests:** `__tests__/pipeline.test.js` — fully offline ($0 API), mocks Gemini + Firestore. Asserts the
 end-to-end flow and that the Pricer makes zero AI calls when a default labor rate is present.
+
+---
+
+## Deterministic Takeoff Engine (2026-06-14)
+
+**Problem solved:** previously *every* quantity in the ledger was a raw Gemini guess — nothing could catch
+"16 ft wall but 9 studs." The Reviewer checks price plausibility and arithmetic, never whether a quantity
+fits the scope. This stage flips the LLM's job: it extracts **dimensions**; deterministic formulas compute
+the **counts**. "Formula where possible, LLM elsewhere."
+
+**Files:**
+- `src/lib/takeoffEngine.js` — `createTakeoffEngine({ tables, constants })` → `expandScope(scope)`. Pure, offline. Expands `assemblies[]` into priced-ready line items; loose materials pass through tagged `quantity_source:'ai'`.
+- `src/lib/takeoffConstants.js` — citation-backed conventions (16″ OC, 3 studs/corner, 4 studs/opening, 10% sheet waste, 56.25 sqft/hr framing productivity) + fallback unit costs. Fixed now; per-tenant `settings/config` override deferred.
+- `src/lib/takeoffTables.js` + `src/data/spanTables.json` — structural header span lookup.
+- `docs/DEEP_RESEARCH_PROMPT.md` + `docs/Residential Construction Estimating Tables.txt` — the structured Gemini Deep Research spec and its citation-backed output (IRC 2021 R602.7 / Wisconsin UDC SPS 321.25-B, Appleton WI / 30 psf snow).
+
+**v1 scope:** `wall_frame`, `drywall`, `exterior_sheathing` (closed enum in `estimator.js`). Deferred to v2:
+roof/truss/garage-box, drywall corner bead (needs an outside-corner count), and multi-same-type-assembly
+identity. The Estimator prompt has a **hard mutual-exclusion rule** so a wall and its studs can't both be counted.
+
+**Formulas (exact):**
+- studs = `ceil(L×12 / spacing) + 1 + corners×3 + openings×4` (2 king + 2 jack/opening; `corners` defaults to 2, LLM-extracted, visible+editable)
+- plates = `ceil(L×3 / 16)`; framing labor hrs = `(L×H) / 56.25`
+- drywall sheets = `ceil((L×H×sides − openings_area) × 1.10 / 32)` + compound/tape/screws
+- sheathing sheets = `ceil((L×H − openings_area) × 1.10 / 32)` + house wrap + 8d nails
+
+**Three load-bearing contracts (hardened via an Opus review pass):**
+1. **Idempotency** — `src/db.js mergeLedgerItems`: formula lines REPLACE by `assemblyId` (`asm:<type>:<index>`), AI lines stay additive. Re-saying "make that wall 14 ft" recomputes instead of doubling. A manual edit demotes the line to `quantity_source:'override'` (UI `handleCellEdit`), which is protected from the purge.
+2. **No double-counting** — closed `assembly_type` enum + mutual-exclusion prompt rule + per-assembly `confidence` (`<0.6` → LLM `fallback_quantities`).
+3. **Field-shape** — each formula line carries `estimated_unit_cost` + `explicit_user_price:null` so the Pricer waterfall still works; provenance survives the Pricer (asserted by `__tests__/provenance.test.js`).
+
+**Structural safety:** `lookupSpan` returns only cited rows (smallest `max_span_ft ≥ span`), **never interpolates**.
+A 16 ft garage span exceeds the dimensional table → `{ size: null, note: 'confirm size with supplier' }`,
+mirroring the research's explicit omission of prescriptive LVL garage headers. UI renders a "verify with supplier"
+disclaimer + the IRC/UDC citation.
+
+**Gotcha:** `.gitignore` `data/` also matches `src/data/` (git matches any depth) — `spanTables.json` needed a
+`!src/data/` negation + `git add -f` to ship. `.dockerignore` `data/` only matches root, so the file lives under
+`src/data/` (shipped by Docker) rather than top-level `data/`.
+
+**Tests (+48 over the prior suite, 114 total):** `takeoffEngine.test.js` (exact counts, error contract, header
+lookup), `takeoffTables.test.js` (never-interpolate, shipped IRC/UDC data), `mergeLedger.test.js` (replace vs
+additive, override survival), `estimator.test.js`, `provenance.test.js`, `takeoff-eval.test.js` (accuracy
+0.638 → 1.000 vs all-LLM baseline). **Rollback:** tag `pre-takeoff-engine` (`295d1c0`); feature commit `8f5142b`.
 
 ---
 

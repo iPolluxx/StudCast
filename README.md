@@ -12,7 +12,8 @@ Live production: `https://lone-ranger-app-879716207624.us-central1.run.app`
 ```mermaid
 graph TD
     A[Twilio SMS / Web UI] -->|Voice & Text Ingestion| B(Stage 1 · Estimator — Gemini 3.5 Flash)
-    B -->|Price-free Scope JSON| P(Stage 2 · Pricer — deterministic, 0 tokens)
+    B -->|Scope + typed assemblies JSON| T(Stage 1.5 · Takeoff — deterministic formulas, 0 tokens)
+    T -->|Formula-counted, price-free ledger| P(Stage 2 · Pricer — deterministic, 0 tokens)
     P -->|Priced Ledger| R(Stage 3 · Reviewer — Gemini 3.5 Flash, temp 0)
     R -->|Reviewed Ledger + Anomaly Warnings| D[Atomic Firestore Transaction Layer]
     D -->|Sandboxed Multi-Tenant Namespace| E[(Firestore — isolated by E.164 phone)]
@@ -35,7 +36,7 @@ graph TD
 | Runtime | Node.js 20 / Express |
 | Deployment | Google Cloud Run (auto-scaled, containerized) |
 | Database | Cloud Firestore (multi-tenant, serverless) |
-| AI Model | Gemini 3.5 Flash (`@google/genai`) — deterministic 3-stage pipeline |
+| AI Model | Gemini 3.5 Flash (`@google/genai`) — deterministic 4-stage pipeline |
 | Frontend | React 19 + Vite + TypeScript + Tailwind CSS v4 |
 | 3D Engine | Three.js (WebGL) — OrbitControls, raycasting, procedural geometry |
 | Auth | Google OAuth 2.0 ID Tokens |
@@ -44,26 +45,37 @@ graph TD
 | PDF | Puppeteer (headless Chrome) |
 | Secrets | Google Secret Manager |
 | Build | Google Cloud Build (`cloudbuild.yaml`) |
-| Testing | Jest — 66 unit/integration tests, dependency injection, zero-cost offline suite |
+| Testing | Jest — 114 unit/integration tests, dependency injection, zero-cost offline suite |
 | CI/CD | GitHub Actions — runs on every push and pull request to `main` |
 
 ---
 
 ## Key Systems
 
-### 1. The Deterministic 3-Stage Estimation Pipeline
+### 1. The Deterministic 4-Stage Estimation Pipeline
 
-Voice or text input is **not** handed to a single monolithic AI call. It flows through a deterministic pipeline that quarantines nondeterminism to exactly **two auditable LLM boundaries**, with pure, zero-token business math in the middle:
+Voice or text input is **not** handed to a single monolithic AI call. It flows through a deterministic pipeline that quarantines nondeterminism to exactly **two auditable LLM boundaries**, with pure, zero-token math in the middle. The LLM's job is to read language and extract *scope and dimensions* — **not** to invent quantities or prices; those are computed deterministically:
 
 | Stage | Module | Type | Responsibility |
 |-------|--------|------|----------------|
-| **1 · Estimator** | `src/lib/estimator.js` | LLM — Gemini 3.5 Flash | Raw input → strict, **price-free** scope JSON. Input-source-agnostic (`text` / `voice` / `image`), so blueprint-vision becomes a swap rather than a rewrite. |
-| **2 · Pricer** | `src/lib/pricer.js` | Deterministic | Runs the scope through the 3-priority pricing waterfall. Issues **zero LLM calls of its own** — pure backend math, structurally protecting cloud billing. |
+| **1 · Estimator** | `src/lib/estimator.js` | LLM — Gemini 3.5 Flash | Raw input → strict, **price-free** scope JSON. Emits a typed, closed-enum `assemblies[]` (wall framing, drywall, exterior sheathing) carrying *dimensions* alongside loose materials. Input-source-agnostic (`text` / `voice` / `image`), so blueprint-vision becomes a swap rather than a rewrite. |
+| **1.5 · Takeoff** | `src/lib/takeoffEngine.js` | Deterministic | Expands each assembly into concrete line items whose **quantities come from engineering formulas, not LLM judgment** (studs = field + corners×3 + openings×4, drywall sheets, sheathing, labor by area/productivity). Structural headers are sized via a cited span-table lookup. Issues **zero LLM/DB calls** — pure arithmetic. Loose materials pass through; where no formula applies, the LLM quantity is the fallback. |
+| **2 · Pricer** | `src/lib/pricer.js` | Deterministic | Runs every line through the 4-priority pricing waterfall. Issues **zero LLM calls of its own** — pure backend math, structurally protecting cloud billing. |
 | **3 · Reviewer** | `src/lib/reviewer.js` | LLM — Gemini 3.5 Flash, `temperature: 0` | Non-destructive QA pass. Returns the priced ledger plus structured anomaly warnings; it **never mutates the numbers**, only annotates. |
 
-`src/lib/pipeline.js` orchestrates the three stages in memory (`createPipeline({ db, ai }).runPipeline(input, ctx)`); the Express layer owns persistence via a shared `persistLedger()` so pricing is never run twice. The whole pipeline is gated behind the `PIPELINE_V2` flag for a zero-downtime rollout alongside the legacy monolith.
+`src/lib/pipeline.js` orchestrates the stages in memory (`createPipeline({ db, ai, takeoffTables }).runPipeline(input, ctx)`); the Express layer owns persistence via a shared `persistLedger()` so pricing is never run twice. All ingestion routes (`/api/process-text`, `/api/process` audio, inbound SMS) run this pipeline unconditionally — the legacy monolith and the `PIPELINE_V2` flag have been removed.
 
-**Why this matters:** the cost-bearing arithmetic never touches a model, the two LLM boundaries are isolated and individually testable, and a single data contract serves text, voice, and — next — blueprint images.
+**Why this matters:** the cost-bearing arithmetic never touches a model, *quantities and prices are both deterministic and defensible*, the two LLM boundaries are isolated and individually testable, and a single data contract serves text, voice, and — next — blueprint images.
+
+#### Deterministic Quantity Takeoff — formulas, span tables, idempotency
+
+The Takeoff engine (`src/lib/takeoffEngine.js`, `takeoffConstants.js`) turns dimensions into counts using citation-backed formulas (IRC 2021 R602.7 / Wisconsin UDC SPS 321.25, RSMeans/NAHB productivity — sourced via `docs/DEEP_RESEARCH_PROMPT.md`). Three guarantees make the result trustworthy and safe:
+
+- **Provenance you can defend.** Every computed line is tagged `quantity_source: 'formula'` with its inputs/constants, surfaced in the ledger as a **"Calc'd"** badge with the visible assumptions ("16″ OC, 2 corners"). A contractor can see and edit the math.
+- **Idempotent re-extraction.** Formula lines carry an `assemblyId` and **replace** their prior expansion in `persistLedger()` rather than adding to it — so re-saying *"make that wall 14 ft"* recomputes cleanly instead of doubling. A manually edited line is demoted to `override` and is never overwritten by a re-run.
+- **Structural lookups never guess.** Header sizing reads cited rows from `src/data/spanTables.json` (`takeoffTables.js`). A span beyond the published table (e.g. a 16 ft garage / engineered LVL) returns a **"confirm size with supplier"** disclaimer — never a fabricated size. This mirrors the engineering reality that LVL garage headers cannot be prescriptively sized.
+
+An accuracy eval (`__tests__/takeoff-eval.test.js`) quantifies the win against an all-LLM baseline: **0.638 → 1.000** on the covered assemblies.
 
 #### Deterministic clamping for the 3D path
 
@@ -105,18 +117,13 @@ Material prices resolve through four tiers in priority order — the first match
 
 ### 4. Three.js 3D Spatial Engine
 
-The visualizer operates in two modes:
+A WebGL **material yard** (Stack mode) renders the ledger as physical inventory. (The old single-wall "Build Layer" and the abandoned Unity pipeline have both been fully removed — material yard only.)
 
 **Stack Layer (Material Yard)**
-- SPF studs, PT sole plates, and OSB sheathing rendered as true-scale lift geometry (294 pcs/lift, 86 sheets/bunk)
+- Ledger items classified into physically-dimensioned stacks: SPF studs, PT sole plates, and OSB sheathing as true-scale lift geometry (294 pcs/lift, 86 sheets/bunk)
 - Dunnage blocks, plastic wrap texture, and lumber grain procedurally generated via Canvas API
-- Fleet dispatch calculated from cargo weight: one flatbed per 11,200 lbs
+- Instanced per-piece geometry with shelf-packed layout; three view states (mini PIP → theater → fullscreen)
 - Raycasting tooltips on hover — material type, quantity, estimated weight
-
-**Build Layer (Wall Framing)**
-- Physically correct framing: king studs, jack studs, double top plates, treated sole plate, headers, cripple studs, window sills
-- Door and window rough openings deducted from stud layout
-- Drywall overlay with adjustable opacity (0–100%) for X-ray view
 
 ### 5. Subscription & Billing Architecture
 
@@ -163,11 +170,17 @@ src/lib/
 ├── menardsScraper.js    scrapeMenardsPrices(db) — Oxylabs scraper, per-item Firestore writes
 │                        findMarketKey(name) — fuzzy-match item name → SKU key
 │
-│  ── Deterministic 3-Stage Pipeline (gated behind PIPELINE_V2) ──
-├── estimator.js         createEstimator({ ai })   Stage 1 — input-agnostic, price-free extraction
-├── pricer.js            createPricer({ db, ai })  Stage 2 — deterministic pricing, zero AI of its own
-├── reviewer.js          createReviewer({ ai })    Stage 3 — non-destructive, temp-0 anomaly review
-└── pipeline.js          createPipeline({ db, ai })  Orchestrator — chains Stage 1 → 2 → 3 in memory
+│  ── Deterministic 4-Stage Pipeline (runs unconditionally) ──
+├── estimator.js         createEstimator({ ai })          Stage 1 — input-agnostic, price-free extraction + typed assemblies[]
+├── takeoffEngine.js     createTakeoffEngine({ tables })  Stage 1.5 — assemblies → formula-counted line items (pure, offline)
+├── takeoffConstants.js  conventions + fallback costs     Citation-backed framing/drywall/sheathing constants
+├── takeoffTables.js     createSpanLookup(tables)         Structural header span lookup — cited rows only, never interpolates
+├── pricer.js            createPricer({ db, ai })         Stage 2 — deterministic pricing, zero AI of its own
+├── reviewer.js          createReviewer({ ai })           Stage 3 — non-destructive, temp-0 anomaly review
+└── pipeline.js          createPipeline({ db, ai, takeoffTables })  Orchestrator — chains Stage 1 → 1.5 → 2 → 3 in memory
+
+src/data/
+└── spanTables.json      Cited IRC/UDC dimensional header spans (LVL garage headers intentionally omitted)
 ```
 
 `sanitize.js` has no imports beyond Node built-ins. Every function is a pure transformation — given the same input, it always returns the same output. This makes them unconditionally unit-testable without any test doubles.
@@ -186,15 +199,22 @@ const { assignUnitPrice, assignLaborRate } = createPricingEngine({ db: mockDb, a
 
 Neither the Express handlers nor the business logic changes between environments — only the injection point differs. This is the boundary between infrastructure and application logic.
 
-### Jest Test Suite — 66 Tests, $0 API Cost
+### Jest Test Suite — 114 Tests, $0 API Cost
 
-The full pricing waterfall, every sanitization rule, and the end-to-end pipeline are covered by an offline suite. No cloud credentials are required; no Firestore reads or Gemini calls are made at test time.
+The full pricing waterfall, the takeoff formulas and span-table lookups, the provenance-aware merge, every sanitization rule, and the end-to-end pipeline are covered by an offline suite. No cloud credentials are required; no Firestore reads or Gemini calls are made at test time.
 
 ```
 __tests__/
 ├── sanitize.test.js        35 tests — all branches of the four pure utility functions
 ├── pricingEngine.test.js   21 tests — every priority path in assignUnitPrice + assignLaborRate
-└── pipeline.test.js        10 tests — Estimator → Pricer → Reviewer integration, Gemini + Firestore mocked
+├── takeoffEngine.test.js   15 tests — exact formula counts, error contract, header lookup, idempotent ids
+├── takeoffTables.test.js   14 tests — cited-row selection, never-interpolate, shipped IRC/UDC data
+├── pipeline.test.js        11 tests — Estimator → Takeoff → Pricer → Reviewer integration, mocked
+├── mergeLedger.test.js      8 tests — formula-replace vs AI-additive merge, override survival
+├── estimator.test.js        4 tests — assembly enum filter + loose-material passthrough
+├── invoiceCalc.test.js      3 tests — markup/tax/deposit invoice math
+├── provenance.test.js       1 test  — provenance round-trips through the Pricer
+└── takeoff-eval.test.js     2 tests — accuracy vs all-LLM baseline (0.638 → 1.000)
 ```
 
 **Testing strategy highlights:**
@@ -234,7 +254,7 @@ The workflow requires no secrets — the suite is entirely offline. A failing te
 | GET | `/api/estimates/:id` | Bearer | Full estimate with line items |
 | POST | `/api/estimates/:id/save` | Bearer | Save / update estimate (incl. `client_name` / `client_phone` / `client_address`) |
 | DELETE | `/api/estimates/:id` | Bearer | Delete estimate |
-| POST | `/api/process-text` | Bearer + Sub | Text → extraction → priced ledger (3-stage pipeline when `PIPELINE_V2` is enabled) |
+| POST | `/api/process-text` | Bearer + Sub | Text → extraction → deterministic takeoff → priced ledger (4-stage pipeline) |
 | POST | `/api/process` | Bearer + Sub | Live mic audio → Gemini extraction (wired to the voice orb) |
 | POST | `/api/generate-pdf` | Bearer + Sub | Puppeteer PDF → email delivery |
 | POST | `/api/change-orders/generate` | Bearer + Sub | Scope change → Gemini → priced delta + Puppeteer PDF |
@@ -324,12 +344,13 @@ The GitHub Actions CI pipeline (`.github/workflows/ci.yml`) runs `npm ci && npm 
 | Multi-tenant Firestore | ✅ Live |
 | Google OAuth auth | ✅ Live |
 | Gemini AI extraction | ✅ Live |
-| Deterministic 3-stage pipeline | ✅ Built + tested — flag-gated behind `PIPELINE_V2` |
+| Deterministic 4-stage pipeline | ✅ Live — runs unconditionally (legacy monolith removed) |
+| Deterministic quantity takeoff | ✅ Live — wall framing, drywall, sheathing + cited header span tables |
 | Stripe subscriptions | ✅ Live |
 | Puppeteer PDF + email | ✅ Live |
 | Twilio SMS (10DLC) | 🔄 Campaign review pending |
 | Email OTP fallback | ✅ Live |
 | React dashboard | ✅ Live (migrating from legacy) |
-| Three.js visualizer | ✅ Live — Stack + Build modes |
-| Jest test suite | ✅ 66 tests passing — offline, $0 API cost |
+| Three.js visualizer | ✅ Live — material yard (Stack mode) |
+| Jest test suite | ✅ 114 tests passing — offline, $0 API cost |
 | GitHub Actions CI | ✅ Active — runs on every push and PR to `main` |
