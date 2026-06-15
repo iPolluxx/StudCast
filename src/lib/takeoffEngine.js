@@ -186,7 +186,7 @@ function createTakeoffEngine({ tables = null, constants = defaults } = {}) {
                     provenance: { formulaId: 'exterior_sheathing.housewrap', inputs, constants: { houseWrapRollSqFt: c.houseWrapRollSqFt } },
                 }),
                 matLine(a, assemblyId, {
-                    name: `8d Sheathing Nails (${c.nailsPerBox}/box)`, quantity: nailBoxes, unit: 'box', trade: 'siding', costKey: 'nails',
+                    name: `2-3/8" Ring-Shank Framing Nails (${c.nailsPerBox}/box)`, quantity: nailBoxes, unit: 'box', trade: 'siding', costKey: 'nails',
                     provenance: { formulaId: 'exterior_sheathing.fasteners', inputs: { sheets, nailCount }, constants: { panelFastenersPerSheet: c.panelFastenersPerSheet, nailsPerBox: c.nailsPerBox } },
                 }),
             ],

@@ -36,7 +36,8 @@ const conventions = {
     // Exterior weather barrier + fasteners
     houseWrapRollSqFt:    900,     // 9 ft x 100 ft roll
     panelFastenersPerSheet: 55,    // 6" edge / 12" field nailing
-    nailsPerBox:          500,     // ~5 lb box of 8d common/sheathing nails (NOT a bulk carton)
+    nailsPerBox:         2000,     // collated framing/sheathing nails: a real box holds 2,000
+                                   // (e.g. Bostitch 2-3/8" .120 ring-shank, 2,000 ct)
 };
 
 // Conservative central-Wisconsin fallback unit costs, used ONLY when the LLM
@@ -51,7 +52,7 @@ const defaultCosts = {
     tape:             6.00,    // 500 ft roll
     screws:          25.00,    // ~5 lb box (~875 ct)
     houseWrap:      160.00,    // 9x100 roll
-    nails:           18.00,    // ~5 lb box (~500 ct)
+    nails:           65.00,    // collated framing/sheathing nails, 2,000 ct box
     header:          45.00,
     framingLaborRate:  55,     // only used if no default_labor_rate is configured
 };

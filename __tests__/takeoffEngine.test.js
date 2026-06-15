@@ -86,11 +86,12 @@ describe('takeoffEngine — drywall & sheathing', () => {
         expect(nails.quantity).toBe(1);
         expect(nails.unit).toBe('box');
     });
-    test('a large run needs MULTIPLE fastener boxes (garage-scale)', () => {
-        const out = expandScope({ assemblies: [{ type: 'exterior_sheathing', confidence: 0.9, params: { length_ft: 100, height_ft: 10 }, estimated_unit_costs: {}, fallback_quantities: {} }], materials: [], labor: [] });
-        // net=1000; sheets=ceil(1000*1.10/32)=35; nails=35*55=1925 → ceil(1925/500)=4 boxes
-        expect(findMat(out, /OSB/).quantity).toBe(35);
-        expect(findMat(out, /Nails/).quantity).toBe(4);
+    test('a garage-scale run needs MULTIPLE fastener boxes', () => {
+        // 108 ft ≈ a 24x30 garage wall perimeter
+        const out = expandScope({ assemblies: [{ type: 'exterior_sheathing', confidence: 0.9, params: { length_ft: 108, height_ft: 10 }, estimated_unit_costs: {}, fallback_quantities: {} }], materials: [], labor: [] });
+        // net=1080; sheets=ceil(1080*1.10/32)=38; nails=38*55=2090 → ceil(2090/2000)=2 boxes
+        expect(findMat(out, /OSB/).quantity).toBe(38);
+        expect(findMat(out, /Nails/).quantity).toBe(2);
     });
     test('drywall deducts opening area before sizing', () => {
         const out = expandScope({ assemblies: [{ type: 'drywall', confidence: 0.9, params: { length_ft: 12, height_ft: 10, sides: 2, openings_area_sqft: 40 }, estimated_unit_costs: {}, fallback_quantities: {} }], materials: [], labor: [] });
