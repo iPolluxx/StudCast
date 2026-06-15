@@ -30,10 +30,12 @@ const conventions = {
     compoundBucketGal:     4.5,   // standard bucket
     tapeRollFt:            500,    // 1 lf tape per sqft; 500 ft roll
     screwsPerSheet:        36,     // ~36 screws per 4x8 sheet at 16" OC
+    screwsPerBox:        1000,     // fasteners are SOLD by the box, not each
 
     // Exterior weather barrier + fasteners
     houseWrapRollSqFt:    900,     // 9 ft x 100 ft roll
     panelFastenersPerSheet: 55,    // 6" edge / 12" field nailing
+    nailsPerBox:         2500,     // 8d nails sold by the box, not each
 };
 
 // Conservative central-Wisconsin fallback unit costs, used ONLY when the LLM

@@ -129,7 +129,9 @@ function createTakeoffEngine({ tables = null, constants = defaults } = {}) {
         const sheets = Math.ceil((net * (1 + c.drywallWaste)) / c.sheetSqFt);
         const buckets = Math.ceil((net / 100) * c.compoundGalPer100Sqft / c.compoundBucketGal);
         const tapeRolls = Math.ceil(net / c.tapeRollFt);
-        const screws = Math.ceil(sheets * c.screwsPerSheet);
+        // Fasteners are sold by the box — quantify in boxes, not loose count.
+        const screwCount = sheets * c.screwsPerSheet;
+        const screwBoxes = Math.ceil(screwCount / c.screwsPerBox);
         const inputs = { length, height, sides, openingsArea };
 
         return {
@@ -147,8 +149,8 @@ function createTakeoffEngine({ tables = null, constants = defaults } = {}) {
                     provenance: { formulaId: 'drywall.tape', inputs, constants: { tapeRollFt: c.tapeRollFt } },
                 }),
                 matLine(a, assemblyId, {
-                    name: 'Drywall Screws', quantity: screws, unit: 'ea', trade: 'drywall', costKey: 'screws',
-                    provenance: { formulaId: 'drywall.screws', inputs: { sheets }, constants: { screwsPerSheet: c.screwsPerSheet } },
+                    name: `Drywall Screws (${c.screwsPerBox}/box)`, quantity: screwBoxes, unit: 'box', trade: 'drywall', costKey: 'screws',
+                    provenance: { formulaId: 'drywall.screws', inputs: { sheets, screwCount }, constants: { screwsPerSheet: c.screwsPerSheet, screwsPerBox: c.screwsPerBox } },
                 }),
             ],
             labor: [],
@@ -165,7 +167,9 @@ function createTakeoffEngine({ tables = null, constants = defaults } = {}) {
 
         const sheets = Math.ceil((net * (1 + c.sheathingWaste)) / c.sheetSqFt);
         const wrapRolls = Math.ceil((gross * (1 + c.sheathingWaste)) / c.houseWrapRollSqFt);
-        const fasteners = Math.ceil(sheets * c.panelFastenersPerSheet);
+        // 8d nails are sold by the box — quantify in boxes, not loose count.
+        const nailCount = sheets * c.panelFastenersPerSheet;
+        const nailBoxes = Math.ceil(nailCount / c.nailsPerBox);
         const inputs = { length, height, openingsArea };
 
         return {
@@ -179,8 +183,8 @@ function createTakeoffEngine({ tables = null, constants = defaults } = {}) {
                     provenance: { formulaId: 'exterior_sheathing.housewrap', inputs, constants: { houseWrapRollSqFt: c.houseWrapRollSqFt } },
                 }),
                 matLine(a, assemblyId, {
-                    name: '8d Sheathing Nails', quantity: fasteners, unit: 'ea', trade: 'siding', costKey: 'nails',
-                    provenance: { formulaId: 'exterior_sheathing.fasteners', inputs: { sheets }, constants: { panelFastenersPerSheet: c.panelFastenersPerSheet } },
+                    name: `8d Sheathing Nails (${c.nailsPerBox}/box)`, quantity: nailBoxes, unit: 'box', trade: 'siding', costKey: 'nails',
+                    provenance: { formulaId: 'exterior_sheathing.fasteners', inputs: { sheets, nailCount }, constants: { panelFastenersPerSheet: c.panelFastenersPerSheet, nailsPerBox: c.nailsPerBox } },
                 }),
             ],
             labor: [],

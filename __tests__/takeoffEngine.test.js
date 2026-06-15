@@ -55,18 +55,24 @@ describe('takeoffEngine — drywall & sheathing', () => {
         const out = expandScope({ assemblies: [{ type: 'drywall', confidence: 0.9, params: { length_ft: 12, height_ft: 10, sides: 2 }, estimated_unit_costs: {}, fallback_quantities: {} }], materials: [], labor: [] });
         // net=240; ceil(240*1.10/32)=ceil(8.25)=9
         expect(findMat(out, /Drywall/).quantity).toBe(9);
-        // compound: ceil((240/100)*3/4.5)=ceil(1.6)=2; tape: ceil(240/500)=1; screws: ceil(9*36)=324
+        // compound: ceil((240/100)*3/4.5)=ceil(1.6)=2; tape: ceil(240/500)=1
         expect(findMat(out, /Compound/).quantity).toBe(2);
         expect(findMat(out, /Tape/).quantity).toBe(1);
-        expect(findMat(out, /Screws/).quantity).toBe(324);
+        // screws: 9*36=324 count → ceil(324/1000)=1 box (not 324 loose screws priced as boxes)
+        const screws = findMat(out, /Screws/);
+        expect(screws.quantity).toBe(1);
+        expect(screws.unit).toBe('box');
+        expect(screws.name).toMatch(/box/);
     });
-    test('exterior sheathing 12×10 → 5 sheets + wrap + fasteners', () => {
+    test('exterior sheathing 12×10 → 5 sheets + wrap + nails by the box', () => {
         const out = expandScope({ assemblies: [{ type: 'exterior_sheathing', confidence: 0.9, params: { length_ft: 12, height_ft: 10 }, estimated_unit_costs: {}, fallback_quantities: {} }], materials: [], labor: [] });
         // net=120; ceil(120*1.10/32)=ceil(4.125)=5
         expect(findMat(out, /OSB/).quantity).toBe(5);
-        // wrap: ceil(120*1.10/900)=1; nails: ceil(5*55)=275
-        expect(findMat(out, /House Wrap/).quantity).toBe(1);
-        expect(findMat(out, /Nails/).quantity).toBe(275);
+        expect(findMat(out, /House Wrap/).quantity).toBe(1); // ceil(120*1.10/900)=1
+        // nails: 5*55=275 count → ceil(275/2500)=1 box (NOT 275 nails priced as $/box)
+        const nails = findMat(out, /Nails/);
+        expect(nails.quantity).toBe(1);
+        expect(nails.unit).toBe('box');
     });
     test('drywall deducts opening area before sizing', () => {
         const out = expandScope({ assemblies: [{ type: 'drywall', confidence: 0.9, params: { length_ft: 12, height_ft: 10, sides: 2, openings_area_sqft: 40 }, estimated_unit_costs: {}, fallback_quantities: {} }], materials: [], labor: [] });
