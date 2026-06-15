@@ -81,10 +81,16 @@ describe('takeoffEngine — drywall & sheathing', () => {
         // net=120; ceil(120*1.10/32)=ceil(4.125)=5
         expect(findMat(out, /OSB/).quantity).toBe(5);
         expect(findMat(out, /House Wrap/).quantity).toBe(1); // ceil(120*1.10/900)=1
-        // nails: 5*55=275 count → ceil(275/2500)=1 box (NOT 275 nails priced as $/box)
+        // nails: 5*55=275 count → ceil(275/500)=1 box (NOT 275 nails priced as $/box)
         const nails = findMat(out, /Nails/);
         expect(nails.quantity).toBe(1);
         expect(nails.unit).toBe('box');
+    });
+    test('a large run needs MULTIPLE fastener boxes (garage-scale)', () => {
+        const out = expandScope({ assemblies: [{ type: 'exterior_sheathing', confidence: 0.9, params: { length_ft: 100, height_ft: 10 }, estimated_unit_costs: {}, fallback_quantities: {} }], materials: [], labor: [] });
+        // net=1000; sheets=ceil(1000*1.10/32)=35; nails=35*55=1925 → ceil(1925/500)=4 boxes
+        expect(findMat(out, /OSB/).quantity).toBe(35);
+        expect(findMat(out, /Nails/).quantity).toBe(4);
     });
     test('drywall deducts opening area before sizing', () => {
         const out = expandScope({ assemblies: [{ type: 'drywall', confidence: 0.9, params: { length_ft: 12, height_ft: 10, sides: 2, openings_area_sqft: 40 }, estimated_unit_costs: {}, fallback_quantities: {} }], materials: [], labor: [] });

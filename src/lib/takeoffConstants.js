@@ -31,12 +31,12 @@ const conventions = {
     compoundBucketGal:     4.5,   // standard bucket
     tapeRollFt:            500,    // 1 lf tape per sqft; 500 ft roll
     screwsPerSheet:        36,     // ~36 screws per 4x8 sheet at 16" OC
-    screwsPerBox:        1000,     // fasteners are SOLD by the box, not each
+    screwsPerBox:         875,     // fasteners sold by the box; ~5 lb box of 1-1/4" coarse drywall screws
 
     // Exterior weather barrier + fasteners
     houseWrapRollSqFt:    900,     // 9 ft x 100 ft roll
     panelFastenersPerSheet: 55,    // 6" edge / 12" field nailing
-    nailsPerBox:         2500,     // 8d nails sold by the box, not each
+    nailsPerBox:          500,     // ~5 lb box of 8d common/sheathing nails (NOT a bulk carton)
 };
 
 // Conservative central-Wisconsin fallback unit costs, used ONLY when the LLM
@@ -49,9 +49,9 @@ const defaultCosts = {
     drywallSheet:    14.00,
     compound:        18.00,   // ~4.5 gal bucket
     tape:             6.00,    // 500 ft roll
-    screws:          12.00,    // per box
+    screws:          25.00,    // ~5 lb box (~875 ct)
     houseWrap:      160.00,    // 9x100 roll
-    nails:           45.00,    // per box
+    nails:           18.00,    // ~5 lb box (~500 ct)
     header:          45.00,
     framingLaborRate:  55,     // only used if no default_labor_rate is configured
 };
