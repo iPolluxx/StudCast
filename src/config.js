@@ -22,9 +22,8 @@ const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_A
 // ── Temp dirs ─────────────────────────────────────────────────────────
 const TEMP_DIR    = path.join(__dirname, '..', 'temp');
 const UPLOADS_DIR = path.join(TEMP_DIR, 'uploads');
-const EXPORTS_DIR = path.join(TEMP_DIR, 'exports');
 
-[TEMP_DIR, UPLOADS_DIR, EXPORTS_DIR].forEach(dir => {
+[TEMP_DIR, UPLOADS_DIR].forEach(dir => {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
 
@@ -80,8 +79,8 @@ const coImageUpload = multer({
 });
 
 // ── GCS bucket for change-order images ───────────────────────────────
-const coStorage = new Storage();
-const coBucket  = coStorage.bucket('lone-ranger-change-orders');
+const storage  = new Storage();
+const coBucket = storage.bucket('lone-ranger-change-orders');
 
 // ── Pricing engine + pipeline ─────────────────────────────────────────
 const { assignUnitPrice, assignLaborRate } = createPricingEngine({ db, ai });
@@ -89,7 +88,7 @@ const pipeline = createPipeline({ db, ai, takeoffTables: loadSpanTables() });
 
 module.exports = {
     db, ai, stripe, authClient, twilioClient,
-    upload, csvUpload, multerMemory, coImageUpload, coBucket,
+    upload, csvUpload, multerMemory, coImageUpload, storage, coBucket,
     pipeline, assignUnitPrice, assignLaborRate,
-    TEMP_DIR, UPLOADS_DIR, EXPORTS_DIR,
+    TEMP_DIR, UPLOADS_DIR,
 };

@@ -5,9 +5,6 @@ require('./db'); // runs seed IIFE on startup
 const express = require('express');
 const cors    = require('cors');
 const path    = require('path');
-const { google }   = require('googleapis');
-const { OAuth2Client } = require('google-auth-library');
-const fs = require('fs');
 
 const { billingRouter, stripeWebhookHandler } = require('./routes/billing');
 const processingRouter    = require('./routes/processing');
@@ -88,27 +85,6 @@ app.use('/api',          interactionsRouter);
 
 // The /approve page is served by the changeOrders router at the top level
 app.use('/', changeOrdersRouter);
-
-// ── Google OAuth helper (legacy Google Docs integration) ──────────────
-const CREDENTIALS_PATH = path.join(__dirname, 'config', 'Credentials.json');
-const TOKEN_PATH       = path.join(__dirname, 'config', 'token.json');
-
-function getOAuth2Client() {
-    let credentials, token;
-    if (process.env.GOOGLE_OAUTH_CREDENTIALS && process.env.GOOGLE_OAUTH_TOKEN) {
-        credentials = JSON.parse(process.env.GOOGLE_OAUTH_CREDENTIALS);
-        token       = JSON.parse(process.env.GOOGLE_OAUTH_TOKEN);
-    } else {
-        credentials = JSON.parse(fs.readFileSync(CREDENTIALS_PATH, 'utf-8'));
-        token       = JSON.parse(fs.readFileSync(TOKEN_PATH, 'utf-8'));
-    }
-    const { installed } = credentials;
-    const oAuth2Client  = new google.auth.OAuth2(
-        installed.client_id, installed.client_secret, installed.redirect_uris[0]
-    );
-    oAuth2Client.setCredentials(token);
-    return oAuth2Client;
-}
 
 app.listen(port, () => {
     console.log(`\n🗂  Multi-Tenant Voice Ledger server running on port ${port}\n`);

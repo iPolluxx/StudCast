@@ -1,6 +1,6 @@
 const express = require('express');
 
-const { db, multerMemory } = require('../config');
+const { db, multerMemory, storage } = require('../config');
 const { requireAuth }       = require('../middleware/auth');
 
 const router = express.Router();
@@ -118,8 +118,6 @@ router.post('/settings/logo', multerMemory.single('logo'), requireAuth, async (r
         let logoUrl = '';
         if (process.env.GCS_BUCKET_NAME) {
             try {
-                const { Storage } = require('@google-cloud/storage');
-                const storage = new Storage();
                 const bucket  = storage.bucket(process.env.GCS_BUCKET_NAME);
                 const file    = bucket.file(`users/${userPhone}/logo_${Date.now()}_${req.file.originalname}`);
                 await file.save(req.file.buffer, { metadata: { contentType: req.file.mimetype } });
