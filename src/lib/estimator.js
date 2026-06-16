@@ -62,6 +62,17 @@ const EXTRACTION_PROMPT =
     `  • drywall — params: { length_ft, height_ft, sides (1 or 2), openings_area_sqft (total door/window ` +
     `area to deduct, or 0) }.\n` +
     `  • exterior_sheathing — params: { length_ft, height_ft, openings_area_sqft (or 0) }.\n` +
+    `WALL FINISH GATING — CRITICAL, DO NOT OVER-BUILD THE WALL: A wall described with only ` +
+    `dimensions (e.g. "a 12 by 8 wall", "frame a 10 ft wall", "20 foot wall 9 feet tall") is ` +
+    `FRAMING ONLY. Emit a SINGLE wall_frame assembly and nothing else. Framing nails are computed ` +
+    `automatically by the engine — never list nails or fasteners for a framed wall in "materials". ` +
+    `Do NOT add a drywall assembly and do NOT add an exterior_sheathing assembly unless the ` +
+    `contractor EXPLICITLY calls for that finish:\n` +
+    `  – Emit drywall ONLY when the job says the wall is finished inside — e.g. "drywall the walls", ` +
+    `"rock it", "sheetrock", "interior finish on the walls", "hang 5/8 on the ceiling". \n` +
+    `  – Emit exterior_sheathing ONLY when the job says the outside is covered — e.g. "exterior is ` +
+    `sheathed/sheeted", "OSB the outside", "wrap and sheathe", "zip system". \n` +
+    `When the description is silent on finishes, frame only. When in doubt, frame only.\n` +
     `For each assembly also provide: "confidence" (0..1, your certainty the params are right), ` +
     `"estimated_unit_costs" (a map of each part's descriptive material name → your conservative ` +
     `central-Wisconsin unit price, used as a pricing fallback), and "fallback_quantities" (a map of ` +

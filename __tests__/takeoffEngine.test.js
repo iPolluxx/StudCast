@@ -19,6 +19,17 @@ describe('takeoffEngine — wall_frame formulas (exact counts)', () => {
         expect(out.labor[0].role).toMatch(/framing/i);
     });
 
+    test('framed wall includes framing nails by the box, no drywall/sheathing', () => {
+        const out = expandScope({ assemblies: [wall({ length_ft: 12, height_ft: 10, stud_spacing_in: 16, wall_type: 'exterior', openings: [] })], materials: [], labor: [] });
+        const nails = findMat(out, /Framing Nails/);
+        expect(nails.unit).toBe('box');
+        expect(nails.quantity).toBe(1);              // 16 studs * 20 = 320 → ceil(320/2000) = 1 box
+        expect(nails.trade).toBe('framing');
+        // a bare wall is framing only — engine never invents finishes
+        expect(findMat(out, /Drywall/)).toBeUndefined();
+        expect(findMat(out, /OSB|Sheathing/)).toBeUndefined();
+    });
+
     test('one opening adds 4 studs (2 king + 2 jack)', () => {
         const out = expandScope({ assemblies: [wall({ length_ft: 12, height_ft: 10, stud_spacing_in: 16, wall_type: 'exterior', openings: [{ kind: 'door', width_ft: 3, height_ft: 6.67, count: 1 }] })], materials: [], labor: [] });
         expect(findMat(out, /Stud/).quantity).toBe(20);     // 16 + 4

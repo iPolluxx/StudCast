@@ -19,6 +19,9 @@ const conventions = {
                                   // (visible + editable; set 0 for a lone partition)
     plateRuns:             3,     // 1 sole + double top plate
     plateStockFt:         16,     // plate board length
+    framingNailsPerStud:  20,     // 16d framing nails: stud end-nailing (both ends) + plate
+                                  // laps + sole-plate nailing, averaged per stud. Rounds to
+                                  // boxes downstream; a single wall is ~1 box.
     productivitySqftPerHr: 56.25, // framing crew rate (RSMeans/NAHB, ~450 sqft/day/framer)
 
     sheetSqFt:            32,      // 4x8 panel (drywall + sheathing)

@@ -89,6 +89,14 @@ function createTakeoffEngine({ tables = null, constants = defaults } = {}) {
                 provenance: { formulaId: 'wall_frame.plates', inputs: { length },
                     constants: { plateRuns: c.plateRuns, plateStockFt: c.plateStockFt } },
             }),
+            // Framing nails ship WITH every framed wall — sold by the box.
+            matLine(a, assemblyId, {
+                name: `3-1/4" Framing Nails (${c.nailsPerBox}/box)`,
+                quantity: Math.ceil((studs * c.framingNailsPerStud) / c.nailsPerBox),
+                unit: 'box', trade: 'framing', costKey: 'nails',
+                provenance: { formulaId: 'wall_frame.nails', inputs: { studs },
+                    constants: { framingNailsPerStud: c.framingNailsPerStud, nailsPerBox: c.nailsPerBox } },
+            }),
         ];
 
         // Header span-lookup per opening (structural — cited size, never computed).
