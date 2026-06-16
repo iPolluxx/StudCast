@@ -115,15 +115,23 @@ Material prices resolve through four tiers in priority order — the first match
 
 **Self-Teaching Price Book:** Each successful PDF generation feeds approved material prices back into the per-tenant `price_book` collection. The **Price Sheet** tab in Settings shows the merged view: contractor's saved prices alongside current Menards market prices, with diff% highlighting, inline editing, per-item or bulk "Sync from Menards", and delete (which drops back to the market/AI tier).
 
-### 4. Three.js 3D Spatial Engine
+### 4. Three.js 3D Spatial Engine + WebXR AR
 
-A WebGL **material yard** (Stack mode) renders the ledger as physical inventory. (The old single-wall "Build Layer" and the abandoned Unity pipeline have both been fully removed — material yard only.)
+A WebGL **material yard** (Stack mode) renders the ledger as physical inventory, with a **live WebXR AR mode** that places the yard in the real world through the device camera.
 
 **Stack Layer (Material Yard)**
 - Ledger items classified into physically-dimensioned stacks: SPF studs, PT sole plates, and OSB sheathing as true-scale lift geometry (294 pcs/lift, 86 sheets/bunk)
 - Dunnage blocks, plastic wrap texture, and lumber grain procedurally generated via Canvas API
 - Instanced per-piece geometry with shelf-packed layout; three view states (mini PIP → theater → fullscreen)
 - Raycasting tooltips on hover — material type, quantity, estimated weight
+
+**WebXR Augmented Reality (mobile)**
+- Detects `navigator.xr` + `immersive-ar` support at init; the AR button appears automatically on compatible devices (Chrome on Android, Safari on iOS 16+)
+- Two entry points: a pulsing **"View in AR"** pill below the mini PIP, and a circle button inside the theater/fullscreen canvas
+- Session requests `local-floor` for ground-plane anchoring; the material yard scales from scene-feet to XR meters (`FT_TO_M`) so stacks render at true physical scale in the real world
+- On session start: ground plane, grid, and delivery trucks hide so only the floating material stacks appear over the camera feed; scene background and fog clear to transparent
+- On session end: all scene elements restore, scale resets to 1, the Three.js environment resumes normally
+- AR state is lifted to `App.tsx` via `onARReady` / `onARSessionChange` callbacks; `isARActive` drives button label toggling ("View in AR" ↔ "Exit AR")
 
 ### 5. Subscription & Billing Architecture
 
@@ -281,7 +289,7 @@ The dashboard UI was rebuilt from scratch as a React 19 + TypeScript + Vite appl
 
 - **Cosmic glass aesthetic** — procedural canvas starfield with parallax inertia, glassmorphism panels, aurora gradient pools
 - **Workflow stage system** — CAPTURE → PROCESS → VISUALIZE → FINALIZE, driven by AI and interaction state
-- **Full-bleed Three.js canvas** — the 3D scene is the environment, not a panel
+- **Full-bleed Three.js canvas** — the 3D scene is the environment, not a panel; expands to theater or fullscreen; WebXR AR mode places the material yard in the real world on compatible mobile devices
 - **Voice orb** — live mic capture (`getUserMedia` → `MediaRecorder` → `POST /api/process`) with pulsing ring animations, waveform visualizer, and real-time status
 - **Collapsible ledger drawer** — bottom sheet with inline-editable material and labor tables
 - **PDF preview + send** — `PDFPreviewModal` renders the estimate and captures client name/phone/address before emailing
@@ -352,5 +360,6 @@ The GitHub Actions CI pipeline (`.github/workflows/ci.yml`) runs `npm ci && npm 
 | Email OTP fallback | ✅ Live |
 | React dashboard | ✅ Live (migrating from legacy) |
 | Three.js visualizer | ✅ Live — material yard (Stack mode) |
+| WebXR AR mode | ✅ Live — mobile (Chrome Android, Safari iOS 16+) |
 | Jest test suite | ✅ 114 tests passing — offline, $0 API cost |
 | GitHub Actions CI | ✅ Active — runs on every push and PR to `main` |

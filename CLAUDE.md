@@ -41,8 +41,10 @@ Components:
 ### Legacy onboarding — `public/dashboard.html` at `/dashboard-legacy`
 The hardened registration flow (Google OAuth → phone OTP → profile wizard) still lives here. After auth completes, `activateDashboard()` redirects into the React app at `/dashboard`. Landing page is `public/index.html` at `/`.
 
-### 3D
-Three.js material yard only. The old single-wall "Build Layer" and the abandoned Unity WebGL pipeline have both been fully removed.
+### 3D + AR
+Three.js material yard only (`ThreeVisualizer.tsx`). The old single-wall "Build Layer" and the abandoned Unity WebGL pipeline have both been fully removed.
+
+**WebXR AR is live on mobile.** `ThreeVisualizer` checks `navigator.xr.isSessionSupported('immersive-ar')` at init and fires `onARReady` with a toggle callback when supported. Two UI entry points in `App.tsx`: a pulsing "View in AR" pill below the mini PIP, and a circle button inside theater/fullscreen mode. On session start the yard scales feet → meters and all non-material scene elements (ground, grid, trucks) hide so stacks float over the real-world camera feed. Works on Chrome Android and Safari iOS 16+.
 
 ---
 

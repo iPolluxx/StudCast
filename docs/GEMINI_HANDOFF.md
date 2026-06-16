@@ -41,14 +41,19 @@ Two fully separate layers. Unity WebGL was abandoned 2026-05-31 in favor of nati
 - Handles all business logic, auth, Stripe, PDF, Firestore
 - **Service layer (`src/lib/`):** deterministic utilities and pricing logic are extracted into a dedicated module layer; `server.js` requires from there rather than defining inline. See below.
 
-### Deterministic Builder (live — `public/dashboard.html` VizController)
+### Deterministic Builder (live — React `ThreeVisualizer.tsx`)
 - Three.js running in the browser — no compilation, no VM needed
-- Two modes in the same visualizer panel:
-  - **Stack Layer** — deterministic digital twin of a commercial lumber drop; scaled bounding box lifts, dunnage, wrapped texture, loose remainders, truck+trailer fleet, raycasting tooltips, HUD weight display
-  - **Build Layer** — deterministic wall framing (plates, studs, openings) driven by Supervisor JSON
-- Receives JSON packets from `POST /api/estimate/voice-to-json`
-- NO AI, NO inference — pure deterministic geometry from framing math
+- **Stack Layer (material yard)** — deterministic digital twin of a commercial lumber drop; scaled bounding box lifts, dunnage, wrapped texture, loose remainders, truck+trailer fleet, raycasting tooltips, HUD weight display
+- Three view states: mini PIP (draggable) → theater (medium) → fullscreen
+- NO AI, NO inference — pure deterministic geometry from engineering quantities
 - Strict contract: malformed JSON defaults to safe values via `sanitizePhase1Intent()`
+
+**WebXR AR mode (live on mobile)**
+- Detects `navigator.xr` + `immersive-ar` at init; AR button/pill appear automatically on supported devices (Chrome Android, Safari iOS 16+)
+- Session requires `local-floor` feature for ground-plane anchoring
+- On AR start: ground, grid, trucks hidden; scene background/fog cleared; yard scales feet → meters (`× 0.3048`) so stacks appear at true physical size in the real world
+- On AR end: all scene elements restore, scale resets
+- AR state lifted to `App.tsx` via `onARReady` / `onARSessionChange` callbacks
 
 **The key rule:** The Supervisor thinks. The Builder builds. They never swap roles.
 
