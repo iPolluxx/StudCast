@@ -162,7 +162,10 @@
         }
 
         /* ── Login gate ─────────────────────────────────────────────────── */
-        #loginGate { min-height: 100vh; }
+        #loginGate { min-height: 100vh; overflow-y: auto; align-items: flex-start; padding-top: 2rem; padding-bottom: 2rem; }
+        @media (min-height: 700px) { #loginGate { align-items: center; } }
+        #authEmail, #authGoogle { display: none; }
+        #authGoogle { display: block; }
 
         @media print {
             body { background:#fff !important; }
@@ -285,7 +288,7 @@
             </div>
 
             <!-- Email tab -->
-            <div id="authEmail" class="hidden space-y-4 text-left">
+            <div id="authEmail" class="space-y-4 text-left">
 
                 <!-- Email login form (returning users) -->
                 <div id="emailLoginForm" class="space-y-3">
@@ -311,7 +314,7 @@
                 </div>
 
                 <!-- Email signup form (new users) -->
-                <div id="emailSignupForm" class="hidden space-y-3">
+                <div id="emailSignupForm" class="space-y-3" style="display:none">
                     <p class="text-[11px] text-center" style="color:var(--text-muted)">Create your account. A 6-digit code will be sent to verify your phone.</p>
                     <div class="flex flex-col space-y-1">
                         <label class="text-xs font-semibold" style="color:var(--text-muted)">Email</label>
@@ -1242,8 +1245,8 @@
         // ── Auth tab switcher ─────────────────────────────────────────────
         function switchAuthTab(tab) {
             const isEmail = tab === 'email';
-            document.getElementById('authGoogle').classList.toggle('hidden', isEmail);
-            document.getElementById('authEmail').classList.toggle('hidden', !isEmail);
+            document.getElementById('authGoogle').style.display  = isEmail ? 'none' : 'block';
+            document.getElementById('authEmail').style.display   = isEmail ? 'block' : 'none';
             document.getElementById('tabGoogle').style.background = isEmail ? 'transparent' : 'var(--primary-accent)';
             document.getElementById('tabGoogle').style.color      = isEmail ? 'var(--text-muted)' : '#fff';
             document.getElementById('tabEmail').style.background  = isEmail ? 'var(--primary-accent)' : 'transparent';
@@ -1252,8 +1255,8 @@
         }
 
         function toggleEmailMode(mode) {
-            document.getElementById('emailLoginForm').classList.toggle('hidden', mode !== 'login');
-            document.getElementById('emailSignupForm').classList.toggle('hidden', mode !== 'signup');
+            document.getElementById('emailLoginForm').style.display  = mode === 'login'  ? 'block' : 'none';
+            document.getElementById('emailSignupForm').style.display = mode === 'signup' ? 'block' : 'none';
             clearLoginError();
         }
 
