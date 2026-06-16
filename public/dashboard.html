@@ -1142,13 +1142,16 @@
         const originalFetch = window.fetch;
         window.fetch = async function(...args) {
             const response = await originalFetch.apply(this, args);
-            if (response.status === 401) {
+            // Auth endpoints handle their own errors — don't intercept them.
+            const url = typeof args[0] === 'string' ? args[0] : (args[0]?.url || '');
+            const isAuthEndpoint = url.includes('/api/auth/');
+            if (!isAuthEndpoint && response.status === 401) {
                 localStorage.removeItem('authBearerToken');
                 authBearerToken = null;
                 document.getElementById('dashboard').classList.add('hidden');
                 document.getElementById('loginGate').classList.remove('hidden');
                 showToast('Session expired. Please sign in again.', 'error');
-            } else if (response.status === 403 || response.status === 404) {
+            } else if (!isAuthEndpoint && (response.status === 403 || response.status === 404)) {
                 // If backend throws 403 (Email not registered), prompt self-serve onboarding
                 if (!document.getElementById('onboardingModal').classList.contains('flex')) {
                     document.getElementById('loginGate').classList.add('hidden');
