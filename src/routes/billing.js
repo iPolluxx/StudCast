@@ -1,4 +1,5 @@
 const express = require('express');
+const crypto = require('crypto');
 const { FieldValue } = require('@google-cloud/firestore');
 
 const { db, stripe } = require('../config');
@@ -150,6 +151,31 @@ router.post('/verify-session', requireAuth, async (req, res) => {
     } catch (err) {
         console.error('[verify-session]', err.message);
         return res.status(500).json({ error: 'Verification failed.' });
+    }
+});
+
+// ── POST /api/billing/redeem-code ─────────────────────────────────────
+// Comp/test access: a code (env COMP_CODE) flips active_subscription on,
+// bypassing Stripe. Marked subscription_status:'comp' so comped accounts are
+// distinguishable from paying ones. Rotate by changing the env var (no rebuild).
+function codeMatches(input, secret) {
+    if (!secret || typeof input !== 'string' || input.length !== secret.length) return false;
+    return crypto.timingSafeEqual(Buffer.from(input), Buffer.from(secret));
+}
+
+router.post('/redeem-code', requireAuth, async (req, res) => {
+    const secret = process.env.COMP_CODE;
+    if (!secret) return res.status(404).json({ error: 'Comp codes are not enabled.' });
+    if (!codeMatches(req.body && req.body.code, secret)) {
+        return res.status(403).json({ error: 'Invalid code.' });
+    }
+    try {
+        await db.collection('users').doc(req.userPhone).collection('settings').doc('config')
+            .set({ active_subscription: true, subscription_status: 'comp' }, { merge: true });
+        return res.json({ success: true, activated: true });
+    } catch (err) {
+        console.error('[redeem-code]', err.message);
+        return res.status(500).json({ error: 'Activation failed.' });
     }
 });
 

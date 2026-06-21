@@ -41,6 +41,40 @@ async function sendOtp(formattedPhone, email, otp) {
 
 const router = express.Router();
 
+// ── POST /api/auth/demo-login ─────────────────────────────────────────
+// Code-only access (no Google/OTP/Stripe). The COMP_CODE unlocks a single
+// SHARED demo tenant — everyone who redeems lands in the same workspace and
+// sees the same estimates. Returns a 30-day local JWT that requireAuth already
+// accepts. The demo tenant is provisioned lazily on first redeem.
+const DEMO_PHONE = '+10000000000';
+const DEMO_EMAIL = 'demo@studcast.app';
+
+function codeMatches(input, secret) {
+    if (!secret || typeof input !== 'string' || input.length !== secret.length) return false;
+    return crypto.timingSafeEqual(Buffer.from(input), Buffer.from(secret));
+}
+
+router.post('/auth/demo-login', async (req, res) => {
+    const secret = process.env.COMP_CODE;
+    if (!secret) return res.status(404).json({ error: 'Demo access is not enabled.' });
+    if (!codeMatches(req.body && req.body.code, secret)) {
+        return res.status(403).json({ error: 'Invalid code.' });
+    }
+    try {
+        // Idempotent provision: active tenant + active subscription so requireAuth
+        // and requireSubscription both pass. set(merge) is safe to repeat.
+        await db.collection('users').doc(DEMO_PHONE)
+            .set({ email: DEMO_EMAIL, status: 'active', companyName: 'Demo Workspace' }, { merge: true });
+        await db.collection('users').doc(DEMO_PHONE).collection('settings').doc('config')
+            .set({ active_subscription: true, subscription_status: 'comp', contact_email: DEMO_EMAIL }, { merge: true });
+
+        return res.json({ token: issueJwt(DEMO_EMAIL), demo: true });
+    } catch (err) {
+        console.error('[demo-login]', err.message);
+        return res.status(500).json({ error: 'Demo login failed.' });
+    }
+});
+
 // ── POST /api/auth/register ───────────────────────────────────────────
 router.post('/auth/register', requireGoogleAuth, async (req, res) => {
     const extractedEmail = req.googleEmail;

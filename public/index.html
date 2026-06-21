@@ -399,6 +399,9 @@
         <a href="/dashboard-legacy" class="btn btn-primary">Get Started · $49/mo</a>
         <a href="/watch" class="btn btn-secondary">See How It Works</a>
       </div>
+      <div style="margin-top:14px;">
+        <a href="#" id="demo-code-link" style="font-size:13px;color:rgba(255,255,255,0.55);text-decoration:underline;">Have a test code?</a>
+      </div>
       <div class="hero-meta">
         <span><span class="dot"></span>Voice &amp; text intake</span>
         <span><span class="dot"></span>Your private pricing</span>
@@ -649,6 +652,29 @@
   <script>
     // Mark JS available so scroll-animate opacity gating only applies with JS
     document.documentElement.classList.add('js');
+
+    // Tester bypass: code -> shared demo workspace, no sign-in/Stripe.
+    const demoCodeLink = document.getElementById('demo-code-link');
+    if (demoCodeLink) {
+      demoCodeLink.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const code = prompt('Enter your test code:');
+        if (!code) return;
+        try {
+          const r = await fetch('/api/auth/demo-login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code: code.trim() }),
+          });
+          const data = await r.json();
+          if (!r.ok || !data.token) throw new Error(data.error || 'Invalid code');
+          localStorage.setItem('authBearerToken', data.token);
+          window.location.href = '/dashboard';
+        } catch (err) {
+          alert(err.message || 'Invalid code');
+        }
+      });
+    }
 
     // Sticky header on scroll
     const header = document.getElementById('site-header');

@@ -223,6 +223,29 @@ export default function App() {
   });
 
   const [subscribeLoading, setSubscribeLoading] = useState(false);
+  const [compCode, setCompCode] = useState('');
+  const [redeemError, setRedeemError] = useState('');
+
+  const handleRedeemCode = async () => {
+    if (!authToken || !compCode.trim() || subscribeLoading) return;
+    setRedeemError('');
+    setSubscribeLoading(true);
+    try {
+      const resp = await fetch('/api/billing/redeem-code', {
+        method: 'POST',
+        headers: apiHeaders(authToken),
+        body: JSON.stringify({ code: compCode.trim() }),
+      });
+      const data = await resp.json();
+      if (!resp.ok || !data.activated) throw new Error(data.error || 'Invalid code');
+      setSettings(s => ({ ...s, active_subscription: true }));
+      setSubscriptionGate(false);
+    } catch (err: unknown) {
+      setRedeemError(err instanceof Error ? err.message : 'Invalid code');
+    } finally {
+      setSubscribeLoading(false);
+    }
+  };
 
   const handleSubscribeClick = async () => {
     if (!authToken || subscribeLoading) return;
@@ -782,6 +805,28 @@ export default function App() {
             >
               Watch it in action →
             </a>
+
+            {/* Comp / tester access code */}
+            <div className="pt-4 border-t border-white/8 space-y-2">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={compCode}
+                  onChange={(e) => { setCompCode(e.target.value); setRedeemError(''); }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleRedeemCode(); }}
+                  placeholder="Have a code?"
+                  className="flex-1 min-w-0 bg-white/5 border border-white/15 rounded-full px-4 py-2 text-mini text-white placeholder:text-starlight/40 focus:outline-none focus:border-cool-blue/60"
+                />
+                <button
+                  onClick={handleRedeemCode}
+                  disabled={subscribeLoading || !compCode.trim()}
+                  className="px-4 py-2 bg-white/10 hover:bg-white/15 text-white font-bold rounded-full text-micro uppercase tracking-widest disabled:opacity-40"
+                >
+                  Redeem
+                </button>
+              </div>
+              {redeemError && <p className="text-micro text-alert-rose text-left px-1">{redeemError}</p>}
+            </div>
           </div>
         </div>
       )}
