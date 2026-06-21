@@ -126,6 +126,13 @@ function createEstimator({ ai }) {
         const response = await ai.models.generateContent({ model: MODEL, contents });
         const scope = parseGeminiJSON(response.text);
 
+        // Optional: replace Stage-1's blind estimated_unit_cost guesses with
+        // search-grounded prices. Opt-in (extra Gemini call + latency per
+        // estimate); fails open so a grounding error never blocks extraction.
+        if (process.env.GROUNDED_PRICING === 'true' && Array.isArray(scope.materials)) {
+            await groundMaterialPrices(ai, scope.materials);
+        }
+
         // Defensive: the LLM may hallucinate an assembly type outside the closed
         // enum. Drop those here so the Takeoff engine never has to guess at an
         // unknown type — their parts simply fall through to the loose-material path.
@@ -144,6 +151,47 @@ function createEstimator({ ai }) {
     }
 
     return { extractScope };
+}
+
+/**
+ * Search-grounded price pass. One batched Gemini call (Google Search tool) that
+ * overwrites each material's estimated_unit_cost with a current retail number.
+ * Mutates materials in place. Best-effort: any failure leaves the Stage-1
+ * guesses intact.
+ *
+ * NOTE: Google Search grounding cannot be combined with structured-JSON output
+ * in the same request, which is why this is a SEPARATE call from extractScope —
+ * the main extraction keeps its reliable JSON; this one tolerates loose JSON.
+ *
+ * ponytail: one batched call per estimate, not per item. If accuracy demands
+ * per-item grounding, split it then — don't pre-build that.
+ */
+async function groundMaterialPrices(ai, materials) {
+    const names = materials.map((m) => m && m.name).filter(Boolean);
+    if (names.length === 0) return;
+
+    const prompt =
+        `You are a US construction cost estimator with live web search. ` +
+        `Look up the current retail unit price (USD, Home Depot / Menards / Lowe's shelf price) ` +
+        `for each material below. Output ONLY a JSON object mapping the EXACT material name to its ` +
+        `numeric unit price — no markdown, no commentary, no citations in the JSON.\n` +
+        `Example: {"2x4x8 Stud": 3.98, "5/8 inch Type X Drywall": 14.50}\n\n` +
+        `Materials:\n${names.map((n) => `- ${n}`).join('\n')}`;
+
+    try {
+        const res = await ai.models.generateContent({
+            model:    MODEL,
+            contents: { role: 'user', parts: [{ text: prompt }] },
+            config:   { tools: [{ googleSearch: {} }] },
+        });
+        const priceMap = parseGeminiJSON(res.text) || {};
+        for (const m of materials) {
+            const p = Number(priceMap[m.name]);
+            if (Number.isFinite(p) && p > 0) m.estimated_unit_cost = p;
+        }
+    } catch (err) {
+        console.error('[grounded-pricing] failed, keeping Stage-1 guesses:', err.message);
+    }
 }
 
 module.exports = { createEstimator, EXTRACTION_PROMPT, VALID_TRADES, ASSEMBLY_TYPES };
