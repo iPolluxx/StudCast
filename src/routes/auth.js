@@ -42,49 +42,44 @@ async function sendOtp(formattedPhone, email, otp) {
 const router = express.Router();
 
 // ── Single-use invite codes → isolated demo workspaces ────────────────
-// Code-only access (no Google/OTP/Stripe). Each code is ONE-TIME: redeeming it
-// (a) provisions a fresh ISOLATED demo tenant and (b) rotates the live code so
-// it can't be reused. The current code bootstraps from COMP_CODE, then rotates;
-// the owner reads it in-dashboard via GET /auth/demo-code (gated to ADMIN_EMAIL).
-const { generateInviteCode, rotateIfMatch } = require('../lib/inviteCodes');
-const ADMIN_EMAIL  = (process.env.ADMIN_EMAIL || '').toLowerCase();
-const demoCodeRef  = () => db.collection('demo_access').doc('current');
+// Code-only access (no Google/OTP/Stripe). The admin generates a POOL of
+// one-time codes from the gateway dashboard; a tester redeems one, which (a)
+// provisions a fresh ISOLATED demo tenant and (b) marks the code used. Pool
+// lives in Firestore `demo_codes/{CODE}`. Admin endpoints are x-api-key gated
+// (same pattern as /api/admin/sync-prices) so the local-only gateway can manage
+// them while the public Cloud Run URL stays protected.
+const { generateInviteCode, canRedeem } = require('../lib/inviteCodes');
 
-async function currentInviteCode() {
-    const snap = await demoCodeRef().get();
-    if (snap.exists && snap.data().code) return snap.data().code;
-    return process.env.COMP_CODE || null;
+function requireAdminKey(req, res, next) {
+    const key = req.headers['x-api-key'];
+    if (!key || key !== process.env.ADMIN_API_KEY) return res.status(403).json({ error: 'Forbidden' });
+    next();
 }
 
 router.post('/auth/demo-login', async (req, res) => {
-    const submitted = (req.body && typeof req.body.code === 'string') ? req.body.code.trim() : '';
+    const submitted = (req.body && typeof req.body.code === 'string') ? req.body.code.trim().toUpperCase() : '';
     if (!submitted) return res.status(403).json({ error: 'Invalid code.' });
 
-    // Atomically verify + consume + rotate so a code can never redeem twice
-    // (two simultaneous requests: one wins the transaction, the other retries
-    // against the already-rotated code and is rejected).
-    let consumed;
+    const rand  = crypto.randomBytes(5).toString('hex');
+    const phone = 'demo_' + rand;                       // NOT E.164 — can't collide with a real tenant
+    const email = 'demo-' + rand + '@studcast.app';
+
+    // Atomically claim the code so two simultaneous redeems can't both win.
+    let claimed;
     try {
-        consumed = await db.runTransaction(async (tx) => {
-            const ref    = demoCodeRef();
-            const snap   = await tx.get(ref);
-            const stored = snap.exists ? snap.data() : null;
-            const result = rotateIfMatch(stored, submitted, process.env.COMP_CODE);
-            if (!result.ok) return false;
-            tx.set(ref, { ...result.next, rotated_at: Date.now() }, { merge: true });
+        claimed = await db.runTransaction(async (tx) => {
+            const ref  = db.collection('demo_codes').doc(submitted);
+            const snap = await tx.get(ref);
+            if (!canRedeem(snap.exists ? snap.data() : null)) return false;
+            tx.set(ref, { used: true, used_at: Date.now(), tenant_email: email }, { merge: true });
             return true;
         });
     } catch (err) {
         console.error('[demo-login] txn', err.message);
         return res.status(500).json({ error: 'Demo login failed.' });
     }
-    if (!consumed) return res.status(403).json({ error: 'Invalid or already-used code.' });
+    if (!claimed) return res.status(403).json({ error: 'Invalid or already-used code.' });
 
-    // Provision a fresh isolated workspace. The id is deliberately NOT E.164 so
-    // it can never collide with a real tenant's phone number.
-    const rand  = crypto.randomBytes(5).toString('hex');
-    const phone = 'demo_' + rand;
-    const email = 'demo-' + rand + '@studcast.app';
     try {
         await db.collection('users').doc(phone)
             .set({ email, status: 'active', companyName: 'Demo Workspace' }, { merge: true });
@@ -97,17 +92,43 @@ router.post('/auth/demo-login', async (req, res) => {
     }
 });
 
-// ── GET /api/auth/demo-code (admin-only) ──────────────────────────────
-// Surfaces the current single-use invite code to the owner for in-dashboard
-// display. Gated to ADMIN_EMAIL; every other (incl. demo) tenant gets 403.
-router.get('/auth/demo-code', requireAuth, async (req, res) => {
-    const email = ((req.authedUser && req.authedUser.email) || '').toLowerCase();
-    if (!ADMIN_EMAIL || email !== ADMIN_EMAIL) return res.status(403).json({ error: 'Forbidden.' });
+// ── POST /api/admin/demo-codes — generate N single-use codes ──────────
+router.post('/admin/demo-codes', requireAdminKey, async (req, res) => {
+    const count = Math.min(Math.max(parseInt(req.body && req.body.count, 10) || 1, 1), 50);
     try {
-        return res.json({ code: await currentInviteCode() });
+        const batch = db.batch();
+        const codes = [];
+        for (let i = 0; i < count; i++) {
+            const code = generateInviteCode();
+            batch.set(db.collection('demo_codes').doc(code), { code, used: false, created_at: Date.now() });
+            codes.push(code);
+        }
+        await batch.commit();
+        return res.json({ codes });
     } catch (err) {
-        console.error('[demo-code]', err.message);
-        return res.status(500).json({ error: 'Lookup failed.' });
+        console.error('[demo-codes] generate', err.message);
+        return res.status(500).json({ error: 'Generation failed.' });
+    }
+});
+
+// ── GET /api/admin/demo-codes — list the pool (newest first) ──────────
+router.get('/admin/demo-codes', requireAdminKey, async (req, res) => {
+    try {
+        const snap = await db.collection('demo_codes').orderBy('created_at', 'desc').limit(200).get();
+        const codes = snap.docs.map((d) => {
+            const x = d.data();
+            return {
+                code: x.code || d.id,
+                used: !!x.used,
+                created_at: x.created_at || null,
+                used_at: x.used_at || null,
+                tenant_email: x.tenant_email || null,
+            };
+        });
+        return res.json({ codes });
+    } catch (err) {
+        console.error('[demo-codes] list', err.message);
+        return res.status(500).json({ error: 'List failed.' });
     }
 });
 

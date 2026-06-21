@@ -22,24 +22,7 @@ export default function SettingsModal({ open, settings, onSettingsChange, onClos
   const [cancelConfirm, setCancelConfirm] = useState(false);
   const [canceling, setCanceling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
-  const [inviteCode, setInviteCode] = useState<string | null>(null);
-  const [inviteCopied, setInviteCopied] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
-
-  // Admin-only invite code. The endpoint 403s for non-admin users, so a null
-  // result simply hides the widget — no role flag needed on the client.
-  useEffect(() => {
-    if (!open || !authToken) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const r = await fetch('/api/auth/demo-code', { headers: { 'Authorization': `Bearer ${authToken}` } });
-        const code = r.ok ? (await r.json()).code : null;
-        if (!cancelled) setInviteCode(code || null);
-      } catch { if (!cancelled) setInviteCode(null); }
-    })();
-    return () => { cancelled = true; };
-  }, [open, authToken]);
 
   // Same dialog hygiene as the other modals: focus moves in on open, Escape
   // closes, and Tab is trapped inside the panel.
@@ -263,23 +246,6 @@ export default function SettingsModal({ open, settings, onSettingsChange, onClos
                     </div>
                   </div>
                 )}
-              </div>
-            )}
-
-            {/* Admin-only: current single-use invite code to hand out */}
-            {inviteCode && (
-              <div className="pt-4 mt-4 border-t border-white/10">
-                <p className="text-micro text-starlight/50 uppercase font-bold mb-1 tracking-widest">Admin · Next Invite Code</p>
-                <p className="text-micro text-starlight/40 mb-2">Single-use — rotates after each tester signs in.</p>
-                <div className="flex items-center gap-2">
-                  <code className="flex-1 px-4 py-2 bg-white/5 border border-white/15 rounded-xl font-mono text-mini tracking-[0.3em] text-cool-blue">{inviteCode}</code>
-                  <button
-                    onClick={() => { navigator.clipboard.writeText(inviteCode); setInviteCopied(true); setTimeout(() => setInviteCopied(false), 1500); }}
-                    className="px-4 py-2 bg-white/10 hover:bg-white/15 text-white font-bold rounded-xl text-micro uppercase tracking-widest cursor-pointer"
-                  >
-                    {inviteCopied ? 'Copied' : 'Copy'}
-                  </button>
-                </div>
               </div>
             )}
 
