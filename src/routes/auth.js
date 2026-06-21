@@ -41,37 +41,73 @@ async function sendOtp(formattedPhone, email, otp) {
 
 const router = express.Router();
 
-// ── POST /api/auth/demo-login ─────────────────────────────────────────
-// Code-only access (no Google/OTP/Stripe). The COMP_CODE unlocks a single
-// SHARED demo tenant — everyone who redeems lands in the same workspace and
-// sees the same estimates. Returns a 30-day local JWT that requireAuth already
-// accepts. The demo tenant is provisioned lazily on first redeem.
-const DEMO_PHONE = '+10000000000';
-const DEMO_EMAIL = 'demo@studcast.app';
+// ── Single-use invite codes → isolated demo workspaces ────────────────
+// Code-only access (no Google/OTP/Stripe). Each code is ONE-TIME: redeeming it
+// (a) provisions a fresh ISOLATED demo tenant and (b) rotates the live code so
+// it can't be reused. The current code bootstraps from COMP_CODE, then rotates;
+// the owner reads it in-dashboard via GET /auth/demo-code (gated to ADMIN_EMAIL).
+const { generateInviteCode, rotateIfMatch } = require('../lib/inviteCodes');
+const ADMIN_EMAIL  = (process.env.ADMIN_EMAIL || '').toLowerCase();
+const demoCodeRef  = () => db.collection('demo_access').doc('current');
 
-function codeMatches(input, secret) {
-    if (!secret || typeof input !== 'string' || input.length !== secret.length) return false;
-    return crypto.timingSafeEqual(Buffer.from(input), Buffer.from(secret));
+async function currentInviteCode() {
+    const snap = await demoCodeRef().get();
+    if (snap.exists && snap.data().code) return snap.data().code;
+    return process.env.COMP_CODE || null;
 }
 
 router.post('/auth/demo-login', async (req, res) => {
-    const secret = process.env.COMP_CODE;
-    if (!secret) return res.status(404).json({ error: 'Demo access is not enabled.' });
-    if (!codeMatches(req.body && req.body.code, secret)) {
-        return res.status(403).json({ error: 'Invalid code.' });
-    }
-    try {
-        // Idempotent provision: active tenant + active subscription so requireAuth
-        // and requireSubscription both pass. set(merge) is safe to repeat.
-        await db.collection('users').doc(DEMO_PHONE)
-            .set({ email: DEMO_EMAIL, status: 'active', companyName: 'Demo Workspace' }, { merge: true });
-        await db.collection('users').doc(DEMO_PHONE).collection('settings').doc('config')
-            .set({ active_subscription: true, subscription_status: 'comp', contact_email: DEMO_EMAIL }, { merge: true });
+    const submitted = (req.body && typeof req.body.code === 'string') ? req.body.code.trim() : '';
+    if (!submitted) return res.status(403).json({ error: 'Invalid code.' });
 
-        return res.json({ token: issueJwt(DEMO_EMAIL), demo: true });
+    // Atomically verify + consume + rotate so a code can never redeem twice
+    // (two simultaneous requests: one wins the transaction, the other retries
+    // against the already-rotated code and is rejected).
+    let consumed;
+    try {
+        consumed = await db.runTransaction(async (tx) => {
+            const ref    = demoCodeRef();
+            const snap   = await tx.get(ref);
+            const stored = snap.exists ? snap.data() : null;
+            const result = rotateIfMatch(stored, submitted, process.env.COMP_CODE);
+            if (!result.ok) return false;
+            tx.set(ref, { ...result.next, rotated_at: Date.now() }, { merge: true });
+            return true;
+        });
     } catch (err) {
-        console.error('[demo-login]', err.message);
+        console.error('[demo-login] txn', err.message);
         return res.status(500).json({ error: 'Demo login failed.' });
+    }
+    if (!consumed) return res.status(403).json({ error: 'Invalid or already-used code.' });
+
+    // Provision a fresh isolated workspace. The id is deliberately NOT E.164 so
+    // it can never collide with a real tenant's phone number.
+    const rand  = crypto.randomBytes(5).toString('hex');
+    const phone = 'demo_' + rand;
+    const email = 'demo-' + rand + '@studcast.app';
+    try {
+        await db.collection('users').doc(phone)
+            .set({ email, status: 'active', companyName: 'Demo Workspace' }, { merge: true });
+        await db.collection('users').doc(phone).collection('settings').doc('config')
+            .set({ active_subscription: true, subscription_status: 'comp', contact_email: email }, { merge: true });
+        return res.json({ token: issueJwt(email, { expiresIn: '7d' }), demo: true });
+    } catch (err) {
+        console.error('[demo-login] provision', err.message);
+        return res.status(500).json({ error: 'Workspace provisioning failed.' });
+    }
+});
+
+// ── GET /api/auth/demo-code (admin-only) ──────────────────────────────
+// Surfaces the current single-use invite code to the owner for in-dashboard
+// display. Gated to ADMIN_EMAIL; every other (incl. demo) tenant gets 403.
+router.get('/auth/demo-code', requireAuth, async (req, res) => {
+    const email = ((req.authedUser && req.authedUser.email) || '').toLowerCase();
+    if (!ADMIN_EMAIL || email !== ADMIN_EMAIL) return res.status(403).json({ error: 'Forbidden.' });
+    try {
+        return res.json({ code: await currentInviteCode() });
+    } catch (err) {
+        console.error('[demo-code]', err.message);
+        return res.status(500).json({ error: 'Lookup failed.' });
     }
 });
 
